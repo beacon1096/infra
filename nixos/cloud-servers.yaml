@@ -3,6 +3,7 @@ slug: nixos-cloud
 kind: managed-cloud-servers
 observed_at: '2026-08-14'
 declaration_only: true
+availability_intent: always_on
 
 source:
   repository: nix-fleet
@@ -116,6 +117,33 @@ servers:
       - Tailscale
       - Docker workloads
     configuration: hosts/server/flint/configuration.nix
+
+always_on_hosts:
+  - name: microserver-gen10plus
+    address: 100.121.229.9
+    address_type: tailscale
+    system: x86_64-linux
+    role: local home server and remote Nix build host
+    hardware: HPE ProLiant MicroServer Gen10 Plus; Intel CC150 (8C/16T); 64GB DDR4 ECC; 3x KIOXIA SATA SSD (RAID5)
+    services:
+      - Docker
+      - Outline
+      - Forgejo Actions runner
+      - VMware host
+    ssh:
+      user: beacon
+      port: 22
+      transport: Tailscale socket proxy
+      dedicated_coding_agent_alias: false
+    configuration: hosts/personal/fixed/microserver-gen10plus/configuration.nix
+    remote_builder_source: modules/common/remote-builder.nix
+    access_observation:
+      observed_at: '2026-08-14'
+      method: SSH over the local Tailscale socket proxy
+      result: connected
+      remote_hostname: microserver-gen10plus
+      remote_user: beacon
+      nixos_release: '26.05.20260717.293d6ab (Yarara)'
 
 excluded_from_this_inventory:
   - nixbuilder-01
