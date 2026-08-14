@@ -1,0 +1,204 @@
+name: talos-ii
+kind: independent-talos-cluster
+observed_at: '2026-08-14'
+source_repository: swarm
+source_talconfig: talos/talconfig.yaml
+observation_mode: read_only
+
+access:
+  talosconfig_path: /run/coder-infra/talosconfig
+  talos_context: kubernetes
+  kubeconfig_path: /run/coder-infra/kubeconfig
+  secrets_copied_to_repository: false
+  sensitive_material_policy:
+    - Keep kubeconfig, Talos client config, keys, tokens, and raw device exports out of Git.
+    - Store only topology, versions, and other non-secret observations here.
+
+router:
+  owner_label: UDR-Pro
+  observed_model: UniFi Dream Machine Pro (UDM-Pro)
+  vendor: Ubiquiti
+  firmware: 5.1.26
+  architecture: aarch64
+  memory_gib_approx: 3.9
+  cpu_temperature_c: 40.0
+  cpu_load_at_observation_percent: 2.3
+  role: standalone_cluster_router
+  topology_intent: >-
+    May uplink to a home network, sit below another cluster network, or connect
+    directly to a broadband optical modem.
+  upstream:
+    interface: eth8
+    address: 172.16.20.216/24
+    current_public_route_observation: 1.1.1.1 via 172.16.80.240 dev br0
+  networks:
+    - name: entrance
+      bridge: br0
+      vlan: 1
+      cidr: 172.16.80.0/24
+      gateway: 172.16.80.254
+      dhcp_range: 172.16.80.6-172.16.80.254
+      dns_domain: home.phylanx-01.beaco.works
+    - name: management
+      bridge: br10
+      vlan: 10
+      cidr: 172.16.81.0/24
+      gateway: 172.16.81.254
+      dhcp_range: 172.16.81.1-172.16.81.199
+      dns_domain: mgmt.phylance-01.beaco.works
+    - name: legacy-vms
+      bridge: br30
+      vlan: 30
+      cidr: 172.16.82.0/24
+      gateway: 172.16.82.254
+      dhcp_range: 172.16.82.101-172.16.82.199
+      ipv6_dhcp_mode: ra-only
+    - name: harvester-traffic
+      bridge: br20
+      vlan: 20
+      cidr: 172.16.84.0/24
+      gateway: 172.16.84.254
+      dhcp_range: 172.16.84.6-172.16.84.254
+    - name: talos-ii
+      bridge: br87
+      vlan: 87
+      cidr: 172.16.87.0/24
+      gateway: 172.16.87.254
+      dhcp_range: 172.16.87.201-172.16.87.203
+    - name: vlan-88
+      bridge: br88
+      vlan: 88
+      cidr: 172.16.88.0/24
+      gateway: 172.16.88.254
+      dhcp_configuration_observed: false
+  dhcp:
+    server: dnsmasq
+    lease_duration_seconds: 86400
+    dns_server: 172.16.80.254
+    local_upstream: 127.0.0.1:5053
+  routing:
+    daemon: ospfd
+    router_id: 172.16.80.254
+    area: 0.0.0.0
+    neighbor:
+      address: 172.16.80.240
+      state: Full/Backup
+    authentication_observed: none
+    current_route_to_public_via: 172.16.80.240
+  observed_services:
+    - DNS on the internal bridge addresses
+    - DHCP on the configured LAN bridges
+    - UniFi management HTTP/HTTPS
+    - SSH
+
+talos:
+  logical_name: talos-ii
+  cluster_name: kubernetes
+  api_endpoint: https://172.16.87.1:6443
+  api_vip: 172.16.87.1
+  api_server_certificate_sans:
+    - 127.0.0.1
+    - 172.16.87.1
+    - talos-ii.beaco.works
+  talos_version: v1.12.7
+  kubernetes_version: v1.35.4
+  kernel: 6.18.24-talos
+  container_runtime: containerd://2.1.7
+  cni_configured_in_talconfig: none
+  cni_running: Cilium
+  cluster_pod_network: 10.44.0.0/16
+  cluster_service_network: 10.55.0.0/16
+  node_network:
+    vlan: 87
+    cidr: 172.16.87.0/24
+    gateway: 172.16.87.254
+    interface: bond0
+    bond_members:
+      - enp2s0f0np0
+      - enp2s0f1np1
+    bond_mode: 802.3ad
+    lacp_rate: fast
+  nodes:
+    - name: ms01-a
+      address: 172.16.87.201
+      role: controlplane
+      status_at_observation: Ready
+      secureboot: true
+      install_disk: /dev/nvme0n1
+      hardware:
+        repository_model: MS-01
+        live_manufacturer: Micro Computer (HK) Tech Limited
+        live_product: Venus Series
+        system_disk: approximately 4.1 TB KIOXIA NVMe
+    - name: ms01-b
+      address: 172.16.87.202
+      role: controlplane
+      status_at_observation: Ready
+      secureboot: true
+      install_disk: /dev/nvme0n1
+      hardware:
+        repository_model: MS-01
+        live_manufacturer: Micro Computer (HK) Tech Limited
+        live_product: Venus Series
+        system_disk: approximately 4.1 TB KIOXIA NVMe
+    - name: ms01-c
+      address: 172.16.87.203
+      role: controlplane
+      status_at_observation: Ready
+      scheduling: disabled
+      secureboot: true
+      install_disk: /dev/nvme0n1
+      hardware:
+        repository_model: MS-01
+        live_manufacturer: Micro Computer (HK) Tech Limited
+        live_product: Venus Series
+        system_disk: approximately 4.1 TB KIOXIA NVMe
+  storage:
+    default_storage_class: longhorn
+    storage_classes:
+      - name: longhorn
+        provisioner: driver.longhorn.io
+        reclaim_policy: Delete
+        volume_binding_mode: Immediate
+        allow_volume_expansion: true
+      - name: longhorn-r3
+        provisioner: driver.longhorn.io
+        reclaim_policy: Delete
+        volume_binding_mode: Immediate
+        allow_volume_expansion: true
+  workload_groups:
+    - namespace: ai
+      services: [litellm, searxng]
+    - namespace: collaboration
+      services: [element-web, firefox-sync, matrix, syncthing]
+    - namespace: development
+      services: [coder, forgejo, kasm-browser, multica, n8n, paseo-relay, steel-browser]
+    - namespace: identity
+      services: [authentik, vaultwarden]
+    - namespace: monitoring
+      services: [openstatus]
+    - namespace: network
+      services: [cloudflare-dns, cloudflare-tunnel, envoy, k8s-gateway, tailscale-endpoints]
+    - namespace: nix
+      services: [attic]
+    - namespace: registry
+      services: [zot]
+    - namespace: storage
+      services: [longhorn]
+  platform_components:
+    - Cilium
+    - CoreDNS
+    - Spegel
+    - kube-apiserver
+    - kube-controller-manager
+    - kube-scheduler
+  health_observations:
+    - all three control-plane nodes were Ready
+    - ms01-c was SchedulingDisabled
+    - one old default/node-debugger pod was Error
+    - no Talos configuration or workload mutation was performed
+
+recovery:
+  backup_recovery_verified: false
+  out_of_band_access_documented: false
+  restore_order: not yet established
