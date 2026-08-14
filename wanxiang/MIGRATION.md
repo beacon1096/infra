@@ -13,7 +13,12 @@ The source tree is kept under `infra/wanxiang/` so the later NixOS migration can
 
 ## Flux path changes staged here
 
-- Flux instance sync path: `wanxiang/kubernetes/flux/cluster`.
+- Flux instance sync path for the cutover bridge: `kubernetes/flux/cluster`.
+- The stable bridge entrypoint is `kubernetes/flux/cluster/ks.yaml`, matching
+  the path used by the legacy `swarm` source. It points at the environment tree
+  below `wanxiang/` and lets the cutover change only the Git URL.
+- The environment-local Flux path remains `wanxiang/kubernetes/flux/cluster`
+  for source-tree-local tooling and review.
 - Cluster Kustomization path: `./wanxiang/kubernetes/apps`.
 - Child Kustomization paths are rooted at `./wanxiang/kubernetes/...`.
 - The copied Flux instance points at the expected `infra` mirror, but this branch must not be applied until that mirror exists and contains the complete `main` tree.
@@ -24,7 +29,7 @@ The source tree is kept under `infra/wanxiang/` so the later NixOS migration can
 2. Disable GitHub Actions for the public mirror, or ensure no mirrored workflow can write contents, releases, issues, or tags.
 3. Keep the existing SOPS recipient and Flux `sops-age` Secret unchanged through the cutover. Audit both current files and Git history before expanding public exposure.
 4. Run SOPS encryption checks, Talos generation/diff checks, `flux-local`, Kustomize rendering, and schema validation against this tree.
-5. Apply a bridge change from the still-authoritative `swarm` source to point Flux at the new URL, branch, and path. Do not rely on a change that exists only in the new source, because Flux cannot fetch it until the bridge is active.
+5. Apply a bridge change from the still-authoritative `swarm` source to point Flux at the new URL while retaining the stable `kubernetes/flux/cluster` path. Do not rely on a change that exists only in the new source, because Flux cannot fetch it until the bridge is active.
 6. Confirm `GitRepository`, root and child Kustomizations, HelmReleases, and critical workloads are Ready before retiring the old source or webhook.
 
 ## Rollback
