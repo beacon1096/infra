@@ -1,0 +1,284 @@
+name: Ember
+slug: ember
+kind: homelab-cluster
+legacy_name: swarm-01
+description: >-
+  Original dedicated cluster environment, now running a three-node Harvester
+  installation behind a MikroTik RB5009.
+observed_at: '2026-08-13'
+observation_mode: read_only
+management_status:
+  terraform: not_imported
+  gitops: not_yet_defined
+  changes_made_during_collection: false
+
+access:
+  ssh:
+    harvester_nodes:
+      - rancher@172.16.100.201
+      - rancher@172.16.100.202
+      - rancher@172.16.100.203
+    router: admin@172.16.100.254
+    adjacent_host: beacon@172.16.100.250
+  harvester_kubeconfig:
+    path_on_node: /etc/rancher/rke2/rke2.yaml
+    access_method: read_directly_with_sudo_on_mc5-01
+    copied_to_repository: false
+  sensitive_material_policy:
+    - Do not commit kubeconfig contents, private keys, tokens, passwords, or raw RouterOS exports.
+    - Do not treat this inventory as a source of credentials.
+
+harvester:
+  distribution: Harvester
+  version: v1.7.1
+  kubernetes_version: v1.34.3+rke2r3
+  containerd_version: 2.1.5-k3s1
+  kernel: 6.4.0-36-default
+  node_roles:
+    - control-plane
+    - etcd
+    - master
+  nodes:
+    - name: mc5-01
+      management_address: 172.16.100.201
+      status_at_observation: Ready
+      hardware:
+        vendor: NEC
+        model: PC-MKM22CZG5
+        cpu: Intel CC150
+        cpu_topology: 1 socket, 8 cores, 16 threads
+        memory_gib: 62
+        system_disk:
+          device: NVMe
+          model: KIOXIA-EXCERIA G2 SSD
+          size_gib: 931.5
+        layout: approximately 300 GiB system/Longhorn and 608 GiB Harvester defaultdisk
+    - name: mc4-01
+      management_address: 172.16.100.202
+      status_at_observation: Ready
+      hardware:
+        vendor: NEC
+        model: PC-MKM21CZG4
+        cpu: Intel CC150
+        cpu_topology: 1 socket, 8 cores, 16 threads
+        memory_gib: 62
+        system_disk:
+          device: NVMe
+          model: KIOXIA-EXCERIA G2 SSD
+          size_gib: 931.5
+        layout: approximately 300 GiB system/Longhorn and 608 GiB Harvester defaultdisk
+    - name: mc4-02
+      management_address: 172.16.100.203
+      status_at_observation: Ready
+      hardware:
+        vendor: NEC
+        model: PC-MKM21CZG4
+        cpu: Intel CC150
+        cpu_topology: 1 socket, 8 cores, 16 threads
+        memory_gib: 62
+        system_disk:
+          device: NVMe
+          model: WD Blue SN570 1TB
+          size_gib: 931.5
+        layout: approximately 300 GiB system/Longhorn and 608 GiB Harvester defaultdisk
+  networks:
+    - name: mgmt
+      cidr: 172.16.100.0/24
+      gateway: 172.16.100.254
+      bridge: harvester-mgmt
+    - name: vmnetwork
+      cidr: 172.16.101.0/24
+      gateway: 172.16.101.254
+      vlan: 1096
+      bridge: harvester-mgmt
+    - name: rancher
+      cidr: 172.16.102.0/24
+      gateway: 172.16.102.254
+      vlan: 1087
+      bridge: harvester-mgmt
+    - name: storage
+      cidr: 172.16.105.0/24
+      gateway: 172.16.105.254
+      bridge: harvester-stor
+      harvester_storage_network: true
+      storage_excluded_address: 172.16.105.254/32
+    - name: legacy-swarm
+      cidr: 172.16.107.0/24
+      gateway: 172.16.107.254
+      vlan: 1116
+      bridge: harvester-mgmt
+      dns_suffix: swarm-01.beaco.works
+    - name: auxiliary
+      cidr: 172.16.109.0/24
+      gateway: 172.16.109.254
+    - name: docker
+      cidr: 172.17.0.0/24
+      purpose: local_router_container_network
+  network_mtu:
+    harvester_mgmt: 9000
+    harvester_storage: 9000
+  storage:
+    default_storage_class: harvester-longhorn
+    cluster_network: storage
+    longhorn_volumes:
+      - name: grafana
+        size_gib: 2
+        observed_state: attached_healthy
+      - name: alertmanager
+        size_gib: 5
+        observed_state: attached_healthy
+      - name: prometheus
+        size_gib: 50
+        observed_state: attached_healthy
+      - name: gitlab
+        size_gib: 42
+        observed_state: attached_healthy
+      - name: keycloak
+        size_gib: 32
+        observed_state: attached_healthy
+      - name: nextcloud
+        size_gib: 64
+        observed_state: detached_unknown
+    backup:
+      default_target_available: false
+      backup_objects_found: false
+      restore_tested: false
+  workloads:
+    - namespace: identity
+      name: service-keycloak
+      kind: VirtualMachine
+      status_at_observation: Running
+      vmi_address: 172.16.101.6
+      node: mc5-01
+    - namespace: development
+      name: service-gitlab
+      kind: VirtualMachine
+      status_at_observation: Stopped
+    - namespace: routine
+      name: service-nextcloud-aio
+      kind: VirtualMachine
+      status_at_observation: Stopped
+  platform_components_observed:
+    - Rancher
+    - Harvester
+    - Longhorn
+    - RKE2 Canal/Multus
+    - Kube-OVN
+    - CoreDNS
+    - Ingress
+    - monitoring
+    - logging
+  health_observations:
+    - component: kube-system/ovn-central
+      status: CrashLoopBackOff
+      ready: 0/3
+      symptom: liveness/readiness probes reported ovn-northd not running
+    - component: kube-ovn-cni
+      status: degraded_at_observation
+      ready: 2/3
+
+router:
+  vendor: MikroTik
+  model: RB5009UPr+S+
+  routeros_version: '7.22'
+  architecture: ARM64
+  cpu: 4 cores at 1.4 GHz
+  memory_gib: 1
+  role: dedicated_cluster_router
+  topology_intent: >-
+    The RB5009 is dedicated to Ember. Its upstream may be another home router,
+    another cluster, or a broadband optical modem.
+  upstream:
+    interface: inbound
+    addressing: dhcp
+    observed_address: 172.16.20.252/24
+    gateway: 172.16.20.254
+    default_route_distance: 100
+  networks:
+    - cidr: 172.16.100.0/24
+      gateway: 172.16.100.254
+      purpose: Harvester management
+    - cidr: 172.16.101.0/24
+      gateway: 172.16.101.254
+      purpose: Harvester VM network
+      vlan: 1096
+    - cidr: 172.16.102.0/24
+      gateway: 172.16.102.254
+      purpose: Rancher
+      vlan: 1087
+    - cidr: 172.16.105.0/24
+      gateway: 172.16.105.254
+      purpose: Harvester storage
+    - cidr: 172.16.107.0/24
+      gateway: 172.16.107.254
+      purpose: legacy swarm-01
+      vlan: 1116
+    - cidr: 172.16.109.0/24
+      gateway: 172.16.109.254
+      purpose: auxiliary
+    - cidr: 172.17.0.0/24
+      purpose: Docker containers
+  routing:
+    ospf:
+      instance: default-v2
+      router_id: 172.16.100.254
+      interfaces: [172.16.100.0/24, 172.16.101.0/24]
+      authentication: enabled
+      authentication_secret_recorded: false
+    static_routes:
+      - destination: 172.16.10.0/24
+        next_hop: 172.16.20.21
+      - destination: 100.64.0.0/10
+        next_hop: 172.16.20.21
+  overlays:
+    tailscale:
+      container_enabled: true
+      advertise_exit_node: true
+      accept_routes: true
+      advertised_networks:
+        - 172.16.100.0/24
+        - 172.16.101.0/24
+        - 172.16.102.0/24
+        - 172.16.107.0/24
+    zerotier:
+      package_enabled: true
+  dhcp:
+    legacy_swarm_leases:
+      - address: 172.16.107.201
+        comment: swarm-01
+        state: waiting
+        last_seen: approximately 14 weeks before observation
+        arp_seen_at_observation: false
+      - address: 172.16.107.202
+        comment: swarm-02
+        state: waiting
+        last_seen: approximately 14 weeks before observation
+        arp_seen_at_observation: false
+      - address: 172.16.107.203
+        comment: swarm-03
+        state: waiting
+        last_seen: approximately 14 weeks before observation
+        arp_seen_at_observation: false
+  review_items:
+    - An unconditional input-chain accept rule appeared before the default drop rules.
+    - FTP, Telnet, HTTP, Winbox, API, and API-SSL service entries did not show address restrictions in the captured listing.
+    - UPnP, NAT-PMP, and the anonymous proxy configuration were enabled.
+    - A disabled Tailscale auth-key environment variable was present; its value was not recorded. Rotate it if it was ever used.
+    - IPv6 configuration referenced the missing address pool frontline_cmcc during export.
+
+adjacent_hosts:
+  - name: m920x
+    address: 172.16.100.250
+    router_label: m920x OSPF egress
+    os: NixOS 26.05
+    cpu: Intel i5-8600, 6 cores / 6 threads
+    memory_gib: 32
+    disk: 1 TB KIOXIA NVMe
+    storage_address: 172.16.105.249
+    gateway: 172.16.105.254
+
+recovery:
+  backup_recovery_verified: false
+  out_of_band_access_documented: false
+  restore_order: not yet established
+  note: Confirm backups and an independent recovery path before high-impact changes.
