@@ -1,11 +1,12 @@
-# talos-ii
+# 万象 (wanxiang)
 
-This directory records the second independent environment collected during onboarding. The owner refers to its gateway as `UDR-Pro`; the live device identifies itself as a `UniFi Dream Machine Pro (UDM-Pro)`. Keep that naming discrepancy visible until the physical model is confirmed.
+This directory records the second independent environment collected during onboarding. 万象 is the new name for the cluster formerly called `talos-ii`. The owner refers to its gateway as `UDR-Pro`; the live device identifies itself as a `UniFi Dream Machine Pro (UDM-Pro)`. Keep that hardware naming discrepancy visible until the physical model is confirmed.
 
 ## Observation
 
 - Observation date: 2026-08-14.
-- The source Talos configuration is `swarm/talos/talconfig.yaml`; the live Talos client context is the runtime-mounted `kubernetes` context.
+- The source Talos configuration remains `swarm/talos/talconfig.yaml`; the live Talos client context is the runtime-mounted `kubernetes` context.
+- The runtime credential locations are `/run/coder-infra/talosconfig` (`TALOSCONFIG`) and `/run/coder-infra/kubeconfig` (`KUBECONFIG`); local ignored convenience links are documented in the repository root inventory.
 - The UDM-Pro was queried over SSH as root using read-only commands. Generated dnsmasq and FRR state was read only to identify current networks and routing.
 - The cluster was queried with `talosctl` and `kubectl`; no Talos, Kubernetes, UDM-Pro, or routing change was made.
 - No kubeconfig, Talos client config, private key, token, serial number, MAC address, or raw device export is stored here.
@@ -14,7 +15,9 @@ This directory records the second independent environment collected during onboa
 
 The gateway is designed as a standalone cluster router: it may uplink to a home network, sit below another cluster network, or be connected directly to an optical modem. At observation time its active upstream-facing interface was `eth8` on `172.16.20.216/24`. Its current public-route lookup went through the OSPF peer `ms-r1` (`172.16.80.240`) on `br0`, which is the observed in-place topology rather than proof of the intended final uplink.
 
-The UDM-Pro exposes the Talos VLAN on `br87` / `172.16.87.0/24`. The Talos cluster uses a bonded pair on each MS-01, VLAN 87, API VIP `172.16.87.1`, and gateway `172.16.87.254`.
+The UDM-Pro exposes the 万象 VLAN on `br87` / `172.16.87.0/24`. The Talos cluster uses a bonded pair on each MS-01, VLAN 87, API VIP `172.16.87.1`, and gateway `172.16.87.254`.
+
+The display rename does not alter the live technical `clusterName: kubernetes` or the existing `talos-ii.beaco.works` certificate SAN. Those are configuration changes, not naming-only documentation.
 
 ## Current cluster state
 

@@ -1,4 +1,6 @@
-name: talos-ii
+name: 万象
+slug: wanxiang
+previous_name: talos-ii
 kind: independent-talos-cluster
 observed_at: '2026-08-14'
 source_repository: swarm
@@ -6,9 +8,27 @@ source_talconfig: talos/talconfig.yaml
 observation_mode: read_only
 
 access:
-  talosconfig_path: /run/coder-infra/talosconfig
-  talos_context: kubernetes
-  kubeconfig_path: /run/coder-infra/kubeconfig
+  talconfig_source:
+    repository: swarm
+    path: talos/talconfig.yaml
+    kind: declarative_non_secret_source
+  talosconfig:
+    environment_variable: TALOSCONFIG
+    path: /run/coder-infra/talosconfig
+    context: kubernetes
+  kubeconfig:
+    environment_variable: KUBECONFIG
+    path: /run/coder-infra/kubeconfig
+  sops_age_key:
+    environment_variable: SOPS_AGE_KEY_FILE
+    path: /run/coder-infra/sops-age-keys
+  local_ignored_symlinks:
+    - infra/.private/talosconfig
+    - infra/.private/kubeconfig
+    - infra/.private/sops-age-keys
+    - swarm/.private/talosconfig
+    - swarm/.private/kubeconfig
+    - swarm/.private/sops-age-keys
   secrets_copied_to_repository: false
   sensitive_material_policy:
     - Keep kubeconfig, Talos client config, keys, tokens, and raw device exports out of Git.
@@ -59,7 +79,8 @@ router:
       cidr: 172.16.84.0/24
       gateway: 172.16.84.254
       dhcp_range: 172.16.84.6-172.16.84.254
-    - name: talos-ii
+    - name: wanxiang
+      legacy_name: talos-ii
       bridge: br87
       vlan: 87
       cidr: 172.16.87.0/24
@@ -94,7 +115,8 @@ router:
     - SSH
 
 talos:
-  logical_name: talos-ii
+  logical_name: 万象
+  previous_name: talos-ii
   cluster_name: kubernetes
   api_endpoint: https://172.16.87.1:6443
   api_vip: 172.16.87.1

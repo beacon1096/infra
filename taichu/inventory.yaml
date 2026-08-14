@@ -1,5 +1,6 @@
-name: Ember
-slug: ember
+name: 太初
+slug: taichu
+previous_display_name: Ember
 kind: homelab-cluster
 legacy_name: swarm-01
 description: >-
@@ -21,9 +22,14 @@ access:
     router: admin@172.16.100.254
     adjacent_host: beacon@172.16.100.250
   harvester_kubeconfig:
+    kind: RKE2 kubeconfig
+    host: mc5-01
     path_on_node: /etc/rancher/rke2/rke2.yaml
+    owner: root:root
+    file_mode: '0600'
     access_method: read_directly_with_sudo_on_mc5-01
     copied_to_repository: false
+  talconfig: not_applicable_for_this_cluster
   sensitive_material_policy:
     - Do not commit kubeconfig contents, private keys, tokens, passwords, or raw RouterOS exports.
     - Do not treat this inventory as a source of credentials.
@@ -186,7 +192,7 @@ router:
   memory_gib: 1
   role: dedicated_cluster_router
   topology_intent: >-
-    The RB5009 is dedicated to Ember. Its upstream may be another home router,
+    The RB5009 is dedicated to 太初. Its upstream may be another home router,
     another cluster, or a broadband optical modem.
   upstream:
     interface: inbound

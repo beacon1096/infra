@@ -1,11 +1,12 @@
-# Ember
+# 太初 (taichu)
 
-Ember is the name assigned to the original `swarm-01` environment. This directory is a first, read-only inventory of the Harvester cluster, its dedicated RB5009 network, and the workloads observed during onboarding.
+太初 is the new name for the original `swarm-01` environment, formerly called Ember. This directory is a first, read-only inventory of the Harvester cluster, its dedicated RB5009 network, and the workloads observed during onboarding.
 
 ## Scope and observation
 
 - Observation date: 2026-08-13.
 - The cluster was queried through the existing SSH access. The Harvester kubeconfig was not copied out of the node; queries used `sudo` on `mc5-01` with `/etc/rancher/rke2/rke2.yaml`.
+- The Harvester/RKE2 kubeconfig location is documented in the repository root inventory; 太初 has no Talos client config.
 - RouterOS was queried read-only. No raw RouterOS export, kubeconfig, key, token, or other credential belongs in this repository.
 - This is documentation and inventory only. No Terraform, RouterOS, Harvester, Kubernetes, or Flux change was made, and no backup or restore was run.
 - The structured facts are in [`inventory.yaml`](./inventory.yaml). Transient health and lease observations are intentionally marked as observations and need revalidation before an automation change.
