@@ -1,0 +1,20 @@
+# Runtime-local credentials and convenience links. Keep these in the local
+# work environment; never copy their contents into this repository.
+/.private/
+/kubeconfig
+/talosconfig
+/**/clusterconfig/
+sops-age-keys
+*.kubeconfig
+*.talosconfig
+*.agekey
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Decrypted secret material and local state.
+*.sops.dec.*
+*.decrypted.*
+*.tfstate
+*.tfstate.*
