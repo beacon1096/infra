@@ -82,7 +82,9 @@ router:
     area: 0.0.0.0
     neighbor:
       address: 172.16.80.240
+      hostname: ms-r1
       state: Full/Backup
+      role: OSPF boundary gateway and LAN image mirror host
     authentication_observed: none
     current_route_to_public_via: 172.16.80.240
   observed_services:
@@ -197,6 +199,23 @@ talos:
     - ms01-c was SchedulingDisabled
     - one old default/node-debugger pod was Error
     - no Talos configuration or workload mutation was performed
+
+adjacent_hosts:
+  - name: ms-r1
+    address: 172.16.80.240
+    role: OSPF boundary gateway and LAN image mirror host
+    verified_ssh_user: beacon
+    os: NixOS 26.05.20260717.293d6ab
+    kernel: 7.1.2
+    cpu_count: 12
+    memory_gib_approx: 62.5
+    swap_gib: 0
+    disk: 953.9 GiB Kingston OM8PGP41024Q-A0 NVMe
+    interface: enp49s0
+    default_gateway: 172.16.80.254
+    observed_services:
+      - BIRD
+      - LAN image mirror on port 5000
 
 recovery:
   backup_recovery_verified: false

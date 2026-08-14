@@ -12,7 +12,7 @@ This directory records the second independent environment collected during onboa
 
 ## Topology
 
-The gateway is designed as a standalone cluster router: it may uplink to a home network, sit below another cluster network, or be connected directly to an optical modem. At observation time its active upstream-facing interface was `eth8` on `172.16.20.216/24`. Its current public-route lookup went through the OSPF peer `172.16.80.240` on `br0`, which is the observed in-place topology rather than proof of the intended final uplink.
+The gateway is designed as a standalone cluster router: it may uplink to a home network, sit below another cluster network, or be connected directly to an optical modem. At observation time its active upstream-facing interface was `eth8` on `172.16.20.216/24`. Its current public-route lookup went through the OSPF peer `ms-r1` (`172.16.80.240`) on `br0`, which is the observed in-place topology rather than proof of the intended final uplink.
 
 The UDM-Pro exposes the Talos VLAN on `br87` / `172.16.87.0/24`. The Talos cluster uses a bonded pair on each MS-01, VLAN 87, API VIP `172.16.87.1`, and gateway `172.16.87.254`.
 
