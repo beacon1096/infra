@@ -28,4 +28,8 @@ Paths below are locations, not credential contents. None of the credentials belo
 - Local convenience links, all ignored by Git: `swarm/.private/{talosconfig,kubeconfig,sops-age-keys}` and `infra/.private/{talosconfig,kubeconfig,sops-age-keys}`. They point to the runtime mounts and do not contain copied credential material.
 - The display rename does not change the live cluster's technical `clusterName: kubernetes`, API VIP, or existing `talos-ii.beaco.works` certificate SAN. Changing those values would be a separate, approved cluster configuration change.
 
+## Managed NixOS cloud fleet
+
+The requested NixOS cloud-server inventory is in [`nixos/cloud-servers.yaml`](./nixos/cloud-servers.yaml), with notes in [`nixos/README.md`](./nixos/README.md). It is derived from the `nix-fleet` repository at commit `e381b7f` and is a server-fleet inventory, not a third cluster.
+
 See each cluster directory for the observed topology, workloads, health notes, and recovery gaps.
