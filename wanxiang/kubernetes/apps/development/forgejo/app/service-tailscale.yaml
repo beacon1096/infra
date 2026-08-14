@@ -1,0 +1,32 @@
+---
+# Internal/cross-cluster reach via Tailscale. The talos-i forgejo-runner
+# (when ported in) needs to push event hooks back here without going
+# through Cloudflare; it dials this service over its own tailnet.
+#
+# Also serves as the LOCAL_ROOT_URL target for in-cluster callers
+# (see helmrelease.yaml: gitea.config.server.LOCAL_ROOT_URL).
+apiVersion: v1
+kind: Service
+metadata:
+  name: forgejo-tailscale
+  annotations:
+    tailscale.com/expose: "true"
+    tailscale.com/hostname: "forgejo"
+    # `proxied` is the shared ProxyClass for service proxies; egress
+    # is provided transparently by the ms-r1 boundary gateway.
+    # See kubernetes/apps/network/tailscale/app/proxyclass.yaml.
+    tailscale.com/proxy-class: "proxied"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: forgejo
+    app.kubernetes.io/instance: forgejo
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+    - name: ssh
+      port: 22
+      targetPort: ssh
+      protocol: TCP

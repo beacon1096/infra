@@ -1,0 +1,36 @@
+---
+# Tailnet exposure for in-fleet hosts that already speak tailscale and
+# would rather skip the public Cloudflare hop. The hostname `attic`
+# resolves on tailnet to this Service via the Tailscale operator's
+# per-Service proxy pod.
+apiVersion: v1
+kind: Service
+metadata:
+  name: attic-tailscale
+  annotations:
+    tailscale.com/expose: "true"
+    tailscale.com/hostname: "attic"
+    # `proxied` is the shared ProxyClass for service proxies; egress
+    # is provided transparently by the ms-r1 boundary gateway.
+    tailscale.com/proxy-class: "proxied"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: attic
+  # Option C — Service-level port translation. Tailnet clients can hit
+  # http://attic.tail5d550.ts.net/ (default port 80) so the Host header
+  # they send matches attic's allowed-hosts entry verbatim, without
+  # having to whitelist a `:8080` suffixed variant. Pod itself still
+  # listens on 8080 internally.
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+    # Transitional alias kept while Nix-Fleet CI env var still points
+    # at :8080. Safe to delete once that flips and CI has run a few
+    # times against the :80 path.
+    - name: http-legacy
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

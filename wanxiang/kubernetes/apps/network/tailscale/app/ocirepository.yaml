@@ -1,0 +1,25 @@
+---
+# Mirror of pkgs.tailscale.com's tailscale-operator chart, pushed
+# manually to the in-cluster Zot registry.
+#
+# pkgs.tailscale.com is on CloudFront and direct-from-cluster pulls
+# have historically been unreliable. The local chart mirror also
+# avoids making Flux bootstrap depend on external registry access.
+#
+# When updating the tailscale operator:
+#   1. helm pull tailscale/tailscale-operator --version <new>
+#   2. helm push <chart>.tgz oci://zot.registry.svc.cluster.local:5000/charts --plain-http
+#   3. bump tag below + image tags in helmrelease.yaml
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: tailscale-operator
+spec:
+  interval: 1h
+  insecure: true
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  ref:
+    tag: 1.96.5
+  url: oci://zot.registry.svc.cluster.local:5000/charts/tailscale-operator

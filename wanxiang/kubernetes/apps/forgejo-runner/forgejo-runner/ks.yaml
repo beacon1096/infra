@@ -1,0 +1,31 @@
+---
+# forgejo-runner — Forgejo Actions DinD runner on talos-ii.
+# Replaces the talos-i runner (swarm-01) per spec 003.
+# Single-replica Deployment + privileged dockerd sidecar; no Service,
+# no public exposure, no tailnet exposure (FR-026 / FR-027).
+# Disabled after a privileged DinD build exhausted a control-plane node.
+# If re-enabled, egress is provided by the ms-r1 boundary gateway.
+# Images are bootstrapped from in-cluster zot.
+#
+# No dependsOn: Forgejo, Attic, and Zot are runtime
+# requirements but per repo convention we let kube's restart-on-failure
+# handle the wait rather than enumerating non-HelmRelease deps.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: forgejo-runner
+spec:
+  interval: 1h
+  path: ./wanxiang/kubernetes/apps/forgejo-runner/forgejo-runner/app
+  postBuild:
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: forgejo-runner
+  wait: false
+  timeout: 10m

@@ -1,0 +1,14 @@
+---
+# bjw-s app-template used by Forgejo, Vaultwarden, Coder, and n8n.
+# Mirrored to in-cluster Zot so Flux bootstrap does not depend on the
+# upstream registry.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: attic
+spec:
+  interval: 1h
+  url: oci://zot.registry.svc.cluster.local:5000/charts/app-template
+  ref:
+    tag: 4.6.2
+  insecure: true

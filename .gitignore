@@ -9,6 +9,13 @@ sops-age-keys
 *.talosconfig
 *.agekey
 *.key
+
+# The same generated credential names may occur under per-environment trees.
+**/.private/
+**/kubeconfig
+**/talosconfig
+**/age.key
+**/clusterconfig/
 *.pem
 *.p12
 *.pfx

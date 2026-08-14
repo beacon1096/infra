@@ -19,6 +19,10 @@ The UDM-Pro exposes the 万象 VLAN on `br87` / `172.16.87.0/24`. The Talos clus
 
 The display rename does not alter the live technical `clusterName: kubernetes` or the existing `talos-ii.beaco.works` certificate SAN. Those are configuration changes, not naming-only documentation.
 
+## Migration staging
+
+The functional source tree from `swarm` is staged below this directory for the second onboarding phase. The migration status, target mirror, path changes, validation gates, and rollback sequence are recorded in [`MIGRATION.md`](./MIGRATION.md). This branch is not the live Flux source; the existing `swarm` source remains authoritative until an explicit bridge cutover is applied.
+
 ## Current cluster state
 
 All three control-plane members were reachable and `Ready`: `ms01-a` (`172.16.87.201`), `ms01-b` (`172.16.87.202`), and `ms01-c` (`172.16.87.203`). `ms01-c` was also `SchedulingDisabled`, so it is ready but cordoned. The cluster API and Kubernetes versions were `v1.35.4`; Talos was `v1.12.7` on all three nodes.
