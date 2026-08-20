@@ -25,3 +25,15 @@ sops-age-keys
 *.decrypted.*
 *.tfstate
 *.tfstate.*
+
+# Nix and local tooling outputs.
+result
+result-*
+.direnv/
+.legacy/
+.antigravitycli/
+.DS_Store
+.env
+.env.*
+!.env.example
+secrets/local/

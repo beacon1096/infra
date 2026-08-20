@@ -1,0 +1,98 @@
+name: Update nchnroutes data
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 3 * * 0'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-nchnroutes
+
+jobs:
+  update-nchnroutes:
+    runs-on: nix-builder
+    timeout-minutes: 60
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Update locked inputs
+        run: nix flake update nchnroutes-src china-ip-list
+
+      - name: Update APNIC snapshot hash
+        run: |
+          set -euo pipefail
+          snapshot=$(mktemp)
+          trap 'rm -f "$snapshot"' EXIT
+          curl -4 -fsSL --retry 5 --retry-all-errors \
+            https://ftp.apnic.net/stats/apnic/delegated-apnic-latest \
+            -o "$snapshot"
+          hash=$(nix hash file --sri "$snapshot")
+          sed -i -E \
+            's|apnicSnapshotHash = "sha256-[^"]+";|apnicSnapshotHash = "'"$hash"'";|' \
+            packages/nchnroutes/default.nix
+
+      - name: Check endpoint DNS snapshots
+        run: |
+          set -euo pipefail
+          nix eval --json .#packages.x86_64-linux.nchnroutes.endpointMap > endpoints.json
+          nix eval --json .#packages.x86_64-linux.nchnroutes.serviceBindings > services.json
+          python3 - <<'PY'
+          import json
+          import socket
+
+          with open("endpoints.json", encoding="utf-8") as source:
+              endpoints = json.load(source)
+          with open("services.json", encoding="utf-8") as source:
+              services = json.load(source)
+
+          failures = []
+
+          def addresses(fqdn):
+              return sorted({
+                  result[4][0]
+                  for result in socket.getaddrinfo(fqdn, 443, socket.AF_INET)
+              })
+
+          for host, expected in endpoints.items():
+              fqdn = f"{host}.beacoworks.xyz"
+              actual = addresses(fqdn)
+              if actual != [expected]:
+                  failures.append(f"{fqdn}: expected {expected}, got {actual}")
+
+          for service, host in services.items():
+              fqdn = f"{service}.beacoworks.xyz"
+              actual = addresses(fqdn)
+              expected = endpoints[host]
+              if actual != [expected]:
+                  failures.append(f"{fqdn}: expected {host} ({expected}), got {actual}")
+
+          if failures:
+              raise SystemExit("endpoint DNS snapshot mismatch:\n" + "\n".join(failures))
+          PY
+
+      - name: Build and validate routes
+        run: |
+          set -euo pipefail
+          nix build --print-out-paths --out-link result --keep-going \
+            .#packages.x86_64-linux.nchnroutes
+          wc -l result/etc/bird/nchnroutes4.conf result/etc/bird/nchnroutes6.conf
+
+      - name: Commit updated snapshot
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- flake.lock packages/nchnroutes/default.nix; then
+            echo "nchnroutes inputs are already current"
+            exit 0
+          fi
+          git config user.name "nchnroutes updater"
+          git config user.email "nchnroutes-updater@beaco.works"
+          git add flake.lock packages/nchnroutes/default.nix
+          git -c commit.gpgsign=false commit -m "chore(nchnroutes): update routing data"
+          git push origin HEAD:main

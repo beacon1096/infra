@@ -1,35 +1,42 @@
-# Infrastructure inventory
+# Beacoworks infrastructure
 
-This repository currently records exactly two independent clusters:
+This is the public, canonical infrastructure monorepo on Forgejo. Forgejo
+mirrors it to `https://github.com/beacon1096/infra` for public distribution.
 
-| Display name | Stable directory | Former technical/display name | Platform |
-|---|---|---|---|
-| 太初 | [`taichu/`](./taichu/) | Ember; legacy `swarm-01` | Harvester on NEC nodes behind RB5009 |
-| 万象 | [`wanxiang/`](./wanxiang/) | `talos-ii` | Talos on MS-01 nodes behind the UDM-Pro/“UDR-Pro” gateway |
+## Repository layout
 
-The directory names use ASCII pinyin for shell and automation compatibility; the Chinese display names are the current cluster names. No third cluster is recorded here.
+- `flake.nix`, `hosts/`, `modules/`, `packages/`, `secrets/`: public NixOS and
+  nix-darwin fleet configuration.
+- `taichu/`: Harvester/RKE2 environment inventory.
+- `wanxiang/`: Talos, Kubernetes, and Flux configuration.
+- `kubernetes/flux/`: repository-level Flux entrypoint.
 
-## Credential and configuration locations
+The Nix flake stays at the repository root so existing rebuild and Comin flows
+can change only the repository URL. Existing Attic cache and OCI package names
+retain the `nix-fleet` name during migration to avoid breaking consumers.
 
-Paths below are locations, not credential contents. None of the credentials belongs in Git.
+## Public and private boundary
 
-### 太初 (`taichu/`)
+SOPS-encrypted secrets may be committed here. Plaintext credentials, decrypted
+outputs, kubeconfigs, Talos configs, age keys, and local runtime state may not.
 
-- Harvester/RKE2 kubeconfig: on `mc5-01` (`172.16.100.201`) at `/etc/rancher/rke2/rke2.yaml`; it is root-owned and was read through `sudo` only. It was not copied to the local workspace.
-- Talos config: not applicable; 太初 is the Harvester/RKE2 environment, not the Talos cluster.
-- RouterOS configuration: no raw export is stored; `taichu/inventory.yaml` contains only the read-only, non-secret summary.
+Use the root `.sops.yaml` for root-level Nix secrets. Run Wanxiang SOPS commands
+from `wanxiang/` or pass `--config wanxiang/.sops.yaml` explicitly so cluster
+secrets keep their own recipient set.
 
-### 万象 (`wanxiang/`)
+Private cloud-host definitions and private edge/proxy topology stay in the
+separate `infrastructure/infra-private` repository. It is not a submodule of
+this repository. A host must be declared in only the repository that owns its
+production configuration.
 
-- Declarative Talos source: `swarm/talos/talconfig.yaml` in the `swarm` repository.
-- Talos client credential (`TALOSCONFIG`): runtime mount `/run/coder-infra/talosconfig`.
-- Kubernetes client credential (`KUBECONFIG`): runtime mount `/run/coder-infra/kubeconfig`.
-- SOPS AGE key file (`SOPS_AGE_KEY_FILE`): runtime mount `/run/coder-infra/sops-age-keys`.
-- Local convenience links, all ignored by Git: `swarm/.private/{talosconfig,kubeconfig,sops-age-keys}` and `infra/.private/{talosconfig,kubeconfig,sops-age-keys}`. They point to the runtime mounts and do not contain copied credential material.
-- The display rename does not change the live cluster's technical `clusterName: kubernetes`, API VIP, or existing `talos-ii.beaco.works` certificate SAN. Changing those values would be a separate, approved cluster configuration change.
+## Release boundary
 
-## Managed NixOS cloud fleet
+- `main` is the integration branch.
+- Release tags run the full Forgejo Actions build gate.
+- A successful tagged build advances `prod`.
+- Public fleet hosts pull `infra.git` on `prod`; private hosts pull
+  `infra-private.git` on its independently promoted `prod` branch.
 
-The requested NixOS cloud-server inventory is in [`nixos/cloud-servers.yaml`](./nixos/cloud-servers.yaml), with notes in [`nixos/README.md`](./nixos/README.md). It is derived from the `nix-fleet` repository at commit `e381b7f` and is a server-fleet inventory, not a third cluster.
-
-See each cluster directory for the observed topology, workloads, health notes, and recovery gaps.
+No host should be switched to the new repository before its target exists on
+`prod` and a single-host canary has verified rebuild, access, runner state, and
+rollback.

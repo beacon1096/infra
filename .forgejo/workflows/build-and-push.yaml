@@ -1,0 +1,928 @@
+name: Build NixOS Systems and Push Closures
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag, or commit SHA to build'
+        required: false
+        default: ''
+        type: string
+  push:
+    branches:
+      - main
+      - migration/**
+    tags:
+      - '*'
+
+concurrency:
+  group: nix-fleet-build-and-push
+  cancel-in-progress: true
+
+env:
+  ATTIC_ENDPOINT: https://nix.beaco.works
+  ATTIC_CACHE: ${{ secrets.ATTIC_CACHE }}
+  ATTIC_TOKEN: ${{ secrets.ATTIC_TOKEN }}
+  REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT || 'https://forgejo.beaco.works' }}
+  REGISTRY_USER: ${{ secrets.REPO_TOKEN_OWNER }}
+  REGISTRY_TOKEN: ${{ secrets.REPO_TOKEN }}
+  # Talos-ii currently has no node IPv6 egress. Some fixed-output fetchers
+  # resolve AAAA records and curl can fail before IPv4 fallback in CI.
+  NIX_CURL_FLAGS: --ipv4
+
+jobs:
+  # ── Stage 1: build shared closure and warm Attic cache ────
+  warm-cache:
+    runs-on: nix-builder
+    timeout-minutes: 720
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Record checkout revision
+        run: |
+          set -euo pipefail
+          echo "### checkout" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Requested ref: ${{ inputs.ref || github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Resolved commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure Attic
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+
+      - name: Build common NixOS closure
+        id: build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          nix build --print-out-paths --out-link result --keep-going \
+            .#common-nixos-closure 2> >(tee nix-build.log >&2) | tee store-path.txt
+
+      - name: Collect failed Nix logs
+        if: always()
+        run: |
+          set +e
+          : > nix-failed-drvs.log
+          if [ -f nix-build.log ]; then
+            grep -E "^error: (Cannot build|builder for) '/nix/store/[^']+\.drv'" nix-build.log \
+              | grep -o "/nix/store/[^']*\.drv" | sort -u > failed-drvs.txt || true
+            while IFS= read -r drv; do
+              [ -n "$drv" ] || continue
+              {
+                echo "===== $drv ====="
+                nix log "$drv"
+                echo
+              } >> nix-failed-drvs.log 2>&1
+            done < failed-drvs.txt
+          fi
+
+      - name: Upload Nix logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: nix-logs-warm-cache
+          path: |
+            nix-build.log
+            nix-failed-drvs.log
+            failed-drvs.txt
+
+      - name: Seed Attic (best-effort — pushes partial closure on failure)
+        if: always()
+        run: |
+          set +e
+          : > attic-seed-paths.txt
+          if [ -e result ]; then
+            nix path-info -r ./result >> attic-seed-paths.txt 2>/dev/null || true
+          fi
+          if [ -f nix-build.log ]; then
+            grep -Eo '/nix/store/[0-9a-z]{32}[-+._?=A-Za-z0-9]*' nix-build.log \
+              | grep -v '\.drv$' >> attic-seed-paths.txt || true
+          fi
+          sort -u attic-seed-paths.txt -o attic-seed-paths.txt
+          wc -l attic-seed-paths.txt
+          : > attic-seed-valid-paths.txt
+          : > attic-seed-invalid-paths.txt
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            if nix path-info "$path" >/dev/null 2>&1; then
+              echo "$path" >> attic-seed-valid-paths.txt
+            else
+              echo "$path" >> attic-seed-invalid-paths.txt
+            fi
+          done < attic-seed-paths.txt
+          wc -l attic-seed-valid-paths.txt attic-seed-invalid-paths.txt
+          xargs -r attic push "$ATTIC_CACHE" < attic-seed-valid-paths.txt || true
+
+      - name: Upload Attic seed diagnostics
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: attic-seed-warm-cache
+          path: |
+            attic-seed-paths.txt
+            attic-seed-valid-paths.txt
+            attic-seed-invalid-paths.txt
+
+      - name: Surface build failure (after attic seed)
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error::common-nixos-closure build failed (partial closure pushed to attic)"
+          exit 1
+
+  warm-cache-arm:
+    runs-on: nix-builder-aarch64-darwin
+    timeout-minutes: 720
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Configure Attic
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+
+      - name: Build common aarch64-darwin closure
+        run: |
+          set -o pipefail
+          nix build --print-out-paths --out-link result-darwin --keep-going \
+            .#packages.aarch64-darwin.common-darwin-closure \
+            2> >(tee nix-build-darwin.log >&2) | tee store-path-darwin.txt
+
+      - name: Push common aarch64-darwin closure to Attic
+        run: attic push "$ATTIC_CACHE" ./result-darwin
+
+      - name: Build common aarch64-linux closure
+        run: |
+          set -o pipefail
+          nix build --print-out-paths --out-link result-linux --keep-going \
+            .#packages.aarch64-linux.common-nixos-closure \
+            2> >(tee nix-build-linux.log >&2) | tee store-path-linux.txt
+
+      - name: Push common aarch64-linux closure to Attic
+        run: attic push "$ATTIC_CACHE" ./result-linux
+
+  # ── Stage 2: system builds (parallel, cache-warm) ─────────
+  build-systems:
+    needs: warm-cache
+    runs-on: nix-builder
+    timeout-minutes: 720
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: m920x
+            flake-attr: nixosConfigurations.m920x.config.system.build.toplevel
+          - target: msi-claw
+            flake-attr: nixosConfigurations.msi-claw.config.system.build.toplevel
+          - target: thinkbook-plus-hybrid
+            flake-attr: nixosConfigurations.thinkbook-plus-hybrid.config.system.build.toplevel
+          - target: surface-pro-8
+            flake-attr: nixosConfigurations.surface-pro-8.config.system.build.toplevel
+          - target: surface-book-3
+            flake-attr: nixosConfigurations.surface-book-3.config.system.build.toplevel
+          - target: microserver-gen10plus
+            flake-attr: nixosConfigurations.microserver-gen10plus.config.system.build.toplevel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Record checkout revision
+        run: |
+          set -euo pipefail
+          echo "### checkout" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Requested ref: ${{ inputs.ref || github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Resolved commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure Attic
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+
+      - name: Build ${{ matrix.target }}
+        id: build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          nix build --print-out-paths --out-link result --keep-going \
+            .#${{ matrix.flake-attr }} 2> >(tee nix-build.log >&2) | tee store-path.txt
+
+      - name: Collect failed Nix logs
+        if: always()
+        run: |
+          set +e
+          : > nix-failed-drvs.log
+          if [ -f nix-build.log ]; then
+            grep -E "^error: (Cannot build|builder for) '/nix/store/[^']+\.drv'" nix-build.log \
+              | grep -o "/nix/store/[^']*\.drv" | sort -u > failed-drvs.txt || true
+            while IFS= read -r drv; do
+              [ -n "$drv" ] || continue
+              {
+                echo "===== $drv ====="
+                nix log "$drv"
+                echo
+              } >> nix-failed-drvs.log 2>&1
+            done < failed-drvs.txt
+          fi
+
+      - name: Upload Nix logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: nix-logs-${{ matrix.target }}
+          path: |
+            nix-build.log
+            nix-failed-drvs.log
+            failed-drvs.txt
+
+      - name: Seed Attic (best-effort — partial closure on failure)
+        if: always()
+        run: |
+          set +e
+          : > attic-seed-paths.txt
+          if [ -e result ]; then
+            nix path-info -r ./result >> attic-seed-paths.txt 2>/dev/null || true
+          fi
+          if [ -f nix-build.log ]; then
+            grep -Eo '/nix/store/[0-9a-z]{32}[-+._?=A-Za-z0-9]*' nix-build.log \
+              | grep -v '\.drv$' >> attic-seed-paths.txt || true
+          fi
+          sort -u attic-seed-paths.txt -o attic-seed-paths.txt
+          wc -l attic-seed-paths.txt
+          : > attic-seed-valid-paths.txt
+          : > attic-seed-invalid-paths.txt
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            if nix path-info "$path" >/dev/null 2>&1; then
+              echo "$path" >> attic-seed-valid-paths.txt
+            else
+              echo "$path" >> attic-seed-invalid-paths.txt
+            fi
+          done < attic-seed-paths.txt
+          wc -l attic-seed-valid-paths.txt attic-seed-invalid-paths.txt
+          xargs -r attic push "$ATTIC_CACHE" < attic-seed-valid-paths.txt || true
+
+      - name: Upload Attic seed diagnostics
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: attic-seed-${{ matrix.target }}
+          path: |
+            attic-seed-paths.txt
+            attic-seed-valid-paths.txt
+            attic-seed-invalid-paths.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### ${{ matrix.target }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -s store-path.txt ]; then
+            echo "Store path: \`$(cat store-path.txt)\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Build failed — partial closure pushed to attic." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Surface build failure (after attic seed)
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error::${{ matrix.target }} build failed (partial closure pushed to attic)"
+          exit 1
+
+  build-arm-systems:
+    needs: warm-cache-arm
+    runs-on: nix-builder-aarch64-darwin
+    timeout-minutes: 720
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: ms-r1
+            flake-attr: nixosConfigurations.ms-r1.config.system.build.toplevel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Record checkout revision
+        run: |
+          set -euo pipefail
+          echo "### checkout" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Requested ref: ${{ inputs.ref || github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Resolved commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure Attic
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+
+      - name: Build ${{ matrix.target }}
+        id: build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          nix build --print-out-paths --out-link result --keep-going \
+            .#${{ matrix.flake-attr }} 2> >(tee nix-build.log >&2) | tee store-path.txt
+
+      - name: Collect failed Nix logs
+        if: always()
+        run: |
+          set +e
+          : > nix-failed-drvs.log
+          if [ -f nix-build.log ]; then
+            grep -E "^error: (Cannot build|builder for) '/nix/store/[^']+\.drv'" nix-build.log \
+              | grep -o "/nix/store/[^']*\.drv" | sort -u > failed-drvs.txt || true
+            while IFS= read -r drv; do
+              [ -n "$drv" ] || continue
+              {
+                echo "===== $drv ====="
+                nix log "$drv"
+                echo
+              } >> nix-failed-drvs.log 2>&1
+            done < failed-drvs.txt
+          fi
+
+      - name: Upload Nix logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: nix-logs-${{ matrix.target }}
+          path: |
+            nix-build.log
+            nix-failed-drvs.log
+            failed-drvs.txt
+
+      - name: Seed Attic (best-effort — partial closure on failure)
+        if: always()
+        run: |
+          set +e
+          : > attic-seed-paths.txt
+          if [ -e result ]; then
+            nix path-info -r ./result >> attic-seed-paths.txt 2>/dev/null || true
+          fi
+          if [ -f nix-build.log ]; then
+            grep -Eo '/nix/store/[0-9a-z]{32}[-+._?=A-Za-z0-9]*' nix-build.log \
+              | grep -v '\.drv$' >> attic-seed-paths.txt || true
+          fi
+          sort -u attic-seed-paths.txt -o attic-seed-paths.txt
+          : > attic-seed-valid-paths.txt
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            nix path-info "$path" >/dev/null 2>&1 && echo "$path" >> attic-seed-valid-paths.txt
+          done < attic-seed-paths.txt
+          xargs -r attic push "$ATTIC_CACHE" < attic-seed-valid-paths.txt || true
+
+      - name: Surface build failure (after attic seed)
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error::${{ matrix.target }} build failed (partial closure pushed to attic)"
+          exit 1
+
+  build-darwin-systems:
+    needs: warm-cache-arm
+    runs-on: nix-builder-aarch64-darwin
+    timeout-minutes: 720
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: beacon-mac-mini-m4
+            flake-attr: darwinConfigurations.beacon-mac-mini-m4.system
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Configure Attic
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+
+      - name: Build ${{ matrix.target }}
+        run: |
+          set -o pipefail
+          nix build --print-out-paths --out-link result --keep-going \
+            .#${{ matrix.flake-attr }} 2> >(tee nix-build.log >&2) | tee store-path.txt
+
+      - name: Push system closure to Attic
+        run: attic push "$ATTIC_CACHE" ./result
+
+  build-installer-iso:
+    needs: warm-cache
+    runs-on: nix-builder
+    timeout-minutes: 720
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Record checkout revision
+        run: |
+          set -euo pipefail
+          echo "### checkout" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Requested ref: ${{ inputs.ref || github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Resolved commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure Attic
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+
+      - name: Build installer ISO
+        id: build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          nix build --print-out-paths --out-link result --keep-going \
+            .#packages.x86_64-linux.installer-iso 2> >(tee nix-build.log >&2) | tee store-path.txt
+
+      - name: Collect failed Nix logs
+        if: always()
+        run: |
+          set +e
+          : > nix-failed-drvs.log
+          if [ -f nix-build.log ]; then
+            grep -E "^error: (Cannot build|builder for) '/nix/store/[^']+\.drv'" nix-build.log \
+              | grep -o "/nix/store/[^']*\.drv" | sort -u > failed-drvs.txt || true
+            while IFS= read -r drv; do
+              [ -n "$drv" ] || continue
+              {
+                echo "===== $drv ====="
+                nix log "$drv"
+                echo
+              } >> nix-failed-drvs.log 2>&1
+            done < failed-drvs.txt
+          fi
+
+      - name: Upload Nix logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: nix-logs-installer-iso
+          path: |
+            nix-build.log
+            nix-failed-drvs.log
+            failed-drvs.txt
+
+      - name: Seed Attic (best-effort — partial closure on failure)
+        if: always()
+        run: |
+          set +e
+          : > attic-seed-paths.txt
+          if [ -e result ]; then
+            nix path-info -r ./result >> attic-seed-paths.txt 2>/dev/null || true
+          fi
+          if [ -f nix-build.log ]; then
+            grep -Eo '/nix/store/[0-9a-z]{32}[-+._?=A-Za-z0-9]*' nix-build.log \
+              | grep -v '\.drv$' >> attic-seed-paths.txt || true
+          fi
+          sort -u attic-seed-paths.txt -o attic-seed-paths.txt
+          wc -l attic-seed-paths.txt
+          : > attic-seed-valid-paths.txt
+          : > attic-seed-invalid-paths.txt
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            if nix path-info "$path" >/dev/null 2>&1; then
+              echo "$path" >> attic-seed-valid-paths.txt
+            else
+              echo "$path" >> attic-seed-invalid-paths.txt
+            fi
+          done < attic-seed-paths.txt
+          wc -l attic-seed-valid-paths.txt attic-seed-invalid-paths.txt
+          xargs -r attic push "$ATTIC_CACHE" < attic-seed-valid-paths.txt || true
+
+      - name: Installer build failure (after attic seed)
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error::installer-iso build failed (partial closure pushed to attic)"
+          exit 1
+
+      - name: Upload Attic seed diagnostics
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: attic-seed-installer-iso
+          path: |
+            attic-seed-paths.txt
+            attic-seed-valid-paths.txt
+            attic-seed-invalid-paths.txt
+
+      - name: Upload ISO to Forgejo Release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          export PATH="$(nix build nixpkgs#jq --print-out-paths --no-link --keep-going)/bin:$PATH"
+
+          tag="${GITHUB_REF_NAME}"
+          server_url="${GITHUB_SERVER_URL}"
+          repo="${GITHUB_REPOSITORY}"
+          api_url="${server_url}/api/v1/repos/${repo}"
+
+          # Create release if it doesn't exist
+          release_id=$(curl -sf \
+            -H "Authorization: token ${GITHUB_TOKEN}" \
+            "${api_url}/releases/tags/${tag}" | jq -r '.id // empty') || true
+
+          if [ -z "$release_id" ]; then
+            release_id=$(curl -sf \
+              -X POST \
+              -H "Authorization: token ${GITHUB_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "{\"tag_name\": \"${tag}\", \"name\": \"${tag}\"}" \
+              "${api_url}/releases" | jq -r '.id')
+          fi
+
+          # Upload ISO files as release assets
+          for iso in result/iso/*.iso; do
+            filename=$(basename "$iso")
+            echo "Uploading ${filename}..."
+            curl -sf \
+              -X POST \
+              -H "Authorization: token ${GITHUB_TOKEN}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@${iso}" \
+              "${api_url}/releases/${release_id}/assets?name=${filename}"
+            echo "Uploaded ${filename}"
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "### installer-iso" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Store path: \`$(cat store-path.txt)\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # ── OCI image publish (Forgejo registry) ─────────────────
+  #
+  # Self-built container images MUST be published to the Forgejo registry
+  # (forgejo.beaco.works), NOT the plain-HTTP zot LB (172.16.87.51:5000):
+  # Talos nodes reach forgejo.beaco.works over envoy-internal with a real
+  # cert (machineconfig extraHostEntries 172.16.87.21), whereas the zot LB
+  # is only a containerd *mirror* that Spegel shadows on-disk, so a direct
+  # `172.16.87.51:5000/...` pull falls back to HTTPS (zot is HTTP-only) and
+  # fails "not found". The job below is the template: build the .#*-oci
+  # attr, then `skopeo copy docker-archive:result docker://$REGISTRY_HOST/
+  # infrastructure/nix-fleet/<name>:latest` with REGISTRY_USER/REGISTRY_TOKEN
+  # (= REPO_TOKEN_OWNER / REPO_TOKEN). This runs on the in-cluster
+  # nix-builder runner, which reaches Forgejo over the LAN, so big layers
+  # push fine.
+  #
+  # The `coding-agent-oci` image (Coder coding-agent template) is published
+  # the same way — add a sibling job with `.#coding-agent-oci` and
+  # IMAGE_PATH=infrastructure/nix-fleet/coding-agent. It is currently
+  # published out-of-band; when doing that MANUALLY from a workstation, do
+  # NOT push straight to forgejo.beaco.works — the Cloudflare edge 524s /
+  # times out the registry token on large blobs. Instead:
+  #   1. nix build .#coding-agent-oci
+  #   2. skopeo copy --dest-tls-verify=false --dest-creds admin:<zot-pw> \
+  #        docker-archive:result docker://172.16.87.51:5000/infrastructure/\
+  #        nix-fleet/coding-agent:latest        (zot admin pw in
+  #        kubernetes/apps/registry/zot/app/secret.sops.yaml, swarm repo)
+  #   3. run an in-cluster skopeo pod (hostAliases forgejo.beaco.works ->
+  #        172.16.87.21) copying zot -> forgejo, bypassing Cloudflare.
+  # Forgejo auth note: the `forgejo-admin` user is DEACTIVATED — push as
+  # `beacon1096` with a write:package token.
+  build-and-push-k8s-sing-box-oci:
+    needs: warm-cache
+    runs-on: nix-builder
+    timeout-minutes: 720
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Record checkout revision
+        run: |
+          set -euo pipefail
+          echo "### checkout" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Requested ref: ${{ inputs.ref || github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Resolved commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure Attic
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+
+      - name: Build OCI image
+        id: build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          nix build --print-out-paths --out-link result --keep-going \
+            .#packages.x86_64-linux.k8s-sing-box-oci 2> >(tee nix-build.log >&2) | tee store-path.txt
+
+      - name: Collect failed Nix logs
+        if: always()
+        run: |
+          set +e
+          : > nix-failed-drvs.log
+          if [ -f nix-build.log ]; then
+            grep -E "^error: (Cannot build|builder for) '/nix/store/[^']+\.drv'" nix-build.log \
+              | grep -o "/nix/store/[^']*\.drv" | sort -u > failed-drvs.txt || true
+            while IFS= read -r drv; do
+              [ -n "$drv" ] || continue
+              {
+                echo "===== $drv ====="
+                nix log "$drv"
+                echo
+              } >> nix-failed-drvs.log 2>&1
+            done < failed-drvs.txt
+          fi
+
+      - name: Upload Nix logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: nix-logs-k8s-sing-box-oci
+          path: |
+            nix-build.log
+            nix-failed-drvs.log
+            failed-drvs.txt
+
+      - name: Seed Attic (best-effort — partial closure on failure)
+        if: always()
+        run: |
+          set +e
+          : > attic-seed-paths.txt
+          if [ -e result ]; then
+            nix path-info -r ./result >> attic-seed-paths.txt 2>/dev/null || true
+          fi
+          if [ -f nix-build.log ]; then
+            grep -Eo '/nix/store/[0-9a-z]{32}[-+._?=A-Za-z0-9]*' nix-build.log \
+              | grep -v '\.drv$' >> attic-seed-paths.txt || true
+          fi
+          sort -u attic-seed-paths.txt -o attic-seed-paths.txt
+          wc -l attic-seed-paths.txt
+          : > attic-seed-valid-paths.txt
+          : > attic-seed-invalid-paths.txt
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            if nix path-info "$path" >/dev/null 2>&1; then
+              echo "$path" >> attic-seed-valid-paths.txt
+            else
+              echo "$path" >> attic-seed-invalid-paths.txt
+            fi
+          done < attic-seed-paths.txt
+          wc -l attic-seed-valid-paths.txt attic-seed-invalid-paths.txt
+          xargs -r attic push "$ATTIC_CACHE" < attic-seed-valid-paths.txt || true
+
+      - name: Upload Attic seed diagnostics
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: attic-seed-k8s-sing-box-oci
+          path: |
+            attic-seed-paths.txt
+            attic-seed-valid-paths.txt
+            attic-seed-invalid-paths.txt
+
+      - name: Surface build failure (after attic seed)
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error::k8s-sing-box-oci build failed (partial closure pushed to attic)"
+          exit 1
+
+      - name: Setup containers policy
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.config/containers"
+          echo '{"default": [{"type": "insecureAcceptAnything"}]}' > "$HOME/.config/containers/policy.json"
+
+      - name: Push to Forgejo Registry
+        env:
+          IMAGE_PATH: infrastructure/nix-fleet/sing-box
+        run: |
+          set -euo pipefail
+          test -n "$REGISTRY_ENDPOINT" || {
+            echo "REGISTRY_ENDPOINT action variable is required" >&2
+            exit 1
+          }
+          test -n "$REGISTRY_USER"
+          test -n "$REGISTRY_TOKEN"
+
+          registry_host="${REGISTRY_ENDPOINT#http://}"
+          registry_host="${registry_host#https://}"
+          skopeo_args=(--retry-times 5 --retry-delay 10s)
+
+          if [[ "$registry_host" == *"svc.cluster.local"* ]]; then
+            skopeo_args+=(--dest-tls-verify=false)
+          fi
+
+          nix shell nixpkgs#skopeo -c skopeo copy \
+            "${skopeo_args[@]}" \
+            --dest-creds "$REGISTRY_USER:$REGISTRY_TOKEN" \
+            docker-archive:result \
+            docker://$registry_host/$IMAGE_PATH:latest
+
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            tag=${GITHUB_REF#refs/tags/}
+            nix shell nixpkgs#skopeo -c skopeo copy \
+              "${skopeo_args[@]}" \
+              --dest-creds "$REGISTRY_USER:$REGISTRY_TOKEN" \
+              docker-archive:result \
+              docker://$registry_host/$IMAGE_PATH:$tag
+          fi
+
+      - name: Summary
+        run: |
+          echo "### k8s-sing-box-oci" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Store path: \`$(cat store-path.txt)\`" >> "$GITHUB_STEP_SUMMARY"
+
+  build-and-push-coding-agent-oci:
+    needs: warm-cache
+    runs-on: nix-builder
+    timeout-minutes: 720
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Record checkout revision
+        run: |
+          set -euo pipefail
+          echo "### checkout" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Requested ref: ${{ inputs.ref || github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Resolved commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure Attic
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+
+      - name: Build OCI image
+        id: build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          nix build --print-out-paths --out-link result --keep-going \
+            .#coding-agent-oci 2> >(tee nix-build.log >&2) | tee store-path.txt
+
+      - name: Collect failed Nix logs
+        if: always()
+        run: |
+          set +e
+          : > nix-failed-drvs.log
+          if [ -f nix-build.log ]; then
+            grep -E "^error: (Cannot build|builder for) '/nix/store/[^']+\.drv'" nix-build.log \
+              | grep -o "/nix/store/[^']*\.drv" | sort -u > failed-drvs.txt || true
+            while IFS= read -r drv; do
+              [ -n "$drv" ] || continue
+              {
+                echo "===== $drv ====="
+                nix log "$drv"
+                echo
+              } >> nix-failed-drvs.log 2>&1
+            done < failed-drvs.txt
+          fi
+
+      - name: Upload Nix logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: nix-logs-coding-agent-oci
+          path: |
+            nix-build.log
+            nix-failed-drvs.log
+            failed-drvs.txt
+
+      - name: Seed Attic (best-effort — partial closure on failure)
+        if: always()
+        run: |
+          set +e
+          : > attic-seed-paths.txt
+          if [ -e result ]; then
+            nix path-info -r ./result >> attic-seed-paths.txt 2>/dev/null || true
+          fi
+          if [ -f nix-build.log ]; then
+            grep -Eo '/nix/store/[0-9a-z]{32}[-+._?=A-Za-z0-9]*' nix-build.log \
+              | grep -v '\.drv$' >> attic-seed-paths.txt || true
+          fi
+          sort -u attic-seed-paths.txt -o attic-seed-paths.txt
+          wc -l attic-seed-paths.txt
+          : > attic-seed-valid-paths.txt
+          : > attic-seed-invalid-paths.txt
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            if nix path-info "$path" >/dev/null 2>&1; then
+              echo "$path" >> attic-seed-valid-paths.txt
+            else
+              echo "$path" >> attic-seed-invalid-paths.txt
+            fi
+          done < attic-seed-paths.txt
+          wc -l attic-seed-valid-paths.txt attic-seed-invalid-paths.txt
+          xargs -r attic push "$ATTIC_CACHE" < attic-seed-valid-paths.txt || true
+
+      - name: Upload Attic seed diagnostics
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: attic-seed-coding-agent-oci
+          path: |
+            attic-seed-paths.txt
+            attic-seed-valid-paths.txt
+            attic-seed-invalid-paths.txt
+
+      - name: Surface build failure (after attic seed)
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error::coding-agent-oci build failed (partial closure pushed to attic)"
+          exit 1
+
+      - name: Setup containers policy
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.config/containers"
+          echo '{"default": [{"type": "insecureAcceptAnything"}]}' > "$HOME/.config/containers/policy.json"
+
+      - name: Push to Forgejo Registry
+        env:
+          IMAGE_PATH: infrastructure/nix-fleet/coding-agent
+        run: |
+          set -euo pipefail
+          test -n "$REGISTRY_ENDPOINT" || {
+            echo "REGISTRY_ENDPOINT action variable is required" >&2
+            exit 1
+          }
+          test -n "$REGISTRY_USER"
+          test -n "$REGISTRY_TOKEN"
+
+          registry_host="${REGISTRY_ENDPOINT#http://}"
+          registry_host="${registry_host#https://}"
+          skopeo_args=(--retry-times 5 --retry-delay 10s)
+          mkdir -p "$PWD/.skopeo-tmp"
+
+          if [[ "$registry_host" == *"svc.cluster.local"* ]]; then
+            skopeo_args+=(--dest-tls-verify=false)
+          fi
+
+          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
+            "${skopeo_args[@]}" \
+            --dest-creds "$REGISTRY_USER:$REGISTRY_TOKEN" \
+            docker-archive:result \
+            docker://$registry_host/$IMAGE_PATH:latest
+
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            tag=${GITHUB_REF#refs/tags/}
+            nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
+              "${skopeo_args[@]}" \
+              --dest-creds "$REGISTRY_USER:$REGISTRY_TOKEN" \
+              docker-archive:result \
+              docker://$registry_host/$IMAGE_PATH:$tag
+          fi
+
+      - name: Summary
+        run: |
+          echo "### coding-agent-oci" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Store path: \`$(cat store-path.txt)\`" >> "$GITHUB_STEP_SUMMARY"
+
+  update-prod-branch:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+      - build-systems
+      - build-arm-systems
+      - build-darwin-systems
+      - build-installer-iso
+      - build-and-push-k8s-sing-box-oci
+      - build-and-push-coding-agent-oci
+    runs-on: nix-builder
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update prod branch to released tag
+        run: |
+          set -euo pipefail
+          git config user.name "forgejo-actions[bot]"
+          git config user.email "forgejo-actions@localhost"
+          git push origin "$GITHUB_SHA:refs/heads/prod"
+
+      - name: Summary
+        run: |
+          echo "### prod" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Updated \`prod\` to \`${GITHUB_REF_NAME}\` at \`${GITHUB_SHA}\`." >> "$GITHUB_STEP_SUMMARY"
