@@ -102,9 +102,30 @@
       ];
     };
     mkClerk = import ./lib/darwin/mk-clerk.nix { inherit inputs nurOverlay domainVars; };
+    mkNixosHost =
+      {
+        system ? "x86_64-linux",
+        modules,
+      }:
+      nixpkgs.lib.nixosSystem {
+        inherit system;
+        specialArgs = { inherit inputs; } // domainVars;
+        modules = [
+          nurOverlay
+          sops-nix.nixosModules.sops
+          disko.nixosModules.disko
+        ] ++ modules;
+      };
 
   in
   {
+    lib.mkNixosHost = mkNixosHost;
+
+    nixosModules = {
+      serverBase = ./hosts/server/common/configuration.nix;
+      comin = ./modules/nixos/comin.nix;
+    };
+
     # ──────────────────────────────────────────────────────────
     #  macOS (nix-darwin)
     # ──────────────────────────────────────────────────────────
