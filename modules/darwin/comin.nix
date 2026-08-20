@@ -43,6 +43,7 @@ let
       mv ${repositoryDir}.new ${repositoryDir}
     fi
 
+    git -C ${repositoryDir} remote set-url origin ${lib.escapeShellArg cfg.remote.url}
     git -C ${repositoryDir} fetch --prune origin \
       +refs/heads/${lib.escapeShellArg cfg.remote.branch}:refs/remotes/origin/${lib.escapeShellArg cfg.remote.branch}
     revision="$(git -C ${repositoryDir} rev-parse refs/remotes/origin/${lib.escapeShellArg cfg.remote.branch})"
