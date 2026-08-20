@@ -10,6 +10,9 @@
 
   networking.hostName = "thinkbook-plus-hybrid";
 
+  # The Hybrid Tab can leave the i915 eDP link stuck in PSR2 after returning from Android.
+  boot.kernelParams = [ "i915.enable_psr=0" ];
+
   hardware.graphics = {
     enable = true;
     extraPackages = with pkgs; [ intel-media-driver ];
@@ -33,7 +36,7 @@
   ];
 
   services.udev.extraRules = ''
-    ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="04f3", ATTR{idProduct}=="42ea", TAG+="systemd", ENV{SYSTEMD_WANTS}+="hybrid-display-resume.service"
+    ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="17ef", ATTR{idProduct}=="7ebf", TAG+="systemd", ENV{SYSTEMD_WANTS}+="hybrid-display-resume.service"
   '';
 
   systemd.services.hybrid-display-resume = {
@@ -41,18 +44,19 @@
     serviceConfig = {
       Type = "oneshot";
       User = "beacon";
+      TimeoutStartSec = "20s";
     };
     path = [ pkgs.hyprland ];
     script = ''
-      sleep 1
+      sleep 3
       test -d /run/user/1000/hypr || exit 0
       socketDir=$(find /run/user/1000/hypr -mindepth 1 -maxdepth 1 -type d -print -quit)
       test -n "$socketDir" || exit 0
       export XDG_RUNTIME_DIR=/run/user/1000
       export HYPRLAND_INSTANCE_SIGNATURE="''${socketDir##*/}"
-      hyprctl dispatch dpms off eDP-1
-      sleep 1
-      hyprctl dispatch dpms on eDP-1
+      timeout 6s hyprctl dispatch dpms off eDP-1
+      sleep 2
+      timeout 6s hyprctl dispatch dpms on eDP-1
     '';
   };
 
