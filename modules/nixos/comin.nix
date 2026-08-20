@@ -55,6 +55,9 @@ in
     services.comin = {
       enable = true;
       machineId = cfg.machineId;
+      # Upstream only exports GIT_ASKPASS when submodules are enabled. Nix
+      # needs the same credentials while fetching private nested flake inputs.
+      submodules = true;
       remotes = [
         {
           name = cfg.remote.name;
