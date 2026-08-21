@@ -52,6 +52,13 @@ in
   };
 
   sops.templates = lib.mkIf secretExists {
+    "paseo-mcp.env" = {
+      owner = ownerHint;
+      mode = "0400";
+      content = ''
+        N8N_MCP_AUTHORIZATION='${config.sops.placeholder."personal/n8n-mcp/authorization"}'
+      '';
+    };
     "opencode-web.env" = {
       owner = ownerHint;
       mode = "0400";

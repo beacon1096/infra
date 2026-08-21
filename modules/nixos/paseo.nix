@@ -1,4 +1,4 @@
-{ inputs, pkgs, ... }:
+{ config, inputs, pkgs, ... }:
 
 {
   imports = [ inputs.paseo.nixosModules.default ];
@@ -12,4 +12,6 @@
   # before activation can finish. Restart Paseo separately after upgrades or
   # configuration changes that need a process restart.
   systemd.services.paseo.restartIfChanged = false;
+  systemd.services.paseo.serviceConfig.EnvironmentFile =
+    config.sops.templates."paseo-mcp.env".path;
 }
