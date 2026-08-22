@@ -32,14 +32,10 @@ keys:
   - &m920x_age age1p8nue0aaq3ms20dhkz3f5cfcln2jjhshwfhhy4njd9w6suc42eysdwt6wt
   - &hpe_microserver_age age1ydr0lk4m3xgqs8s8s2ynnxfjrhhesgr0agwj9mlz0ds6vqzuhgtsul5jv7
   - &ms_r1_age age15wuj5a3j2ec36u9fmlnftm6sgynk580zk5xt6nrun9lvr2ja698shc5mdl
+  - &nixbuilder_01_age age1m4xcp2h5a5uwpr3368z09knqpf6jn5uq6798tnj4g40g9xj564pseuxct3
+  - &nixbuilder_02_age age1fk62h42a933kdl994lmthsyq05fygmqf42fm30d7ed8w57lw03lqf587ah
+  - &nixbuilder_03_age age1lwa37uzjagu4xm0fuvsm4fmyrgxrj484vr6ptuq4dqx743hq3gyqe3faeh
   # - &surface_book_3_age age1TODO_REPLACE_AFTER_NIXOS_INSTALL_SURFACE_BOOK_3
-  # Harvester build nodes — fill in after first boot:
-  #   ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub  (per host)
-  # then add each to the shared-secret creation_rules below and run
-  #   sops updatekeys secrets/shared/{forgejo-runner,attic,comin-forgejo-token,edge-tailscale}.yaml
-  # - &nixbuilder_01_age age1TODO_REPLACE_AFTER_NIXOS_INSTALL_NIXBUILDER_01
-  # - &nixbuilder_02_age age1TODO_REPLACE_AFTER_NIXOS_INSTALL_NIXBUILDER_02
-  # - &nixbuilder_03_age age1TODO_REPLACE_AFTER_NIXOS_INSTALL_NIXBUILDER_03
   # clerks
   - &clerk_technician age16v9vne0t403sxc6c8jm5j4q55qvhsrmnytrghx6lr7aglaf5tesqre80ng
   - &clerk_secretary age1sqr8n02u9f4g4fhp8gcnhvf3emz3t98zhg33efguqn92nr3k9pgs9jfgnv
@@ -91,6 +87,36 @@ creation_rules:
           - *personal_gpg
         age:
           - *courier_age
+          - *multica_nixos_agent_age
+
+  # Builder runtime secrets — shared fleet recipients plus the build nodes.
+  - path_regex: secrets/shared/(attic|comin-forgejo-token|forgejo-runner)\.yaml
+    key_groups:
+      - pgp:
+          - *personal_gpg
+        age:
+          - *mac_mini_m4_age
+          - *mac_studio_m2_ultra_age
+          - *flint_age
+          - *cygnus_age
+          - *ark_age
+          - *shuttle_age
+          - *glacier_age
+          - *octo_age
+          - *courier_age
+          - *msi_claw_age
+          - *thinkbook_plus_hybrid_age
+          - *surface_pro_8_age
+          - *m920x_age
+          - *hpe_microserver_age
+          - *ms_r1_age
+          - *nixbuilder_01_age
+          - *nixbuilder_02_age
+          - *nixbuilder_03_age
+          - *clerk_technician
+          - *clerk_secretary
+          - *installer_age
+          - *k8s_sing_box_age
           - *multica_nixos_agent_age
 
   # Shared secrets — all machines can decrypt (e.g. sing-box nodes)

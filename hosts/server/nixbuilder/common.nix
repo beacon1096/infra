@@ -34,20 +34,6 @@
     };
   };
 
-  # ── Tailscale (reach forgejo.beaco.works / nix.beaco.works) ──
-  sops.secrets."edge-tailscale/auth_key" = {
-    sopsFile = ../../../secrets/shared/edge-tailscale.yaml;
-  };
-  services.tailscale = {
-    enable = true;
-    openFirewall = true;
-    authKeyFile = config.sops.secrets."edge-tailscale/auth_key".path;
-    extraSetFlags = [
-      "--accept-dns"
-      "--accept-routes"
-    ];
-  };
-
   # ── Build role ──────────────────────────────────────────────
   # These nodes ARE builders: compile locally, never offload.
   nix = {

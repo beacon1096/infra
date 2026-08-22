@@ -1,6 +1,11 @@
 terraform {
   required_version = ">= 1.6"
 
+  backend "kubernetes" {
+    namespace     = "terraform-state"
+    secret_suffix = "harvester-builders"
+  }
+
   required_providers {
     harvester = {
       source = "harvester/harvester"

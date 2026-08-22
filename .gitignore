@@ -25,6 +25,7 @@ sops-age-keys
 *.decrypted.*
 *.tfstate
 *.tfstate.*
+**/.terraform/
 
 # Nix and local tooling outputs.
 result

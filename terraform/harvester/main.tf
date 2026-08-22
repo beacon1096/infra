@@ -1,14 +1,25 @@
 # Harvester NixOS build/runner nodes.
 #
-# Terraform provisions the VM shells only: fixed CPU/mem/disk, VLAN 1096 NIC
-# with a pinned MAC (matching the RB5009 DHCP reservation). The OS is installed
-# out-of-band with `nixos-anywhere --flake .#<name>` against the installer ISO,
-# then managed by comin. Terraform never touches guest config.
+# Terraform provisions the installer image and VM shells: fixed CPU/mem/disk,
+# VLAN 1096 NIC with a pinned MAC (matching the RB5009 DHCP reservation). The
+# ISO payload is uploaded separately after Terraform creates its image object.
+# The OS is installed with `nixos-anywhere --flake .#<name>`, then managed by
+# comin. Terraform never touches guest config.
 #
 # Prereqs:
 #   - kubectl create namespace nix
-#   - upload the NixOS installer ISO as a VirtualMachineImage and set
-#     var.installer_image to its namespace/name.
+
+resource "harvester_image" "installer" {
+  name         = "image-nixos-installer"
+  namespace    = var.namespace
+  display_name = var.installer_image_display_name
+  source_type  = "upload"
+  checksum     = var.installer_image_checksum
+
+  timeouts {
+    create = "30m"
+  }
+}
 
 resource "harvester_virtualmachine" "builder" {
   for_each = var.nodes
@@ -33,13 +44,14 @@ resource "harvester_virtualmachine" "builder" {
     wait_for_lease = true
   }
 
-  # Boot the installer ISO first, then the (blank) root disk.
+  # Keep the installer ISO attached as recovery media after provisioning.
   disk {
     name       = "cdrom"
     type       = "cd-rom"
+    size       = "10Gi"
     bus        = "sata"
-    boot_order = 1
-    image      = var.installer_image
+    boot_order = 2
+    image      = harvester_image.installer.id
   }
 
   disk {
@@ -47,6 +59,6 @@ resource "harvester_virtualmachine" "builder" {
     type       = "disk"
     size       = var.disk_size
     bus        = "virtio"
-    boot_order = 2
+    boot_order = 1
   }
 }

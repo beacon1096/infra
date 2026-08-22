@@ -16,10 +16,16 @@ variable "vm_network" {
   default     = "default/vmnet-rb5009"
 }
 
-variable "installer_image" {
+variable "installer_image_display_name" {
   type        = string
-  description = "namespace/name of the NixOS installer ISO VirtualMachineImage (upload it to Harvester first)."
-  # e.g. "nix/image-nixos-installer" — set to the actual image id after upload.
+  description = "Display name of the NixOS installer ISO uploaded to Harvester."
+  default     = "nixos-minimal-26.05.20260717.293d6ab-x86_64-linux.iso"
+}
+
+variable "installer_image_checksum" {
+  type        = string
+  description = "SHA-512 checksum of the NixOS installer ISO."
+  default     = "a31cfaabb01baeddd844d2bb30a441a2513e851e46a77a797e4d64bbbecd21570bc8aa8e014e5b16dc8cc83a2111f8a8d34d16754f85266fe996d617c8df8eac"
 }
 
 variable "cpu" {
