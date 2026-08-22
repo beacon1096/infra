@@ -34,6 +34,7 @@
   # Use systemd-networkd with DHCP on wired NIC
   networking.networkmanager.enable = lib.mkForce false;
   networking.useDHCP = lib.mkForce false;
+  networking.interfaces.eno1.mtu = 9000;
   systemd.network.enable = true;
   systemd.network.networks."10-eno1" = {
     matchConfig.Name = "eno1";
