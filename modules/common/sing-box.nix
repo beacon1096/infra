@@ -596,6 +596,17 @@ let
             ".tailscaled-wrapped"
             ".tailscaled-wra"
           ];
+          network = "tcp";
+          action = "route";
+          outbound = "select";
+        }
+        {
+          process_name = [
+            "tailscaled"
+            ".tailscaled-wrapped"
+            ".tailscaled-wra"
+          ];
+          network = "udp";
           action = "bypass";
           outbound = "direct";
         }
