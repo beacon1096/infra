@@ -34,6 +34,8 @@
     };
   };
 
+  services.qemuGuest.enable = true;
+
   # ── Build role ──────────────────────────────────────────────
   # These nodes ARE builders: compile locally, never offload.
   nix = {
