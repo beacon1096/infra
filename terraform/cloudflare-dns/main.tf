@@ -4,7 +4,7 @@ locals {
       zone_id  = var.beaco_works_zone_id
       name     = "mail.beaco.works"
       type     = "CNAME"
-      content  = "courier.beaco.works"
+      content  = "shuttle.beacoworks.xyz"
       ttl      = 1
       priority = null
     }
