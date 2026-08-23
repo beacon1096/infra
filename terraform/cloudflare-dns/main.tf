@@ -28,7 +28,7 @@ locals {
       zone_id  = var.beaco_works_zone_id
       name     = "beaco.works"
       type     = "TXT"
-      content  = "\"v=spf1 mx ra=postmaster -all\""
+      content  = "\"v=spf1 mx ip4:89.208.240.145 ip4:89.208.241.145 ra=postmaster -all\""
       ttl      = 1
       priority = null
     }
@@ -76,7 +76,7 @@ locals {
       zone_id  = var.beacoworks_xyz_zone_id
       name     = "beacoworks.xyz"
       type     = "TXT"
-      content  = "\"v=spf1 mx ra=postmaster -all\""
+      content  = "\"v=spf1 mx ip4:89.208.240.145 ip4:89.208.241.145 ra=postmaster -all\""
       ttl      = 1
       priority = null
     }
