@@ -41,10 +41,17 @@
   nix = {
     distributedBuilds = lib.mkForce false;
     settings = {
+      # Forgejo and Attic currently traverse Cloudflare from this VLAN;
+      # large HTTP/2 transfers intermittently reset mid-stream.
+      http2 = false;
       max-jobs = lib.mkForce "auto";
       trusted-users = [ "root" "beacon" ];
     };
   };
+  environment.etc.gitconfig.text = ''
+    [http]
+      version = HTTP/1.1
+  '';
 
   # ── Forgejo Actions runner ──────────────────────────────────
   sops.secrets."forgejo/runner/token" = {
