@@ -7,7 +7,7 @@
 }:
 
 let
-  apnicSnapshotHash = "sha256-h0BeISdobh3pZ0+bYBUKzb4VyU1L4E/7jHhznqAE3MM=";
+  apnicSnapshotHash = "sha256-zlKcWxAsw5zbve1Tt6dlX1So95kTqBsTV47RGT5K8Ng=";
   endpointMap = {
     ark = "107.189.6.180";
     courier = "89.208.240.145";
