@@ -76,6 +76,22 @@ in
     "nix.beaco.works"
   ];
 
+  # Relay Taichu CI control and cache traffic into the tailnet without
+  # terminating TLS; SNI remains visible to the cluster ingress.
+  systemd.sockets.forgejo-tailnet-relay = {
+    wantedBy = [ "sockets.target" ];
+    listenStreams = [ "172.16.20.11:443" ];
+  };
+  systemd.services.forgejo-tailnet-relay = {
+    requires = [ "tailscaled.service" ];
+    wants = [ "network-online.target" ];
+    after = [
+      "network-online.target"
+      "tailscaled.service"
+    ];
+    serviceConfig.ExecStart = "${pkgs.systemd}/lib/systemd/systemd-socket-proxyd 100.126.205.111:443";
+  };
+
   # ── Firmware ────────────────────────────────────────────────
   hardware.enableRedistributableFirmware = true;
 
@@ -197,6 +213,7 @@ in
   # ── Firewall ────────────────────────────────────────────────
   networking.firewall.allowedTCPPorts = [
     22
+    443
     4096
   ];
   networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 25301 ];

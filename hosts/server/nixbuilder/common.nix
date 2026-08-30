@@ -36,6 +36,11 @@
 
   services.qemuGuest.enable = true;
 
+  networking.hosts."172.16.20.11" = [
+    "forgejo.beaco.works"
+    "nix.beaco.works"
+  ];
+
   # ── Build role ──────────────────────────────────────────────
   # These nodes ARE builders: compile locally, never offload.
   nix = {
