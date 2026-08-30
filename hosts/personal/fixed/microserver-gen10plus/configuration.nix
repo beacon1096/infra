@@ -76,6 +76,22 @@ in
     "nix.beaco.works"
   ];
 
+  # The userspace SOCKS path drops long registry uploads. Keep sing-box away
+  # from the tailnet CIDR and let the kernel Tailscale interface carry CI.
+  beacoworks.sing-box = {
+    enableTailscaleRouting = lib.mkForce false;
+    useSystemTailscale = lib.mkForce false;
+    routeExcludeAddress = [ "100.64.0.0/10" ];
+  };
+  services.tailscale = {
+    interfaceName = lib.mkForce "tailscale0";
+    extraDaemonFlags = lib.mkForce [ ];
+    extraSetFlags = lib.mkForce [
+      "--accept-dns=false"
+      "--accept-routes=false"
+    ];
+  };
+
   # Relay Taichu CI control and cache traffic into the tailnet without
   # terminating TLS; SNI remains visible to the cluster ingress.
   systemd.sockets.forgejo-tailnet-relay = {
