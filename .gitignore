@@ -1,0 +1,40 @@
+# Runtime-local credentials and convenience links. Keep these in the local
+# work environment; never copy their contents into this repository.
+/.private/
+/kubeconfig
+/talosconfig
+/**/clusterconfig/
+sops-age-keys
+*.kubeconfig
+*.talosconfig
+*.agekey
+*.key
+
+# The same generated credential names may occur under per-environment trees.
+**/.private/
+**/kubeconfig
+**/talosconfig
+**/age.key
+**/clusterconfig/
+*.pem
+*.p12
+*.pfx
+
+# Decrypted secret material and local state.
+*.sops.dec.*
+*.decrypted.*
+*.tfstate
+*.tfstate.*
+**/.terraform/
+
+# Nix and local tooling outputs.
+result
+result-*
+.direnv/
+.legacy/
+.antigravitycli/
+.DS_Store
+.env
+.env.*
+!.env.example
+secrets/local/

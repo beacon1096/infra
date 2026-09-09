@@ -1,0 +1,8 @@
+---
+# Services opt into this ProxyClass with:
+#   tailscale.com/proxy-class: proxied
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyClass
+metadata:
+  name: proxied
+spec: {}

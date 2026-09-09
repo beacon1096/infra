@@ -1,0 +1,13 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: infra-private
+spec:
+  interval: 5m
+  ref:
+    branch: main
+  secretRef:
+    name: infra-private-git-auth
+  timeout: 60s
+  url: ssh://git@forgejo-tailscale.development.svc.cluster.local/infrastructure/infra-private.git

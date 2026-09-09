@@ -1,0 +1,22 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cert-manager
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: cert-manager
+  interval: 1h
+  values:
+    crds:
+      enabled: true
+    replicaCount: 1
+    # AliDNS DoH replaces Cloudflare DoH (1.1.1.1/1.0.0.1) — Cloudflare's
+    # DoH endpoints time out from talos-ii (mainland CN routing).
+    dns01RecursiveNameservers: https://223.5.5.5/dns-query,https://223.6.6.6/dns-query
+    dns01RecursiveNameserversOnly: true
+    prometheus:
+      enabled: true
+      servicemonitor:
+        enabled: true

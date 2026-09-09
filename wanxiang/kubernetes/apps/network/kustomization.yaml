@@ -1,0 +1,21 @@
+---
+# Override of templates/config/kubernetes/apps/network/kustomization.yaml.j2
+# adds the locally-introduced apps that aren't in cluster-template's
+# stock list. Keep this override in sync when adding or removing
+# network applications.
+#
+# Add new network/ apps here as we land them.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: network
+
+components:
+  - ../../components/sops
+
+resources:
+  - ./namespace.yaml
+  - ./cloudflare-dns/ks.yaml
+  - ./cloudflare-tunnel/ks.yaml
+  - ./envoy-gateway/ks.yaml
+  - ./k8s-gateway/ks.yaml
+  - ./tailscale/ks.yaml

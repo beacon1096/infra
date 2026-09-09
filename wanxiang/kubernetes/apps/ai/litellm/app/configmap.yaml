@@ -1,0 +1,57 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+data:
+  config.yaml: |
+    model_list: []
+
+    credential_list:
+      - credential_name: deepseek
+        credential_values:
+          api_key: os.environ/DEEPSEEK_API_KEY
+        credential_info:
+          custom_llm_provider: deepseek
+      - credential_name: minimax-cn
+        credential_values:
+          api_key: os.environ/MINIMAX_API_KEY
+          api_base: https://api.minimaxi.com/v1
+        credential_info:
+          custom_llm_provider: minimax
+      - credential_name: moonshot-cn
+        credential_values:
+          api_key: os.environ/MOONSHOT_API_KEY
+          api_base: https://api.moonshot.cn/v1
+        credential_info:
+          custom_llm_provider: moonshot
+      - credential_name: dashscope-cn
+        credential_values:
+          api_key: os.environ/DASHSCOPE_CN_API_KEY
+          api_base: os.environ/DASHSCOPE_CN_API_BASE
+        credential_info:
+          custom_llm_provider: dashscope
+      - credential_name: xiaomi-mimo-cn
+        credential_values:
+          api_key: os.environ/XIAOMI_MIMO_API_KEY
+        credential_info:
+          custom_llm_provider: xiaomi_mimo
+      - credential_name: zai-cn
+        credential_values:
+          api_key: os.environ/ZAI_API_KEY
+          api_base: https://open.bigmodel.cn/api/paas/v4
+        credential_info:
+          custom_llm_provider: zai
+      - credential_name: openrouter
+        credential_values:
+          api_key: os.environ/OPENROUTER_API_KEY
+        credential_info:
+          custom_llm_provider: openrouter
+
+    litellm_settings:
+      drop_params: true
+
+    general_settings:
+      master_key: os.environ/LITELLM_MASTER_KEY
+      database_url: os.environ/DATABASE_URL
+      store_model_in_db: true

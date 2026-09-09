@@ -1,0 +1,36 @@
+# CODEOWNERS — defines path ownership for branch protection
+#
+# Platform support:
+#   GitHub   — fully supported (free for public repos, Team+ for private)
+#   Gitea    — supported since 1.21
+#   GitLab   — requires Premium/Ultimate (CE users: see docs/git-permissions.md)
+#
+# Rules:
+#   - Last matching pattern wins
+#   - beacon owns everything by default
+#   - Each clerk owns only their own hosts/clerks/<name>/ directory
+#   - Changes outside a clerk's own directory require beacon's review
+#
+# Combined with branch protection on main:
+#   - All pushes go through PRs
+#   - Clerk PRs touching only their own directory → auto-merge (via CI)
+#   - Clerk PRs touching shared paths → blocked until beacon approves
+
+# Default: beacon owns everything
+*                                   @beacon
+
+# Shared modules and secrets — explicit beacon ownership (redundant but clear)
+/modules/                           @beacon
+/secrets/                           @beacon
+/lib/                               @beacon
+/.sops.yaml                         @beacon
+/flake.nix                          @beacon
+/flake.lock                         @beacon
+
+# Clerk directories — each clerk owns their own
+/hosts/clerks/default/              @openclaw-default
+/hosts/clerks/technician/           @openclaw-technician
+
+# Shared clerk config — beacon only (not individual clerks)
+/hosts/clerks/common/               @beacon
+/hosts/clerks/example/              @beacon

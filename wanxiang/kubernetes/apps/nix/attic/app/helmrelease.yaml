@@ -1,0 +1,96 @@
+---
+# attic — Nix binary cache server. Single-replica Deployment behind
+# a ClusterIP Service. Stateful (PVC for nar-store, CNPG for
+# metadata). Auth is attic-native bearer JWTs — no authentik OIDC.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: attic
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: attic
+  interval: 1h
+  # No dependsOn — HelmRelease.dependsOn only resolves against other
+  # HelmReleases, and attic-pg is a CNPG Cluster CRD, not a chart.
+  # The attic Pod will CrashLoopBackOff briefly while the DB bootstraps
+  # (entrypoint runs schema migrations on first connect); kube's
+  # restart-on-failure handles the wait.
+  values:
+    controllers:
+      attic:
+        # Single-replica, RWO PVC. Recreate to serialize restarts.
+        strategy: Recreate
+        containers:
+          app:
+            image:
+              # ghcr.io/zhaofengli/attic — upstream only ships :latest.
+              # Upstream multi-arch index digest as of 2026-04-29:
+              #   sha256:18574aba70fc89d2b695273fbe2e7b2f8ad7e8e786b4cc535124fbe14bada1d0
+              # That digest cannot be used directly because the LAN zot
+              # mirror rejects upstream's Docker-v2 schema-2 manifest
+              # with MANIFEST_INVALID. Workaround: skopeo --format=oci
+              # copy of the linux/amd64 manifest to zot, which produced
+              # the OCI-converted digest below. Same layer content,
+              # different manifest envelope. Re-pin both digests when
+              # bumping.
+              repository: ghcr.io/zhaofengli/attic
+              digest: sha256:3a0b0bfcb0f8dc7426a048593a9c413c10944d8acc9151dca806fe0b898dee1f
+            args:
+              # atticd has no `server` subcommand and no `--listen`
+              # flag. Listen address is set in server.toml.
+              - "--config"
+              - "/config/server.toml"
+            env:
+              # JWT signing material — RS256 keypair, base64-encoded
+              # PKCS#8 PEM. Long-lived: regenerating revokes every
+              # issued token.
+              ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64:
+                valueFrom:
+                  secretKeyRef:
+                    name: attic-secret
+                    key: token-rs256-secret-base64
+              ATTIC_SERVER_TOKEN_RS256_PUBLIC_KEY_BASE64:
+                valueFrom:
+                  secretKeyRef:
+                    name: attic-secret
+                    key: token-rs256-public-key-base64
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: false
+              capabilities:
+                drop: ["ALL"]
+            resources:
+              requests:
+                cpu: 50m
+                memory: 512Mi
+              limits:
+                memory: 4Gi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+    service:
+      app:
+        controller: attic
+        ports:
+          http:
+            port: 8080
+    persistence:
+      config:
+        type: secret
+        name: attic-secret
+        globalMounts:
+          - path: /config/server.toml
+            subPath: server.toml
+            readOnly: true
+      store:
+        # Pre-created PVC (pvc.yaml) so storage class + size are
+        # explicit and survive HelmRelease deletion if it ever
+        # happens.
+        type: persistentVolumeClaim
+        existingClaim: attic-store
+        globalMounts:
+          - path: /var/lib/attic/store

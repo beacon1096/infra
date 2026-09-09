@@ -1,0 +1,20 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra-private-source
+  namespace: flux-system
+spec:
+  decryption:
+    provider: sops
+  deletionPolicy: WaitForTermination
+  interval: 1h
+  path: ./wanxiang/kubernetes/apps/flux-system/infra-private-source/app
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: flux-system
+  wait: true
+  timeout: 10m
