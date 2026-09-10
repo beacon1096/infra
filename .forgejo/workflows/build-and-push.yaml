@@ -26,6 +26,9 @@ env:
   REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT || 'https://forgejo.beaco.works' }}
   REGISTRY_USER: ${{ secrets.REPO_TOKEN_OWNER }}
   REGISTRY_TOKEN: ${{ secrets.REPO_TOKEN }}
+  # Runner GC can delete derivations referenced only by a persistent eval cache.
+  NIX_CONFIG: |
+    eval-cache = false
   # Talos-ii currently has no node IPv6 egress. Some fixed-output fetchers
   # resolve AAAA records and curl can fail before IPv4 fallback in CI.
   NIX_CURL_FLAGS: --ipv4
