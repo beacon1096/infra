@@ -33,12 +33,11 @@ and released only from the private repository.
 
 ## Release boundary
 
-- `main` is the integration branch.
-- Release tags run the full Forgejo Actions build gate.
-- A successful tagged build advances `prod`.
-- Public fleet hosts pull `infra.git` on `prod`; private hosts pull
-  `infra-private.git` on its independently promoted `prod` branch.
-
-No host should be switched to the new repository before its target exists on
-`prod` and a single-host canary has verified rebuild, access, runner state, and
-rollback.
+- `main` is the canonical public integration branch; its CI validates the
+  reusable modules and public architecture.
+- `infra-private` pins an exact `infra` revision and assembles the complete
+  production fleet on top of it.
+- Production approval, release tags, `prod` promotion, and Comin rollout are
+  owned by `infra-private`.
+- Tags in this repository, if used, publish public module or showcase versions;
+  they do not authorize a production fleet rollout.
