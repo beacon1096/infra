@@ -125,6 +125,16 @@
     ];
   };
 
+  users.groups.nixremote = { };
+  users.users.nixremote = {
+    isSystemUser = true;
+    group = "nixremote";
+    shell = pkgs.bashInteractive;
+    openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKhAOvxBZVK3hXZSYJqysAyq6cVTNV8KtZqJ2W+6UMzZ nix-builder@personal-fleet"
+    ];
+  };
+
   security.sudo = {
     wheelNeedsPassword = false;
     extraConfig = ''
@@ -161,6 +171,7 @@
   nix.settings.trusted-users = [
     "root"
     "@wheel"
+    "nixremote"
   ];
   sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
 

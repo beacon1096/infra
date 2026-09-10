@@ -51,7 +51,8 @@ in
       ++ lib.optional cfg.enableArm {
         hostName = armBuilderHost;
         protocol = "ssh-ng";
-        sshUser = "beacon";
+        sshUser = cfg.sshUser;
+        sshKey = cfg.sshKey;
         publicHostKey = "c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSUR6cm1BRm5HbzZPb0h2RlluWSs5dkYyN0RyMXJLL3E0WXpzbk4xbGlpMncgcm9vdEBtcy1yMQo=";
         systems = [ "aarch64-linux" ];
         supportedFeatures = [

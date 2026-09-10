@@ -49,6 +49,7 @@ in
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINyr6d7piXyr3ueYNJ/NFc4Q8IEsAbioAybcsDnc/lvM nix-builder@flint"
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJkAqz7fZQZ53hc6A2aTH0SaLkEwTd5cxBB30kWhRhpX nix-builder@cygnus"
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAn9tcA6w8tvryTI+iThfvsNPcKAGJNapP7C4BL8kORh nix-builder@courier"
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKhAOvxBZVK3hXZSYJqysAyq6cVTNV8KtZqJ2W+6UMzZ nix-builder@personal-fleet"
     ];
   };
   nix.settings.trusted-users = [ "nixremote" ];
