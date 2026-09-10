@@ -219,13 +219,5 @@ in
   ];
   networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 25301 ];
 
-  beacoworks.comin = {
-    enable = true;
-    remote = {
-      url = "https://forgejo.beaco.works/infrastructure/infra.git";
-      branch = "prod";
-      username = "beacon1096";
-    };
-    tokenSecret.sopsFile = ../../../../secrets/shared/comin-forgejo-token.yaml;
-  };
+  beacoworks.comin.enable = lib.mkDefault false;
 }

@@ -46,16 +46,7 @@
   # ── Sudo ────────────────────────────────────────────────────
   security.sudo.wheelNeedsPassword = lib.mkForce false;
 
-  beacoworks.comin = {
-    enable = true;
-    machineId = "e4cda10da76f45fabf36296e65ff3ae9";
-    remote = {
-      url = "https://forgejo.beaco.works/infrastructure/infra.git";
-      branch = "prod";
-      username = "beacon1096";
-    };
-    tokenSecret.sopsFile = ../../../../secrets/shared/comin-forgejo-token.yaml;
-  };
+  beacoworks.comin.enable = lib.mkDefault false;
 
   # ── Sops ────────────────────────────────────────────────────
   sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];

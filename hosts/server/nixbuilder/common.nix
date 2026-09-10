@@ -106,17 +106,7 @@
   };
   systemd.services."gitea-runner-${config.networking.hostName}".serviceConfig.TimeoutStopSec = "31m";
 
-  # ── comin pull deployment ───────────────────────────────────
-  services.comin.buildTimeout = 7200;
-  beacoworks.comin = {
-    enable = true;
-    remote = {
-      url = "https://forgejo.beaco.works/infrastructure/infra-private.git";
-      branch = "prod";
-      username = "beacon1096";
-    };
-    tokenSecret.sopsFile = ../../../secrets/shared/comin-forgejo-token.yaml;
-  };
+  beacoworks.comin.enable = lib.mkDefault false;
 
   # ── Sops ────────────────────────────────────────────────────
   sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];

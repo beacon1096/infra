@@ -1,5 +1,5 @@
 # beacon-mac-mini-m4 — machine-specific system configuration
-{ ... }:
+{ lib, ... }:
 
 {
   imports = [
@@ -23,17 +23,8 @@
     /usr/bin/dscacheutil -flushcache
   '';
 
-  beacoworks = {
-    forgejoRunner.enable = true;
-    comin = {
-      enable = true;
-      remote = {
-        url = "https://forgejo.beaco.works/infrastructure/infra.git";
-        username = "beacon1096";
-      };
-      tokenSecret.sopsFile = ../../../secrets/shared/comin-forgejo-token.yaml;
-    };
-  };
+  beacoworks.forgejoRunner.enable = true;
+  beacoworks.comin.enable = lib.mkDefault false;
 
   sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
 }
