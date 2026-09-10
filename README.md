@@ -61,3 +61,10 @@ and released only from the private repository.
 
 Never push `prod` directly, and never use an `infra` tag as production
 authorization.
+
+## CI runner maintenance
+
+The three Harvester Nix builders use staggered drain, garbage-collection, and
+resume windows so two runners remain available while one store is maintained.
+See [docs/ci-runner-maintenance.md](docs/ci-runner-maintenance.md) for the
+rotation, timeout contract, and failure behavior.
