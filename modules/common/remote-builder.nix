@@ -4,7 +4,7 @@ let
   cfg = config.beacoworks.remoteBuilder;
   builderHost = "100.121.229.9";
   builderName = "microserver-gen10plus";
-  armBuilderHost = "172.16.80.240";
+  armBuilderHost = "100.95.176.53";
 in
 {
   options.beacoworks.remoteBuilder.enableArm = lib.mkEnableOption "the ms-r1 ARM builder";
