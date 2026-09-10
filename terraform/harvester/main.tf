@@ -34,6 +34,9 @@ resource "harvester_virtualmachine" "builder" {
   memory       = var.memory
   machine_type = "q35" # empty firmware => SeaBIOS/BIOS, matches hosts/server/common
   efi          = false
+  node_selector = {
+    "kubernetes.io/hostname" = each.value.harvester_node
+  }
 
   network_interface {
     name           = "nic-1"

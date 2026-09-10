@@ -43,12 +43,25 @@ variable "disk_size" {
   default = "80Gi"
 }
 
-# Name → { ip, mac } — must match the RB5009 DHCP reservations.
+# Pin one builder to each Harvester node. MACs must match the RB5009 DHCP
+# reservations; host placement prevents two I/O-heavy builders sharing a node.
 variable "nodes" {
-  type = map(object({ mac = string }))
+  type = map(object({
+    mac            = string
+    harvester_node = string
+  }))
   default = {
-    "nixbuilder-01" = { mac = "52:54:00:6e:01:01" } # 172.16.101.31
-    "nixbuilder-02" = { mac = "52:54:00:6e:01:02" } # 172.16.101.32
-    "nixbuilder-03" = { mac = "52:54:00:6e:01:03" } # 172.16.101.33
+    "nixbuilder-01" = {
+      mac            = "52:54:00:6e:01:01" # 172.16.101.31
+      harvester_node = "mc4-01"
+    }
+    "nixbuilder-02" = {
+      mac            = "52:54:00:6e:01:02" # 172.16.101.32
+      harvester_node = "mc4-02"
+    }
+    "nixbuilder-03" = {
+      mac            = "52:54:00:6e:01:03" # 172.16.101.33
+      harvester_node = "mc5-01"
+    }
   }
 }

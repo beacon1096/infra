@@ -20,6 +20,32 @@ Only one runner enters maintenance at a time. The other two remain available.
 All times use the host timezone, `Asia/Shanghai`. Sunday has no store
 maintenance window.
 
+## Harvester placement
+
+Each builder is pinned to a different physical Harvester node:
+
+| Runner | Harvester node |
+| --- | --- |
+| `nixbuilder-01` | `mc4-01` |
+| `nixbuilder-02` | `mc4-02` |
+| `nixbuilder-03` | `mc5-01` |
+
+This avoids two I/O-heavy Nix builds competing through the same VM host. The
+mapping is declared in `terraform/harvester/variables.tf`; do not rely on
+Harvester's default preferred anti-affinity because it is not a hard placement
+constraint.
+
+Node pinning deliberately trades VM-level failover for predictable build
+capacity. If one Harvester node fails or is maintained, its builder remains
+unavailable instead of migrating onto another builder's node, while the other
+two runners continue accepting jobs. A manual live migration may temporarily
+override placement during maintenance, but the declared mapping should be
+restored afterward.
+
+Longhorn keeps three replicas of each builder disk, one per storage node.
+Moving a VM changes its compute placement and Longhorn volume frontend; it does
+not rebalance replica allocation or reduce a node's storage reservation.
+
 ## Sequence and failure behavior
 
 1. The drain timer writes `/run/nixbuilder-maintenance`, which prevents the
