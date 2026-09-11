@@ -42,6 +42,9 @@ in
   users.groups.debug = { };
   security.sudo.wheelNeedsPassword = false;
 
+  virtualisation.docker.enable = true;
+  hardware.nvidia-container-toolkit.enable = true;
+
   environment.systemPackages = with pkgs; [
     efibootmgr
     ethtool
