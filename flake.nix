@@ -105,6 +105,7 @@
     lib.mkNixosHost = mkNixosHost;
 
     nixosModules = {
+      installer = ./modules/nixos/installer.nix;
       serverBase = ./hosts/server/common/configuration.nix;
       comin = ./modules/nixos/comin.nix;
       m920x = ./hosts/personal/fixed/m920x/configuration.nix;
