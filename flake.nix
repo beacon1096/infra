@@ -5,6 +5,12 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
+    nixpkgs-thor.url = "github:NixOS/nixpkgs/d58a46e3bc02d91ebe04667f8397752a749c0024";
+    jetpack-nixos = {
+      url = "github:anduril/jetpack-nixos/babe3e5558ca130985c9461d0e59bbbebbc43564";
+      inputs.nixpkgs.follows = "nixpkgs-thor";
+    };
+
     nix-darwin = {
       url = "github:LnL7/nix-darwin/nix-darwin-26.05";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -107,6 +113,12 @@
       msi-claw = ./hosts/personal/msi-claw/configuration.nix;
       surface-pro-8 = ./hosts/personal/surface-pro-8/configuration.nix;
       thinkbook-plus-hybrid = ./hosts/personal/thinkbook-plus-hybrid/configuration.nix;
+      thor = {
+        imports = [
+          inputs.jetpack-nixos.nixosModules.default
+          ./hosts/personal/fixed/thor/configuration.nix
+        ];
+      };
     };
 
     darwinModules."beacon-mac-mini-m4" = ./hosts/personal/beacon-mac-mini-m4/configuration.nix;
@@ -259,6 +271,11 @@
           disko.nixosModules.disko
           ./hosts/personal/fixed/ms-r1/configuration.nix
         ];
+      };
+
+      thor = inputs.nixpkgs-thor.lib.nixosSystem {
+        system = "aarch64-linux";
+        modules = [ self.nixosModules.thor ];
       };
 
       # nixbuilder-0{1,2,3} — Harvester NixOS build/runner nodes (VLAN 1096)

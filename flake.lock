@@ -106,6 +106,31 @@
         "type": "github"
       }
     },
+    "cuda-legacy": {
+      "inputs": {
+        "flake-parts": [
+          "jetpack-nixos",
+          "cuda-legacy"
+        ],
+        "nixpkgs": [
+          "jetpack-nixos",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1779836515,
+        "narHash": "sha256-X/AwJZeTjxetRM7JG2BXeffKa1PIg/uo8AP5TX/+kb0=",
+        "owner": "nixos-cuda",
+        "repo": "cuda-legacy",
+        "rev": "baf22622e1114bb36412e5cebe2303f302edb882",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos-cuda",
+        "repo": "cuda-legacy",
+        "type": "github"
+      }
+    },
     "disko": {
       "inputs": {
         "nixpkgs": [
@@ -272,6 +297,28 @@
         "owner": "nix-community",
         "ref": "release-26.05",
         "repo": "home-manager",
+        "type": "github"
+      }
+    },
+    "jetpack-nixos": {
+      "inputs": {
+        "cuda-legacy": "cuda-legacy",
+        "nixpkgs": [
+          "nixpkgs-thor"
+        ]
+      },
+      "locked": {
+        "lastModified": 1788371144,
+        "narHash": "sha256-lTtS9qrnOo4Pzzk7F7bWOmauIsnnkW091t1eZ1/2VZ8=",
+        "owner": "anduril",
+        "repo": "jetpack-nixos",
+        "rev": "babe3e5558ca130985c9461d0e59bbbebbc43564",
+        "type": "github"
+      },
+      "original": {
+        "owner": "anduril",
+        "repo": "jetpack-nixos",
+        "rev": "babe3e5558ca130985c9461d0e59bbbebbc43564",
         "type": "github"
       }
     },
@@ -477,6 +524,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-thor": {
+      "locked": {
+        "lastModified": 1789009968,
+        "narHash": "sha256-GB16oaxpsrnGNnGIE+0uYBqMRzB9X6FYDUvjvnJAYew=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "d58a46e3bc02d91ebe04667f8397752a749c0024",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "d58a46e3bc02d91ebe04667f8397752a749c0024",
+        "type": "github"
+      }
+    },
     "nixpkgs-unstable": {
       "locked": {
         "lastModified": 1789073787,
@@ -660,6 +723,7 @@
         "comin": "comin",
         "disko": "disko",
         "home-manager": "home-manager",
+        "jetpack-nixos": "jetpack-nixos",
         "jovian-nixos": "jovian-nixos",
         "llmAgents": "llmAgents",
         "nix-cachyos-kernel": "nix-cachyos-kernel",
@@ -667,6 +731,7 @@
         "nix-openclaw": "nix-openclaw",
         "nixos-hardware": "nixos-hardware",
         "nixpkgs": "nixpkgs_7",
+        "nixpkgs-thor": "nixpkgs-thor",
         "nixpkgs-unstable": "nixpkgs-unstable",
         "nur": "nur",
         "paseo": "paseo",
