@@ -7,6 +7,7 @@
 {
   wayland.windowManager.hyprland = {
     enable = true;
+    configType = "hyprlang";
     settings = {
       # ── Monitors ──────────────────────────────────────────────
       # Default: auto-detect. Override per-host in host home.nix.

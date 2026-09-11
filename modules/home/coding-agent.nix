@@ -195,7 +195,7 @@ in
   home.packages =
     with unstablePkgs;
     [
-      gemini-cli-bin
+      antigravity-cli
       claude-code-router
       kdocsCli
       findutils

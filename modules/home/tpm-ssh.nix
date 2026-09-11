@@ -67,7 +67,20 @@ in
   # SSH client configuration
   programs.ssh = {
     enable = true;
+    enableDefaultConfig = false;
     includes = [ "~/.ssh/config.d/*" ];
+    settings."*" = {
+      ForwardAgent = false;
+      AddKeysToAgent = "no";
+      Compression = false;
+      ServerAliveInterval = 0;
+      ServerAliveCountMax = 3;
+      HashKnownHosts = false;
+      UserKnownHostsFile = "~/.ssh/known_hosts";
+      ControlMaster = "no";
+      ControlPath = "~/.ssh/master-%r@%n:%p";
+      ControlPersist = "no";
+    };
 
     extraConfig = ''
       IdentityAgent $SSH_AUTH_SOCK
