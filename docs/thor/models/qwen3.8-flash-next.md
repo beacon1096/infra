@@ -498,6 +498,76 @@ remained correct. These targeted checks do not constitute a broad quality
 evaluation. The experimental service now uses draft-only INT8, with the
 BF16-head/native-GDN launcher retained for rollback; the API remained healthy.
 
+### W8A16 follow-up
+
+Marlin symmetric INT8 weights with group size 128 and BF16 activations were
+tested on the same full vocabulary. The real head was packed in bounded
+column chunks; comparison against the helper's dequantized reference and
+changing/zero-input Graph replay passed. Independent projection medians were
+2.47 ms for both one and four rows.
+
+On a newly aligned set of 32 synthetic hidden vectors, W8A16 relative logit
+L2 error was 0.00797 versus W8A8's 0.01317; both matched BF16 argmax on 31/32
+rows. These inputs differ from the earlier probe, so its argmax counts must
+not be compared directly with this set.
+
+The draft-only W8A16 service retained the BF16 target and produced:
+
+| Workload | W8A8 draft head | W8A16 draft head |
+| --- | ---: | ---: |
+| Chinese | 35.75 tokens/s | 35.60 tokens/s |
+| Code | 61.44 tokens/s | 62.87 tokens/s |
+| JSON | 50.69 tokens/s | 51.23 tokens/s |
+
+Code/JSON texts and acceptance rates were unchanged. Chinese text changed
+again, and acceptance fell from 42.69% to 38.42%, despite the lower synthetic
+logit error. Each workload remained stable across its three measured runs.
+Long retrieval and basic generation smoke checks passed, but this did not
+achieve the intended Chinese acceptance improvement. The small code/JSON
+timing differences alone do not establish a broadly better serving choice;
+W8A8 remains the selected baseline.
+
+Restoring W8A8 with the default-off timing hooks and persistent cache produced
+35.91 / 61.66 / 50.51 tokens/s for Chinese/code/JSON. All nine measured texts
+and acceptance rates reproduced the earlier W8A8 run; retrieval and generation
+smoke checks also passed. The experimental service was left on this restored
+configuration with timing disabled.
+
+## Bounded PLE host timing
+
+Default-off host timers were added around existing connector and CPU-worker
+phases without adding CUDA synchronization. After the W8A16 sweep and warmup
+with timing disabled, each of the code and Chinese requests captured 32 PLE
+transactions. Connector/worker sequence numbers matched exactly. Each window
+contained two context transactions and 30 four-token transactions; the table
+reports medians only for the latter:
+
+| Host time | Code | Chinese |
+| --- | ---: | ---: |
+| Connector total blocking | 1.576 ms | 1.538 ms |
+| Connector waiting for worker completion | 1.385 ms | 1.353 ms |
+| Worker total | 1.212 ms | 1.183 ms |
+| Worker lookup/dequantization | 0.836 ms | 0.842 ms |
+
+Worker time is nested inside connector waiting and must not be added again.
+Output-copy enqueue and the existing final stream synchronization are also
+host timings, not direct DMA durations. Context input staging included
+waiting for prior GPU dependencies; it must not be labeled CPU lookup time.
+
+For these warmed, single-request workloads, PLE blocks the host for roughly
+1.5–1.6 ms per four-token transaction. It does not account for all the gaps
+in the previous GPU trace and is a much smaller cost than the target Graph
+or full-vocabulary projections. Cold-page and concurrent-request behavior
+was not measured. Sampling was bounded, then disabled; normal timing runs
+preceded active collection.
+
+The experimental launchers now persist the Triton cache at its original
+container path. The W8A16 startup's profile/cache/warmup phase took 96.91 s,
+versus 151.78 s on the preceding W8A8 startup. The head implementation also
+changed, so this is an observed startup difference, not an isolated cache
+speedup measurement.
+The subsequent restored-W8A8 startup took 68.79 s for that same startup phase.
+
 ## Serving status
 
 FP8 KV remains a separate capacity/quality experiment. It is not needed for
