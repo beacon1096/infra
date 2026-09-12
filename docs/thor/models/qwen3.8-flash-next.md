@@ -395,13 +395,53 @@ passed. This small smoke test does not measure general coding quality.
 The experimental service now uses the native extension, with the FLA launch
 configuration retained for rollback.
 
-## Next experiments and serving status
+## Graph-enabled profiling
 
-Before changing the full draft vocabulary, profile target verification, draft
-generation and the PLE CPU roundtrip separately. The image's Torch profiler
-requires startup configuration; a profiling trace was not collected during
-these timing runs. Reduced-vocabulary drafting remains disabled, and its
-language coverage and acceptance tradeoff should be tested separately.
+The native-GDN runtime was restarted with on-demand Torch profiling, retaining
+K3 and CUDA Graphs. Sampling was off for the repeated baseline: Chinese
+33.92, code 56.19 and JSON 45.77 tokens/s; all nine measured texts matched the
+previous native-GDN run. These small timing changes do not establish a gain.
+
+Separate Chinese and code traces each contained one context iteration and
+nine decode iterations. Although a two-iteration delay was configured, it
+did not exclude the context iteration; analysis used the observed boundaries.
+Actual Graph replay was verified from 38 `cudaGraphLaunch` calls per trace,
+graph IDs and launch correlations. CPU annotation durations alone do not
+cover the full asynchronous sampling/drafting cycle.
+
+| Observed decode component | Chinese | Code |
+| --- | ---: | ---: |
+| Target Graph GPU span, median of 9 | 42.67 ms | 41.74 ms |
+| Three draft Graph spans combined, median of 9 | 17.73 ms | 17.70 ms |
+| Target start to final draft completion, median of 9 | 65.41 ms | 64.94 ms |
+| Successive target-start interval, median of 8 | 72.12 ms | 73.53 ms |
+
+The complete vocabulary head remains BF16 with shape `[248320,2560]`.
+An independent synthetic-weight probe of that exact shape measured roughly
+4.75 ms for one row and 4.77 ms for four rows. It identified the cuBLAS kernel
+`nvjet_sm110_tst_128x8_64x12_2x1_v_bz_TNT` with grid `[1940,1,1]`;
+the same kernel name with a smaller grid also occurs in other layers.
+Matching both name and grid found exactly four head projections per captured
+iteration, averaging about 19.1–19.2 ms combined. Three are already included
+in the draft Graph spans above; adding them again would double-count time.
+The 36 native GDN kernels together consumed about 1.10 ms per decode iteration.
+This points to the full-vocabulary head as a substantially larger remaining
+cost than GDN in this configuration. It does not establish the speed or
+quality of a quantized-head replacement.
+
+The currently mounted PLE patch waits on the host for the CPU worker to finish
+its H2D copy before replay. Its GPU wait wrapper is a no-op. The CPU worker is
+not captured by the main worker's Torch profiler, so these traces do not
+isolate PLE lookup or host-wait time. Residual gaps also include scheduling,
+launch and profiler overhead; they must not all be assigned to PLE. Likewise,
+target kernels overlap across streams, so summed kernel time can exceed the
+Graph's elapsed span.
+
+Profiling was stopped after capture and the API remained healthy. Raw traces
+stay outside Git. Reduced-vocabulary drafting remains disabled; these results
+do not change its unvalidated language-coverage and acceptance tradeoff.
+
+## Serving status
 
 FP8 KV remains a separate capacity/quality experiment. It is not needed for
 the current 4096-token single-request tests; the upstream recipe itself
