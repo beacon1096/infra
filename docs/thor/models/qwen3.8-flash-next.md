@@ -327,6 +327,74 @@ Related upstream reports:
 [persistent_topk candidate loss #51782](https://github.com/vllm-project/vllm/issues/51782)
 and [deterministic selection PR #55122](https://github.com/vllm-project/vllm/pull/55122).
 
+## Official Thor image: initialization memory
+
+The [NVIDIA Thor recipe](https://www.jetson-ai-lab.com/models/qwen3-8-flash-next/)
+was tested with image digest
+`sha256:512bf772c7ef221df1a66ab9c95546d77daeba6ba61723692852e6eb0cae7526`.
+Its packed NVFP4 PLE table stays on the GPU; the existing experimental runtime
+uses CPU mmap/offload. All 37 safetensors files in the recipe's
+`local-inference-lab/Qwen3.8-Flash-Next-NVFP4` revision
+`ada4da32a583a78aa47299f45a70603c950490b8` matched the existing Mia checkpoint
+by SHA-256 and size, so the tests reused those weights.
+
+Three initialization attempts retained a 4096-token context, 1 GiB BF16 KV,
+BF16 Mamba state, one request and K3 MTP. These first probes used eager mode.
+They were stopped by the experimental memory watchdog before a healthy API
+was available; no official-image throughput result was obtained.
+
+- The first attempt crossed the low-free-memory guard while loading PLE.
+- Text-only loading plus `POSIX_FADV_DONTNEED` advice on read-only checkpoint
+  files reduced reclaimable file-cache pressure. It reached the final model
+  loading report of 98.4 GiB, but available host memory fell below the retained
+  12 GiB margin and the watchdog stopped it.
+- A third attempt added GC and CUDA cache release between target and MTP
+  loading. Target allocated/reserved memory was unchanged at that point,
+  and the available-memory guard still stopped initialization.
+
+All three reported `OOMKilled=false`; watchdog termination is not evidence
+of a CUDA or kernel OOM, nor proof that the official configuration cannot fit.
+One NVIDIA memory error was recorded in the second attempt, none in the first
+or third. The official image has not yet met this experiment's memory margin.
+Its source already shares target/draft token embeddings and output heads;
+different model paths alone do not establish duplicate resident weights.
+
+## Native SM110 GDN MTP backport
+
+The native GDN MTP kernel from the official image's vLLM revision
+`385dce36b` was built as a separate `sm_110f` extension in the existing
+CPU-offload runtime. Only MTP GDN dispatch changed; deterministic QSA,
+weights, packed CPU PLE, BF16 caches and K3 settings were retained.
+The service log confirmed native-kernel execution and successful CUDA Graph
+capture. Model loading still reported 72.36 GiB.
+
+The extension passed 32 targeted cases against the bundled FLA/RMSNorm
+reference: eager and CUDA Graph execution, both supported gate activations,
+changing inputs, and a sequence of accepted-token histories from one to four.
+Output relative L2 error stayed below `5e-4`; state checks used `atol=rtol=0.03`.
+These are tolerance-based checks, not bitwise equivalence or model-quality
+certification.
+
+The same three-run K3 protocol produced:
+
+| Workload | FLA fallback + deterministic QSA | Native GDN + deterministic QSA |
+| --- | ---: | ---: |
+| Chinese | 32.02 | 33.56 tokens/s |
+| Code | 54.21 | 54.92 tokens/s |
+| JSON | 45.53 | 45.73 tokens/s |
+
+Chinese and code response texts changed across implementations, although
+each implementation was stable across its own three measured repetitions.
+JSON remained identical and correct. Consequently the small differences
+above do not isolate kernel speed: generated tokens and speculative
+acceptance can also change. This did not reproduce a large end-to-end gain.
+The 2823-token retrieval check also passed three times with the native kernel.
+A code smoke test with normal EOS handling completed within a 512-token budget; its
+three assertions and three additional empty/unsorted/negative-interval checks
+passed. This small smoke test does not measure general coding quality.
+The experimental service now uses the native extension, with the FLA launch
+configuration retained for rollback.
+
 ## Next experiments and serving status
 
 Before changing the full draft vocabulary, profile target verification, draft
