@@ -95,6 +95,7 @@
 
       # ── Key bindings ──────────────────────────────────────────
       "$mod" = "SUPER";
+      "$fileManager" = "spacedrive";
 
       bind = [
         # Window management
@@ -107,7 +108,7 @@
         # App launchers
         "$mod, Return, exec, foot" # terminal
         "$mod, D, exec, wofi --show drun" # app launcher
-        "$mod, E, exec, spacedrive" # file manager
+        "$mod, E, exec, $fileManager" # file manager
 
         # Focus movement (vim-style)
         "$mod, H, movefocus, l"

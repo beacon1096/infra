@@ -7,7 +7,10 @@ let
   ];
 in
 {
-  imports = [ ./hardware-configuration.nix ];
+  imports = [
+    ./hardware-configuration.nix
+    ../../../../modules/nixos/hyprland.nix
+  ];
 
   networking.hostName = "thor";
   networking.networkmanager.enable = true;
@@ -23,6 +26,8 @@ in
     "net.ipv4.conf.default.arp_announce" = 2;
   };
 
+  services.tailscale.enable = true;
+
   services.openssh = {
     enable = true;
     openFirewall = true;
@@ -34,6 +39,13 @@ in
   };
 
   users.users.root.openssh.authorizedKeys.keys = authorizedKeys;
+  users.mutableUsers = true;
+  users.users.beacon = {
+    isNormalUser = true;
+    description = "Beacon Zhang";
+    extraGroups = [ "networkmanager" "wheel" "video" "input" ];
+    openssh.authorizedKeys.keys = authorizedKeys;
+  };
   users.users.nixos = {
     isNormalUser = true;
     extraGroups = [ "networkmanager" "wheel" ];
@@ -41,6 +53,46 @@ in
   };
   users.groups.debug = { };
   security.sudo.wheelNeedsPassword = false;
+  security.polkit.enable = true;
+  security.rtkit.enable = true;
+  security.pam.services.hyprlock = { };
+  programs.firefox.enable = true;
+
+  services.pipewire = {
+    enable = true;
+    alsa.enable = true;
+    pulse.enable = true;
+  };
+
+  fonts.packages = with pkgs; [
+    nerd-fonts.jetbrains-mono
+    noto-fonts-cjk-sans
+    noto-fonts-color-emoji
+  ];
+
+  home-manager = {
+    useGlobalPkgs = true;
+    useUserPackages = true;
+    users.beacon = {
+      imports = [ ../../../../modules/home/hyprland.nix ];
+      home.stateVersion = "26.05";
+      home.packages = with pkgs; [
+        brightnessctl
+        grimblast
+        networkmanagerapplet
+        pavucontrol
+        playerctl
+        slurp
+        swappy
+        thunar
+        wl-clipboard
+      ];
+      wayland.windowManager.hyprland.settings = {
+        monitor = lib.mkForce [ ", preferred, auto, 1" ];
+        "$fileManager" = lib.mkForce "thunar";
+      };
+    };
+  };
 
   virtualisation.docker.enable = true;
   hardware.nvidia-container-toolkit.enable = true;

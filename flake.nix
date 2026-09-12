@@ -117,6 +117,7 @@
       thor = {
         imports = [
           inputs.jetpack-nixos.nixosModules.default
+          home-manager.nixosModules.home-manager
           ./hosts/personal/fixed/thor/configuration.nix
         ];
       };
