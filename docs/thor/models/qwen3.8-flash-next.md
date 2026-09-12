@@ -217,12 +217,74 @@ GDN guard and these arguments to the BF16 baseline:
 --compilation-config '{"mode":0,"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[2]}'
 ```
 
+## MTP K3: comparison with K1
+
+Before the full-model trial, the GDN fallback probe was extended to four
+tokens and accepted-token counts 1–4 with nonzero history. All eight
+eager/graph cases passed output, per-token state and exact convolution-buffer
+writeback checks. Peak tensor allocation was 67.26 MiB. K3 then loaded and
+served successfully with the same SM110 guard, BF16 KV and full vocabulary:
+
+```sh
+--speculative-config '{"method":"mtp","num_speculative_tokens":3}' \
+--compilation-config '{"mode":0,"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[1,4]}'
+```
+
+Capture size 4 covers target verification/first draft; size 1 covers subsequent
+single-token draft steps. Logs confirmed target and both speculator captures.
+Model loading still reported 72.36 GiB, while the 1 GiB KV budget provided
+7,404 tokens, sufficient for the configured 4096-token single request.
+
+A fresh K1 sweep immediately preceded the K3 run on 2026-09-13. Each workload
+used its own warmup (32 tokens for prose/code, one complete JSON response),
+then three sequential measured requests. Prefix caching stayed enabled,
+temperature was zero and thinking was disabled. Prose/code used
+`ignore_eos=true`; JSON used ordinary stopping with an 80-token cap. Fixed
+lengths and JSON values were verified. Exact prompts:
+
+| Workload | Output tokens | Prompt |
+| --- | ---: | --- |
+| Chinese | 128 | 请写一篇详细的科普文章，解释地球水循环如何连接海洋、大气、陆地和地下水，并讨论人类活动的影响。 |
+| Code | 256 | Write a Python function that merges overlapping integer intervals. Include type hints and three assert examples. Output only code. |
+| JSON | 20 | 仅输出一个JSON对象，包含city值北京，country值中国，number值42，不要Markdown。 |
+
+| Workload | K1 decode rates | K3 decode rates | Median change |
+| --- | --- | --- | --- |
+| Chinese | 33.91, 33.83, 33.99 | 31.39, 31.79, 31.74 | 33.91 → 31.74 tokens/s (−6.4%) |
+| Code | 38.96, 38.65, 38.27 | 52.72, 53.60, 53.61 | 38.65 → 53.60 tokens/s (+38.7%) |
+| JSON | 37.17, 36.93, 36.90 | 45.21, 45.12, 45.74 | 36.93 → 45.21 tokens/s (+22.4%) |
+
+Median first-content latencies for Chinese/code/JSON were 0.463/0.492/0.481
+seconds with K1 and 0.484/0.491/0.517 with K3. The same streaming decode
+estimate is used throughout; short JSON timings are not a sustained-throughput
+benchmark. Prometheus deltas over each three-request group, excluding warmup:
+
+| Workload | K1 accepted / proposed | K3 accepted / proposed | Mean accepted length, K1 → K3 |
+| --- | --- | --- | --- |
+| Chinese | 159/225 (70.7%) | 213/522 (40.8%) | 1.71 → 2.22 |
+| Code | 372/393 (94.7%) | 561/612 (91.7%) | 1.95 → 3.75 |
+| JSON | 30/30 (100%) | 48/54 (88.9%) | 2.00 → 3.67 |
+
+Mean accepted length is `1 + accepted_tokens / draft_steps`, including the
+bonus token. Proposal accounting can include tokens beyond a request's stop
+boundary; it is not identical to delivered output-token counts. These results
+support K3 for the measured code workload, while K1 was faster for this prose
+prompt. They do not establish a universal best setting or isolate acceptance
+from changes in the generated text.
+
+A separate warm functional pass generated complete Python (277 tokens,
+53.54 tokens/s), which parsed and included three assertions (not executed).
+Chinese was coherent and JSON exactly matched the requested object. The
+experimental service was left running K3; the working K1 configuration and
+both sets of raw results were retained outside the public repository.
+
 ## Next experiments and serving status
 
-K3 is a subsequent experiment, not a measured result. For this V2 speculator,
-capture sizes `[1,4]` would cover both target verification/first draft and the
-later single-token draft steps. Reduced-vocabulary drafting remains disabled;
-its language coverage and acceptance tradeoff should be tested separately.
+Before changing the full draft vocabulary, profile target verification, draft
+generation and the PLE CPU roundtrip separately. The image's Torch profiler
+requires startup configuration; a profiling trace was not collected during
+these timing runs. Reduced-vocabulary drafting remains disabled, and its
+language coverage and acceptance tradeoff should be tested separately.
 
 FP8 KV remains a separate capacity/quality experiment. It is not needed for
 the current 4096-token single-request tests; the upstream recipe itself
