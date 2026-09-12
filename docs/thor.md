@@ -260,6 +260,115 @@ retained outside the public repository.
    FA4 and DFlash2 with `torch.compile` already failed in this image; retry them
    only with evidence that the specific failure has been addressed.
 
+## DFlash2 profiling and output projection follow-up
+
+Two short Huihui + DFlash2 profiles captured eleven early speculative decode
+iterations each, excluding prefill. CUDA graph IDs and launch correlations
+separate draft from target verification; the annotation names alone do not.
+
+| Median GPU span per speculative iteration | Chinese | Long code |
+| --- | ---: | ---: |
+| Entire iteration | 95.43 ms | 97.50 ms |
+| Draft graph | 23.36 ms | 23.70 ms |
+| Target verification graph | 69.67 ms | 71.31 ms |
+
+Adjacent iteration intervals closely matched these GPU spans. CPU event
+synchronization was mostly waiting for the GPU, rather than extra computation.
+The sampled workload was dominated by matrix operations: about 97% of draft
+kernel time was BF16 GEMM/reduction, while target kernel time was approximately
+76% NVFP4 GEMM and 14% BF16 GEMM/reduction. Kernel sums can overlap and must not
+be treated as additive wall-time components. GPU clocks stayed around
+1385–1386 MHz and EMC at 4266 MHz, with GPU temperatures below 56 C. These
+observations do not establish memory-bandwidth saturation or an absolute
+throughput ceiling; profiler overhead was not calibrated.
+
+Both graphs contained a roughly 9.75 ms BF16 projection with grid `(1940,1,1)`.
+The output vocabulary has 248320 entries, exactly 1940 blocks of 128. A separate
+CUDA graph microbenchmark on Thor reproduced the same full-vocabulary kernel,
+`nvjet_sm110_tst_128x8_64x12_2x1_v_bz_TNT`, using hidden size 5120:
+
+| Vocabulary entries | BF16 head size | 7 rows | 8 rows |
+| --- | ---: | ---: | ---: |
+| 248320 | 2.368 GiB | 9.676 ms | 9.669 ms |
+| 65536 | 0.625 GiB | 2.556 ms | 2.555 ms |
+| 32768 | 0.313 GiB | 1.339 ms | 1.337 ms |
+
+The standalone test used Torch 2.13.0+cu130, five eager warmups, five graph
+warmups and twenty CUDA-event measurements per shape, with only one head
+allocated at a time. GPU frequency was 1386 MHz and temperature 34–35 C.
+This strongly supports the output-head attribution, but does not add missing
+shape/module labels to the original trace retroactively.
+
+A draft-only reduced vocabulary is therefore a concrete next experiment.
+It must use a separate head and map sampled IDs back to the original vocabulary;
+the target's complete output head and verification must remain intact. First
+measure greedy decoding with Chinese, English and code prompts, recording
+acceptance and total iteration time. The microbenchmark does not measure those
+outcomes. Even eliminating the entire draft projection would save only about
+10 ms of a 97 ms profiled iteration, roughly an 11% idealized throughput gain;
+it cannot by itself explain the gap to the external 125–133 tokens/s report.
+
+## Flash Next and DeepSeek-v4 Flash candidates
+
+Source review used the Qwen Flash Next deployment at
+`d03809008834124e80223c3482f2ddb59577a48f` and the DeepSeek deployment at
+`fdcd538fbf95fb15b2d6850db9613d22b2c889b8`. Their published results are Spark
+measurements, not Thor measurements.
+
+Qwen3.8 Flash Next is the more practical next candidate while retaining a
+desktop. Its approximately 99 GiB checkpoint includes a 26.82 GiB PLE table,
+leaving approximately 72 GiB of GPU-resident weights. The additional packed PLE
+file is a disk copy mapped by a CPU worker, not an additional 27 GiB that must
+always be resident. The deployment reserves 26 GiB of host memory by default;
+PLE page cache, desktop processes and driver allocations share that reserve.
+Full advertised context and concurrency have not been validated on Thor.
+
+The pinned ARM64 image is
+`vllm/vllm-openai@sha256:3b0e188ffceb3d07e09c3cb5215433a0020eacf02d7f882ed3a8bfd15454477e`.
+A local container probe reported Torch 2.13.0+cu130, vLLM
+`0.1.dev20073+g8e685d198`, FlashInfer 0.6.17, Triton 3.7.1 and CUTLASS DSL 4.6.2.
+Torch includes SM110 and passed a small BF16 CUDA matrix multiplication on Thor.
+Additional small-tensor probes ran with networking disabled:
+
+| Path | Observed result |
+| --- | --- |
+| GDN packed decode, BF16 state/output | Single-token zero-state reference passed; maximum absolute error 0.0000529 |
+| MXFP8 FlashInfer CUTLASS GEMM | Random-matrix comparison to BF16 reference: cosine 0.999285 |
+| NVFP4 FlashInfer CUTLASS MoE | Two small experts with nonzero constant weights: maximum absolute error 2.5 against an output near 93.6 |
+| QSA BF16 scoring and sparse attention | Reference errors approximately 0.00000191 and 0.000551 |
+| QSA default cooperative top-k | Failed with CUDA cluster misconfiguration on SM110 |
+
+The QSA dispatcher selects cooperative top-k for capability >=90 outside the
+SM120 family, which also selects it on Thor. The image's existing persistent
+top-k implementation executes successfully. A temporary bind-mounted patch
+excluding the SM110 family from the cooperative branch also passed the complete
+selector call. A follow-up selecting 512 of 1024 visible candidates matched
+`torch.topk` as an index set, with no tie at the cutoff; subsequent attention
+had maximum absolute error 0.000515. This is a compatibility workaround, not a model
+throughput result; the unmodified image still has the failing default path.
+
+The QSA tests cover the image's BF16 path, not the deployment repository's FP8
+KV patches. The MoE test covers a FlashInfer primitive, not checkpoint loading
+or vLLM's model-level backend selection. PLE offload, MTP, CUDA graph serving,
+long context and complete model loading remain untested. Model weights have
+not been downloaded for this trial. Probe scripts and detailed results remain
+outside the public repository.
+
+The DeepSeek single-Spark recipe has two additional constraints. It uses a
+REAP-K216 expert-pruned model with EXL3/Trellis quantization, rather than merely
+quantizing the complete original model. Its default launch requires about
+114.3 GiB of free memory, leaving little room for a desktop on this device.
+The build also explicitly targets SM120/SM121-family kernels, including
+`CUTE_DSL_ARCH=sm_121a`; changing a Torch architecture flag alone is not evidence
+that its sparse attention and quantized expert kernels support Thor's SM110.
+It is therefore a porting project before it is a model-download experiment.
+
+Benchmark comparisons must retain their context: the Flash Next repository
+reports approximately 48.7 tokens/s for one stream and 162.9 aggregate for eight
+streams, whereas the author's separate adaptation report gives different
+workloads/settings. That report's approximately 70 tokens/s DeepSeek result
+uses two machines. Neither figure is a directly comparable single-Thor result.
+
 ## References
 
 - [NVIDIA r39.2 variable types and display enum values](https://github.com/NVIDIA/edk2-nvidia/blob/r39.2/Silicon/NVIDIA/Include/NVIDIAConfiguration.h)
@@ -269,3 +378,7 @@ retained outside the public repository.
 - [Original SGLang deployment reference for DGX Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) — adapted and measured on Thor; its Spark CPU affinity and attention settings are not directly transferable.
 - [Author's DFlash2 single-stream 125–133 TPS report](https://manateelazycat.github.io/2026/08/29/model-adaptation-record/) — external result, not a local measurement.
 - [Huihui NVFP4 checkpoint and model card at the tested revision](https://huggingface.co/Vtuber-plan/Huihui-Qwen3.8-27B-abliterated-NVFP4/tree/43aa7ff5eef05ab50a3bfa6aca581085312c7a04)
+- [Qwen3.8 Flash Next Spark deployment at the reviewed revision](https://github.com/MiaAI-Lab/Qwen3.8-Flash-Next-Single-DGX-Spark/tree/d03809008834124e80223c3482f2ddb59577a48f)
+- [DeepSeek-v4 Flash single-Spark deployment at the reviewed revision](https://github.com/MiaAI-Lab/DeepSeek-v4-Flash-One-DGX-Spark/tree/fdcd538fbf95fb15b2d6850db9613d22b2c889b8)
+- [DeepSeek Spark checkpoint and disk requirements](https://huggingface.co/0xSero/deepseek-v4-flash-0731-spark)
+- [DeepSeek Spark runtime Dockerfile and architecture targets](https://github.com/0xSero/deepseek-v4-flash-0731-spark-sparkinfer/blob/main/Dockerfile)
