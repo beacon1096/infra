@@ -278,6 +278,55 @@ Chinese was coherent and JSON exactly matched the requested object. The
 experimental service was left running K3; the working K1 configuration and
 both sets of raw results were retained outside the public repository.
 
+## Deterministic QSA selection: correctness regression
+
+On 2026-09-13, synthetic inputs reproduced incorrect `persistent_topk`
+selection on this Thor. With `k=512`, 64 rows of 4096 float32 scores drawn
+from a narrow distribution (mean 10, standard deviation 0.03) selected
+strictly smaller values than the exact top-k in all ten repetitions. The
+maximum selected-value error was 0.0396233. A 33-row, 32768-column case also
+failed. These are value errors, distinct from choosing different indices
+with equal scores. All tested shapes changed output order across repeated
+calls; tied-cutoff cases also changed the selected index set. This does not
+establish that earlier model responses were wrong.
+
+The standalone deterministic kernel from
+[jschmied's pinned sources](https://github.com/jschmied/qwen38-flash-next-gb10/tree/e0ef69d4f5575dad00d34e05479eaf4c6547bace/patches/kernel-det)
+was built for `sm_110a` in the existing Torch 2.13.0 / CUDA 13.0 image.
+Source hashes were checked against the
+[Saren build recipe](https://github.com/Saren-Arterius/qwen3.8-Flash-DGX-AutoRound).
+Only SM110 QSA selector dispatch was changed; the current attention/scales
+interfaces, model weights and GDN fallback were retained.
+
+Validation passed:
+
+- Twenty shape/distribution cases, ten repetitions each: exact selected
+  values, valid unique indices, stable output order and stable index sets.
+- Six CUDA Graph shapes, `k=512/1024/2048`, with changing visible lengths,
+  including short and empty sequences.
+- Integrated QSA score, selection and sparse-attention reference checks.
+- A 2823-token retrieval prompt returned the exact requested JSON in three
+  consecutive requests, including prefix reuse. This is a targeted regression,
+  not a broad long-context quality evaluation.
+
+The same K3 workload/warmup protocol above produced these three-run medians:
+
+| Workload | Before fix | Deterministic selector |
+| --- | ---: | ---: |
+| Chinese | 31.74 | 32.02 tokens/s |
+| Code | 53.60 | 54.21 tokens/s |
+| JSON | 45.21 | 45.53 tokens/s |
+
+All nine measured response texts matched the previous run exactly; JSON was
+correct. The small timing differences do not establish a speedup. This is a
+correctness improvement with broadly unchanged measured throughput. The
+experimental service now uses the deterministic selector; the previous
+launch configuration remains available for rollback.
+
+Related upstream reports:
+[persistent_topk candidate loss #51782](https://github.com/vllm-project/vllm/issues/51782)
+and [deterministic selection PR #55122](https://github.com/vllm-project/vllm/pull/55122).
+
 ## Next experiments and serving status
 
 Before changing the full draft vocabulary, profile target verification, draft
