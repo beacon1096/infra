@@ -441,6 +441,63 @@ Profiling was stopped after capture and the API remained healthy. Raw traces
 stay outside Git. Reduced-vocabulary drafting remains disabled; these results
 do not change its unvalidated language-coverage and acceptance tradeoff.
 
+## Full-vocabulary head quantization probes
+
+The checkpoint's real BF16 head was tested independently with synthetic
+hidden states. Timings include dynamic activation quantization and output
+rescaling, but exclude one-time weight conversion:
+
+| Projection | One row | Four rows |
+| --- | ---: | ---: |
+| BF16 | 4.76 ms | 4.76 ms |
+| FP8 with per-row weight/activation scales | 2.46 ms | 2.51 ms |
+| INT8 with per-row weights and per-token activations | 2.68 ms | 2.81 ms |
+
+The tested PyTorch INT8 API requires more than 16 input rows, so the small
+batches were padded to 32 rows and the extra results discarded. INT32
+accumulation was rescaled to BF16. FP8 and INT8 paths passed CUDA Graph
+replay checks with changing input buffers.
+
+For 32 shared synthetic hidden vectors, FP8 row-scaled logits had relative
+L2 error 0.0374 and matched the BF16 argmax on 31/32 rows; INT8 had relative
+L2 error 0.0131 and matched 32/32. These are operator probes, not real-request
+quality measurements. The smaller observed INT8 error motivated the first
+serving experiment; it does not prove general superiority to FP8.
+
+### Draft-only INT8 serving result
+
+Only the draft model's `LogitsProcessor._apply_head` was replaced, covering
+both full-logit and `get_top_tokens` paths. It keeps all 248320 vocabulary
+entries and leaves the shared BF16 weight and target projection unchanged.
+The draft processor owns a separate INT8 copy, initialized before Graph
+capture. This adds roughly 0.6 GiB of weight storage rather than reducing
+resident model memory. Independent processor checks covered full-vocabulary
+forward/argmax, zero inputs and changing-buffer Graph replay; service startup
+confirmed the quantized draft path and successful Graph capture.
+
+The same K3 protocol, with three measured runs per workload and profiling off,
+produced:
+
+| Workload | Latest BF16-head baseline | Draft-only INT8 | Change |
+| --- | ---: | ---: | ---: |
+| Chinese | 33.92 tokens/s | 35.75 tokens/s | +5.4% |
+| Code | 56.19 tokens/s | 61.44 tokens/s | +9.3% |
+| JSON | 45.77 tokens/s | 50.69 tokens/s | +10.8% |
+
+Code and JSON texts matched the baseline, with unchanged draft-token acceptance
+rates of 95.45% and 88.89%. Chinese text changed and acceptance fell from
+44.24% to 42.69%; its speed difference therefore is not a strictly identical
+output comparison. Each workload's three INT8 runs produced stable text.
+Keeping the target projection in BF16 did not make all generated text bitwise
+invariant to a changed draft path; this experiment does not establish why the
+Chinese trajectory diverged.
+
+The 2823-token retrieval check passed three times. A complete code response
+passed its three assertions and three additional interval checks, and JSON
+remained correct. These targeted checks do not constitute a broad quality
+evaluation. The experimental service now uses draft-only INT8, with the
+BF16-head/native-GDN launcher retained for rollback; the API remained healthy.
+
 ## Serving status
 
 FP8 KV remains a separate capacity/quality experiment. It is not needed for
