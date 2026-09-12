@@ -443,7 +443,81 @@ arguments are:
 --compilation-config '{"mode":0,"cudagraph_mode":"NONE"}'
 ```
 
-CUDA graphs, FP8 KV and MTP remain separate full-model follow-up experiments.
+An isolated decode-graph follow-up changed only the compilation configuration
+to `{"mode":0,"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[1]}`.
+The image captured one graph in about three seconds, using 0.12 GiB; prefill
+remained eager and Torch compilation stayed disabled. Chinese, complete Python
+and exact JSON smoke responses succeeded. After a separate 32-token warmup,
+three sequential 128-token generations of the same Chinese prompt measured:
+
+| Configuration | Decode rates (tokens/s) | Median |
+| --- | --- | --- |
+| Eager, BF16 KV | 6.03, 6.08, 6.18 | 6.08 |
+| Decode graph, BF16 KV | 26.31, 26.29, 26.41 | 26.31 |
+
+This is a 4.32x improvement for this short single-stream workload, with MTP
+still disabled. Requests used temperature zero and `ignore_eos=true` to keep
+output length fixed; prefix caching remained enabled in both runs. Median
+first-content latency was about 0.41 seconds in both. Different smoke prompts
+produced appropriate different responses, but exact output equivalence was
+not asserted. V2 has no built-in replay counter in this image; capture was
+logged, while a profiler trace of replay has not been collected.
+
+An initial MTP trial kept BF16 KV and full vocabulary, set
+`num_speculative_tokens=1` and graph capture size `[2]`. Automatic selection
+used native CUTLASS for the target and Marlin for the W4A16 draft. Both models
+loaded (72.36 GiB reported total), but warmup failed in
+`fused_gdn_decode_post_conv_mtp` with `no kernel image is available for execution
+on the device`. This is a separate multi-token GDN path, not the successful
+ordinary decode path. The image's dispatch guard checks capability >=80 and
+operator existence, which is insufficient to establish binary coverage for
+Thor. `cuobjdump` of the exact library confirmed this kernel only in
+SM80/86/89/90a/100f/120f code, with no SM110/110f version or matching PTX entry.
+Other kernels in the same library do include SM110/110f. Adding
+`and not current_platform.is_device_capability_family(110)` to
+`_can_use_fused_gdn_mtp_decode` selects the existing speculative Triton/FLA
+path only on Thor; globally forcing `VLLM_GDN_DECODE_KERNEL=triton` would also
+change ordinary single-token decode. A two-token, actual-head-shape probe
+passed convolution, recurrent state updates and gated RMS normalization against
+a Torch reference in eager and graph modes. Output maximum error was 0.00768
+after BF16 normalization, and per-token state error was at most 0.000244.
+Graph replay with changed inputs also passed. A follow-up with nonzero history
+and accepted-token counts of one and two checked selection of different prior
+states, exact convolution-buffer sliding updates and unchanged null slots in
+both eager and graph modes. These tests use valid state slots (slot zero is
+reserved).
+
+The targeted guard then passed full-model MTP startup and graph capture.
+The same 1 GiB KV budget provided 10,132 tokens with MTP enabled. Keeping the
+full draft vocabulary, K1 and capture size `[2]`, the identical fixed-length
+benchmark measured **32.23, 32.79 and 33.59 tokens/s**, median **32.79**. This
+is 24.6% above the non-speculative graph baseline and 5.39x the original eager
+baseline. Median first-content latency was 0.47 seconds. Prometheus counter
+deltas over the 32-token warmup plus three 128-token requests showed 170 of
+245 proposed tokens accepted (69.4%); this acceptance figure includes warmup,
+whereas the reported timing median excludes it.
+
+Warm functional checks produced coherent Chinese at 32.99 tokens/s, complete
+Python at 38.24 and exact JSON at 37.35. Python parsed and included three
+assertions, which were not executed. Rates vary with the generated content
+and draft acceptance. Full-model output equivalence, long-context quality and
+multimodal MTP remain unverified. This working experiment adds the targeted
+GDN guard and these arguments to the BF16 baseline:
+
+```sh
+--speculative-config '{"method":"mtp","num_speculative_tokens":1}' \
+--compilation-config '{"mode":0,"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[2]}'
+```
+
+K3 is a subsequent experiment, not a measured result. For this V2 speculator,
+capture sizes `[1,4]` would cover both target verification/first draft and the
+later single-token draft steps. Reduced-vocabulary drafting remains disabled;
+its language coverage and acceptance tradeoff should be tested separately.
+
+FP8 KV remains a separate capacity/quality experiment. It is not needed for
+the current 4096-token single-request tests; the upstream recipe itself
+reports a long-reasoning quality regression with FP8 KV, so retain BF16
+while isolating speculative-decoding performance.
 The initial API is an experimental loopback-only container, not a persistent
 fleet inference service.
 
