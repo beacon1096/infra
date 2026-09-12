@@ -1,8 +1,10 @@
 # Beacoworks infrastructure
 
-This is the public, canonical infrastructure monorepo on Forgejo. Its
-one-way GitHub mirror is suspended while the public/private boundary and
-public Git history are being audited.
+This is the public, canonical infrastructure monorepo on
+[Forgejo](https://forgejo.beaco.works/infrastructure/infra).
+[GitHub](https://github.com/beacon1096/infra) is a one-way showcase mirror of
+`main`. Make changes and run CI on Forgejo; GitHub Actions is disabled.
+Production approval and releases remain in `infra-private` on Forgejo.
 
 ## Repository layout
 
