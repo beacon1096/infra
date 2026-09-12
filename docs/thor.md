@@ -347,12 +347,107 @@ selector call. A follow-up selecting 512 of 1024 visible candidates matched
 had maximum absolute error 0.000515. This is a compatibility workaround, not a model
 throughput result; the unmodified image still has the failing default path.
 
-The QSA tests cover the image's BF16 path, not the deployment repository's FP8
-KV patches. The MoE test covers a FlashInfer primitive, not checkpoint loading
-or vLLM's model-level backend selection. PLE offload, MTP, CUDA graph serving,
-long context and complete model loading remain untested. Model weights have
-not been downloaded for this trial. Probe scripts and detailed results remain
-outside the public repository.
+A follow-up combined the repository's FP8 KV patch with the SM110 selector
+fix. Native FP8 and uint8-backed caches passed against explicitly dequantized
+references with non-unit K/V scales. Selecting 512 of 1024 candidates also
+passed. Separate selector and attention CUDA graphs remained correct across
+three replays with in-place query, KV and scale changes; attention maximum
+absolute error was below 0.000648. This checks implementation against the same
+quantized inputs, not model quality relative to BF16 weights or caches.
+
+The fixed checkpoint at `925d7be6c14c6c9442ef83e8f05b5a3c39304f69` uses NVFP4
+W4A4 for its 48 main routed-expert layers. W4A16 NVFP4 applies to MTP experts
+and 27 vision projections. In this image, automatic MoE selection on SM110
+chooses **vLLM CUTLASS** for the main experts and **Marlin** for MTP. FlashInfer
+CUTLASS is a different backend and is explicitly excluded for SM110 by vLLM's
+selector; its earlier primitive probe must not be presented as model-level
+coverage. Keep automatic selection so the two quantization schemes can choose
+different backends.
+
+Actual-shape primitive probes used 512 experts, hidden size 2560, intermediate
+size 640 and top-k 10, with both one and eight input tokens. The vLLM CUTLASS
+W4A4 path produced nonzero output within 4% of the ideal BF16 constant-weight
+reference. Marlin's real weight repacking and scale conversion followed by
+W4A16 execution matched its representable constant reference. Marlin conversion
+peaked at 5.91 GiB of Torch memory for this single-layer test, which must be
+allowed for during loading. These are controlled operator checks, not a
+measurement of real-checkpoint quality, model routing or MTP acceptance.
+
+The complete checkpoint downloaded successfully (about 98.57 GiB), and its
+26.82 GiB packed PLE table passed metadata and size checks. Three full startup
+attempts loaded the weights (70.83 GiB reported by vLLM) and attached the PLE
+CPU worker, but none reached a healthy API. These attempts used BF16 KV,
+4096-token context, a 512-token prefill limit, one sequence, no MTP and no
+CUDA graphs. The first two failed during dummy profiling with CUDA illegal
+memory access in the native CUTLASS MoE path. A third, instrumented run
+synchronized successfully at MoE entry and found all 512-by-10 expert IDs
+equal to `-1`, with finite zero activations and uniform routing weights.
+An assertion stopped that run before metadata generation. Exact-image source
+inspection found that the V2 dummy batch marks every token as padding, and
+`VLLM_MOE_SKIP_PADDING=1` (the default) passes that mask to the router. A small
+router A/B reproduced all `-1` IDs with the default and valid IDs with
+`VLLM_MOE_SKIP_PADDING=0`; in a mixed batch, real tokens retained identical
+expert IDs and weights. A fourth full startup with this optimization disabled
+passed metadata generation, row shuffling, activation quantization and both
+MoE GEMMs, then reached KV cache initialization. The workaround computes
+padding tokens rather than rewriting invalid IDs. This is
+not evidence that SM110 cannot execute NVFP4. Independent 512-token
+probes passed both distributed routing and routing concentrated on ten
+experts. A real-shape GDN prefill probe also passed its controlled reference.
+
+The first load emitted recoverable NVIDIA allocation warnings; the second
+reproduced the CUDA failure without those warnings. Linux reclaimed file
+cache under memory pressure during loading. No kernel OOM kill was observed,
+and memory pressure alone has not been established as the CUDA failure's
+cause. A separate allocation stall appeared after the fourth run budgeted
+9.18 GiB for KV: a live worker stack showed NVIDIA system-page allocation
+inside direct compaction and page migration. Despite roughly 33 GiB free,
+the Normal zone had no free buddy blocks of order 9 or larger (2 MiB on this
+4 KiB-page kernel). Cgroup OOM and limit counters were zero. Stopping the
+container restored high-order free blocks. A fifth trial explicitly limited
+KV to 1 GiB, retained 4096-token context and removed synchronous CUDA debugging
+and diagnostic instrumentation. It allocated capacity for 14,199 KV tokens,
+completed warmup and served a healthy API. This avoids the observed allocation
+stall but is not a controlled proof that KV size was the only contributing
+factor.
+
+Initial sequential smoke requests generated coherent Chinese (101 output
+tokens), Python code (256 tokens, truncated by the request limit) and the
+exact requested JSON object (20 tokens). Decode rates were 5.90–6.01 tokens/s;
+time to first content was 2.41, 2.09 and 0.41 seconds respectively. The first
+request triggered QSA JIT compilation. These are short functional probes with
+BF16 KV, one request, no CUDA graphs and no MTP, not tuned benchmark medians.
+Decode rate here is `(completion_tokens - 1) / (stream_end - first_content)`.
+
+A warm repeat raised the code output limit to 512 tokens. All three requests
+finished normally: Chinese 108 tokens at 5.99 tokens/s, code 341 at 5.99, and
+JSON 20 at 5.92. First-content latencies were 0.44, 0.55 and 0.61 seconds.
+The complete Python response parsed successfully and included three assertions
+(not executed); it still used a Markdown fence despite the code-only prompt.
+JSON again matched the exact requested object. This establishes basic text
+generation, not a general quality evaluation or strict instruction-following
+pass.
+
+The working baseline keeps the upstream PLE mmap/CPU-offload and MXFP8 patches,
+the Thor QSA selector workaround, `VLLM_USE_V2_MODEL_RUNNER=1`,
+`VLLM_PLE_CPU_OFFLOAD=1` and `VLLM_MOE_SKIP_PADDING=0`. Its principal serving
+arguments are:
+
+```sh
+--tensor-parallel-size 1 --distributed-executor-backend mp \
+--kv-cache-memory-bytes 1073741824 --max-model-len 4096 \
+--max-num-seqs 1 --max-num-batched-tokens 512 \
+--kv-cache-dtype bfloat16 --mamba-ssm-cache-dtype bfloat16 \
+--load-format safetensors --safetensors-load-strategy lazy \
+--enable-chunked-prefill \
+--compilation-config '{"mode":0,"cudagraph_mode":"NONE"}'
+```
+
+CUDA graphs, FP8 KV and MTP remain separate full-model follow-up experiments.
+The initial API is an experimental loopback-only container, not a persistent
+fleet inference service.
+
+Probe scripts and detailed results remain outside the public repository.
 
 The DeepSeek single-Spark recipe has two additional constraints. It uses a
 REAP-K216 expert-pruned model with EXL3/Trellis quantization, rather than merely
