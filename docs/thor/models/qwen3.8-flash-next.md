@@ -568,6 +568,102 @@ changed, so this is an observed startup difference, not an isolated cache
 speedup measurement.
 The subsequent restored-W8A8 startup took 68.79 s for that same startup phase.
 
+## W8A8 target profiling and MXFP8 tactic comparison
+
+A follow-up on 2026-09-13 retained native GDN, deterministic QSA, K3,
+CPU-offloaded PLE and the full-vocabulary W8A8 draft head. Only on-demand
+Torch profiling was added; the older BF16-draft profiling launcher was not
+reused. With sampling off, the same three-run protocol measured
+35.912 / 61.581 / 50.436 tokens/s for Chinese/code/JSON. All nine measured
+texts, token counts and speculative-decoding counter deltas matched the
+restored W8A8 baseline. These timings do not establish another speedup.
+
+Each Chinese/code trace contained one context iteration, nine decode
+iterations and 38 Graph launches. Launch correlation and native-GDN kernels
+identified the target graph rather than assuming graph IDs were portable.
+The observed sequence was two initial draft launches followed by nine
+`[target, draft-prefill, draft, draft]` groups. Only eight complete successive
+target-start intervals were available:
+
+| Observed component, median | Chinese | Code |
+| --- | ---: | ---: |
+| Target Graph GPU span | 42.806 ms | 41.806 ms |
+| Three draft Graph spans combined | 11.117 ms | 11.079 ms |
+| Target start to final draft completion | 58.785 ms | 57.808 ms |
+| Successive target-start interval | 67.328 ms | 64.700 ms |
+
+Target kernel name/grid counts exactly matched the earlier BF16-draft
+traces. The three draft spans decreased by about 6.6 ms, consistent with
+replacing their three vocabulary projections. Inter-forward gaps also
+changed; do not attribute the entire cycle difference to the head or
+convert these short instrumented traces directly into service throughput.
+The BF16 target head remains outside the target Graph.
+
+Filtering target kernels by Graph-launch correlation gave these **mean
+summed kernel times per verification step**, not exclusive wall times:
+
+| Target kernel family | Chinese | Code |
+| --- | ---: | ---: |
+| NVFP4 grouped MoE GEMM | 14.453 ms | 14.015 ms |
+| MXFP8 dense GEMM | 13.156 ms | 13.151 ms |
+| BF16 dense GEMM, layer mapping incomplete | 7.686 ms | 7.667 ms |
+| MXFP8 activation quantization | 1.317 ms | 1.325 ms |
+| Native GDN | 1.098 ms | 1.097 ms |
+
+Other routing, attention and metadata kernels are omitted from this table.
+Multiple streams overlap, so summing these rows does not give target latency.
+This directs further investigation toward target projections and MoE rather
+than another GDN backport or GPU-resident PLE.
+
+### Real-weight input-projection tactic probe
+
+The most expensive repeated MXFP8 kernel occurred 36 times per target step,
+following activation quantization and preceding GDN convolution. Checkpoint
+headers confirmed layer 0's separate QKV `[10240,2560]` and Z `[6144,2560]`
+E4M3 weights, with U8 E8M0 scales of shape `[N,80]`. Their merged projection
+is `[16384,2560]`, about 41.25 MiB including scales. An independent probe
+loaded only these real weights and used seeded synthetic BF16 activations.
+
+In the pinned FlashInfer runtime, the CUTLASS runner exposes 32 tactics via
+`get_valid_tactics`; explicit selection preserves the weight and activation
+quantization formats. Both `M=1` and `M=4` tested all 32 plus raw default
+`tactic=-1`, which maps to tactic 0. Timings used CUDA Graph replay, five
+batches of 100 replays after warmup, and excluded one-time weight loading.
+A separate profile mapped each successful M4 tactic to its kernel name/grid:
+
+| M4 projection, including activation quantization | Time |
+| --- | ---: |
+| Raw library default | 0.209866 ms |
+| Tactic 8, matching the service trace | 0.170678 ms |
+| Tactic 3, fastest in this probe | 0.170052 ms |
+
+The service kernel signature containing
+`DeviceGemmMxfp8GemmSm100___nv_bfloat16_128_64_128_2_2_1_2SM`, grid
+`[2,256,1]`, uniquely matched tactic 8 when compared by the complete kernel
+name and grid. This also corroborates the projection's layer/shape mapping.
+Service autotuning had already selected a substantially better configuration
+than the raw library default. **Do not report the difference against that
+default as a service speedup.** Tactic IDs are specific to this runtime.
+
+All 66 tactic/shape comparisons succeeded and were bitwise equal to the raw
+default for the tested inputs. Tactic 3 also passed eight changing-input
+Graph comparisons: zero input and three seeds at each M, using the same
+captured graph. Real weights with synthetic activations do not establish
+general model-quality equivalence. Observed device-free-memory deltas stayed
+below 403 MiB; between-operation samples do not prove a hard transient peak.
+
+Tactic 3's difference from the service-matching tactic was only 0.37%, or
+about 0.023 ms across 36 calls. This single-run difference may be timing
+variation and does not justify a service change. Keep the existing tactic
+selection; investigate other projection shapes or the MoE path next.
+
+The 2823-token retrieval regression passed 3/3. The ordinary W8A8 launcher
+was restored, then generation smoke checks were repeated after the independent
+GPU probe: all three texts matched the prior baseline, all stopped normally,
+and JSON was correct. Health remained 200 and the memory watchdog stayed
+active. No new serving variant was promoted; raw traces and probe artifacts
+remain outside Git.
+
 ## Serving status
 
 FP8 KV remains a separate capacity/quality experiment. It is not needed for
