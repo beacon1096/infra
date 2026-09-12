@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+set -euo pipefail
+exec nix-shell -p python3Packages.pyyaml --run 'python3 utils/check-secrets.py --staged'

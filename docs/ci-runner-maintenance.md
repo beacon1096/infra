@@ -51,7 +51,10 @@ not rebalance replica allocation or reduce a node's storage reservation.
 1. The drain timer writes `/run/nixbuilder-maintenance`, which prevents the
    runner from being restarted by an intervening system activation.
 2. The runner stops accepting jobs and waits up to 12 hours for its current
-   job to finish. A 15-minute gap remains before store maintenance begins.
+   job to finish. `KillMode=mixed` sends the initial SIGTERM only to the
+   runner, so job subprocesses can finish during this wait. Systemd can
+   forcibly stop the remaining process group after `TimeoutStopSec=12h5m`.
+   Maintenance begins 12 hours 15 minutes after drain starts.
 3. At 03:15, maintenance runs only if the marker exists and the runner is
    fully inactive. Otherwise it is skipped rather than risking a live build.
 4. `nix-collect-garbage --delete-older-than 7d` and `nix-store --optimise`
@@ -66,6 +69,12 @@ been eliminated, reduce the workflow timeout, runner timeout, shutdown timeout,
 and drain lead time together; changing only one of them can terminate an active
 job or allow maintenance to overlap it.
 
+The maintenance gate covers this runner's jobs; it does not coordinate manual
+builds or other Nix daemon clients. The workflow disables persistent evaluation
+caching with `eval-cache = false`. The GC option `--delete-older-than 7d`
+removes old profile generations before collection; it does not guarantee seven
+days of retention for unrooted store paths.
+
 ## Verification
 
 After changing the schedule, evaluate all three hosts and inspect their timers:
@@ -77,4 +86,11 @@ nix build \
   .#nixosConfigurations.nixbuilder-03.config.system.build.toplevel
 
 systemctl list-timers 'nixbuilder-*'
+systemctl show "gitea-runner-$(systemd-escape "$(hostname)").service" \
+  -p KillMode -p TimeoutStopUSec
 ```
+
+After deployment, use a controlled test job to verify that drain stops new job
+fetches while the current job finishes, the maintenance marker blocks runner
+starts, and maintenance skips a runner that is not fully inactive. A successful
+Nix build validates the configuration but does not exercise this live behavior.

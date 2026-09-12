@@ -141,7 +141,10 @@ in
   systemd.services = {
     "gitea-runner-${utils.escapeSystemdPath config.networking.hostName}" = {
       unitConfig.ConditionPathExists = "!${maintenanceMarker}";
-      serviceConfig.TimeoutStopSec = "12h5m";
+      serviceConfig = {
+        KillMode = "mixed";
+        TimeoutStopSec = "12h5m";
+      };
     };
 
     nixbuilder-runner-drain = {
