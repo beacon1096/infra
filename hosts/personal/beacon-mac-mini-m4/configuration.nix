@@ -23,6 +23,20 @@
     /usr/bin/dscacheutil -flushcache
   '';
 
+  launchd.daemons.iogpuWiredLimit = {
+    serviceConfig = {
+      Label = "org.beacon.iogpu-wired-limit";
+      ProgramArguments = [
+        "/bin/sh"
+        "-c"
+        "/usr/sbin/sysctl -w iogpu.wired_limit_mb=28672"
+      ];
+      RunAtLoad = true;
+      StandardOutPath = "/var/log/iogpu-wired-limit.log";
+      StandardErrorPath = "/var/log/iogpu-wired-limit.log";
+    };
+  };
+
   beacoworks.forgejoRunner.enable = true;
   beacoworks.comin.enable = lib.mkDefault false;
 
