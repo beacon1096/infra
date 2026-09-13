@@ -678,11 +678,14 @@ Probe scripts and detailed results remain outside the public repository.
 ## External comparison
 
 The Flash Next repository reports approximately 48.7 tokens/s for one stream
-and 162.9 aggregate for eight streams, whereas the author's separate adaptation
-report gives different workloads/settings. These are Spark measurements, not
-directly comparable single-Thor results.
+and 162.9 aggregate for eight streams on Spark. The Lazycat manufacturer's
+technical lead's blog provides manufacturer adaptation results with its own
+hardware, model and workload conditions. See the
+[manufacturer's product-page snapshot](../../thor.md#manufacturer-published-performance-snapshot)
+for newer advertised Thor figures; neither source is a controlled comparison
+with the local workload.
 
 ## References
 
 - [Qwen3.8 Flash Next Spark deployment at the reviewed revision](https://github.com/MiaAI-Lab/Qwen3.8-Flash-Next-Single-DGX-Spark/tree/d03809008834124e80223c3482f2ddb59577a48f)
-- [Author's DFlash2 single-stream 125–133 TPS report](https://manateelazycat.github.io/2026/08/29/model-adaptation-record/) — external result, not a local measurement.
+- [Lazycat technical lead's model adaptation report](https://manateelazycat.github.io/2026/08/29/model-adaptation-record/) — external result, not a local measurement.

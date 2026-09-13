@@ -140,5 +140,5 @@ it cannot by itself explain the gap to the external 125–133 tokens/s report.
 ## References
 
 - [Original SGLang deployment reference for DGX Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) — adapted and measured on Thor; its Spark CPU affinity and attention settings are not directly transferable.
-- [Author's DFlash2 single-stream 125–133 TPS report](https://manateelazycat.github.io/2026/08/29/model-adaptation-record/) — external result, not a local measurement.
+- [Lazycat technical lead's model adaptation report](https://manateelazycat.github.io/2026/08/29/model-adaptation-record/) — external result, not a local measurement.
 - [Huihui NVFP4 checkpoint and model card at the tested revision](https://huggingface.co/Vtuber-plan/Huihui-Qwen3.8-27B-abliterated-NVFP4/tree/43aa7ff5eef05ab50a3bfa6aca581085312c7a04)

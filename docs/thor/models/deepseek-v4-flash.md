@@ -19,8 +19,9 @@ It is therefore a porting project before it is a model-download experiment.
 
 ## External comparison
 
-The author's adaptation report gives approximately 70 tokens/s for DeepSeek
-using two machines. This is not a comparable single-Thor result.
+The Lazycat manufacturer's technical lead reports approximately 70 tokens/s
+for DeepSeek using two machines in a model-adaptation blog post. This is
+not a comparable single-Thor result.
 [Flash Next](qwen3.8-flash-next.md) was selected for the local deployment
 experiments first.
 
@@ -29,4 +30,4 @@ experiments first.
 - [DeepSeek-v4 Flash single-Spark deployment at the reviewed revision](https://github.com/MiaAI-Lab/DeepSeek-v4-Flash-One-DGX-Spark/tree/fdcd538fbf95fb15b2d6850db9613d22b2c889b8)
 - [DeepSeek Spark checkpoint and disk requirements](https://huggingface.co/0xSero/deepseek-v4-flash-0731-spark)
 - [DeepSeek Spark runtime Dockerfile and architecture targets](https://github.com/0xSero/deepseek-v4-flash-0731-spark-sparkinfer/blob/main/Dockerfile)
-- [Author's DFlash2 single-stream 125–133 TPS report](https://manateelazycat.github.io/2026/08/29/model-adaptation-record/) — external result, not a local measurement.
+- [Lazycat technical lead's model adaptation report](https://manateelazycat.github.io/2026/08/29/model-adaptation-record/) — external result, not a local measurement.
