@@ -600,6 +600,50 @@ The [2026-08-27 throughput report](https://manateelazycat.github.io/2026/08/27/q
 
 Performance tuning remains deferred. These references preserve future capacity-test targets; no YaRN setting or larger advertised context was deployed by this documentation update.
 
+## Native 256K capacity test — 2026-09-14
+
+Temporarily activated the candidate above: context 262144, actual token pool
+270336, BF16 KV, chunked prefill 1024, memory fraction 0.65, DFlash2 block16
+with draft INT8 head, and one running request. Target KV allocated 16.5 GiB
+and draft KV approximately 5.16 GiB. No YaRN or performance kernels changed.
+
+The synthetic archive placed three exact-value facts around 5%, 50% and
+95% of the input. Token counts came from the pinned tokenizer and native
+`/generate` input IDs; thinking was disabled, temperature zero and maximum
+new tokens 256. Cold cases flushed cache; reuse repeated the same input.
+
+| Input tokens | Cache tokens | First text (s) | Complete (s) | Output tokens | Retrieval |
+| ---: | ---: | ---: | ---: | ---: | --- |
+| 32769 | 0 | 31.367 | 32.869 | 45 | 3/3 |
+| 131072 | 0 | 397.149 | 400.487 | 50 | 3/3 |
+| 261120 | 0 | 1506.754 | 1512.849 | 45 | 3/3 |
+| 261120 | 260096 | 11.613 | 17.708 | 45 | 3/3 |
+
+All four finished with `stop`. The 128K response contained Markdown JSON
+fences, stripped for retrieval comparison; this was not a strict-JSON test.
+The near-256K case leaves 1024 positions in the configured context and
+produced only 45 tokens; it does not qualify maximum-length output.
+A subsequent OpenAI-compatible request through the unified gateway reused
+the warm archive and returned HTTP 200, all three facts, first text in
+3.237 seconds and completion in 9.394 seconds. That differently warmed
+request is not directly comparable to the native reuse timing.
+
+Half-second host samples during the four native cases had minimum
+`MemAvailable` 60.70 GiB and minimum `MemFree` 33.39 GiB. These are sampled
+unified-memory headroom, not an exact GPU allocation peak or a guarantee
+against sub-sample transients. The inference service had zero automatic
+restarts and generation-health checks continued during the long prefill.
+
+Capacity passed this bounded retrieval test, but cold prefill is unsuitable
+for the existing 300-second gateway timeout: 128K took 6m37s to first text
+and near-256K took 25m07s. Prefix reuse helps considerably, but eviction,
+restart or a different prefix can bring back the cold delay. One active
+request also means other agents queue behind this prefill. The temporary
+configuration was reverted after testing; the production context and
+metadata remain 4K. Before promotion, qualify timeout behavior, incremental
+conversations, cache eviction and representative tool workloads. Keep
+concurrency and kernel tuning as separate follow-up experiments.
+
 ## References
 
 - [Original SGLang deployment reference for DGX Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) — adapted and measured on Thor; its Spark CPU affinity and attention settings are not directly transferable.
