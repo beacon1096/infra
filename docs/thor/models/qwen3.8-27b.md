@@ -95,6 +95,103 @@ Compatibility findings from exploratory runs, not additional retest rankings:
 - The older pinned CUDA 13.0.3 image was selected for the installed driver;
   the newer CUDA 13.4 image was not validated.
 
+## Original-model draft-head INT8 follow-up
+
+On 2026-09-13, the same original checkpoint, DFlash2 draft, pinned SGLang
+runtime and three-workload protocol reproduced 20.510 / 44.993 / 55.966
+tokens/s. All nine measured response texts matched the previous original-model
+baseline. This follow-up does not reuse Huihui measurements as original-model
+results.
+
+Original-model traces each contained eleven draft and eleven target Graph
+replays. Both graphs included one complete BF16 vocabulary projection of shape
+`[248320,5120]`, about 9.78 ms in the draft and 9.73 ms in the target. The
+original target Graph took about 81–83 ms, versus about 70–71 ms in the older
+Huihui traces. Those targets have different precision mixes: the original
+trace contains 128 FP8 GEMMs and corresponding FP8 activation quantizations
+where the Huihui trace has 128 additional NVFP4 GEMMs. Do not treat the two
+checkpoints as an identical-kernel runtime comparison just because both
+carry an NVFP4 label; exact module mapping still needs direct shape evidence.
+
+### Preserve the DFlash2 selector
+
+The actual captured path is `_SelectorDraftSampler` → `_selector_lattice` →
+`DFlash2DraftModel.compute_candidates` in `sglang/srt/models/dflash.py`.
+It projects the complete vocabulary, then applies radix top-k, unary-logit
+transformation and the learned selector. The ordinary `_DflashDraftSampler`
+matmul is a different path. An initial integration guard rejected this
+selector configuration before serving, and the BF16 service was restored;
+this was an integration error, not a failed INT8 numerical probe.
+
+The corrected experiment replaces only the TP1 full-vocabulary projection
+inside `compute_candidates`, before the existing top-k. Graph and eager
+execution retain the selector and target verification. A separate per-row
+INT8 weight copy is built before draft Graph capture; activations use dynamic
+per-row INT8 scaling, INT32 accumulation and BF16 output. Small row counts
+are padded to 32 for the integer GEMM. All 248320 vocabulary entries remain
+available. The shared target head stays BF16; the draft copy adds about
+1.184 GiB rather than shrinking target memory.
+
+The real checkpoint head passed M7/M8 checks against an independent FP64
+integer-dot implementation of the same quantization, plus empty/zero-input
+and changing-buffer CUDA Graph checks. Including activation quantization and
+rescaling, standalone Graph medians were 9.787 → 5.043 ms at M7 and
+9.790 → 5.104 ms at M8. These initial inputs were synthetic.
+
+### Serving results and real hidden states
+
+Sampling was disabled during the three-run streaming benchmark:
+
+| Workload | BF16 draft head | INT8 draft head | Change | Response text |
+| --- | ---: | ---: | ---: | --- |
+| Chinese | 20.510 TPS | 20.670 TPS | +0.8% | Changed |
+| Short code | 44.993 TPS | 46.934 TPS | +4.3% | Identical |
+| Long code | 55.966 TPS | 57.682 TPS | +3.1% | Changed |
+
+Each INT8 workload was stable across its three measured repetitions. Separate
+native `/generate` requests used the same chat-template token IDs and matched
+the corresponding streaming outputs. Their per-request speculative counters
+reported acceptance rates of 17.67% → 16.71% for Chinese, 57.69% → 57.69% for
+short code and 74.81% → 73.31% for long code. These are single-request counter
+comparisons, not the server's log-window or cumulative averages. Accepted-length figures
+were 2.246 → 2.169, 4.923 → 4.923 and 6.206 → 6.132 respectively. Proposal
+accounting can extend beyond a requested output cap. Changed Chinese/long-code
+trajectories prevent attributing their entire throughput difference to the
+faster projection.
+
+| Median Graph GPU span | Chinese BF16 → INT8 | Long code BF16 → INT8 |
+| --- | ---: | ---: |
+| Draft | 23.366 → 18.825 ms | 23.622 → 19.145 ms |
+| Target verification | 80.885 → 80.842 ms | 82.705 → 82.796 ms |
+
+All 1066 target kernels per replay retained identical names, grids and counts.
+In the draft, the other 131 kernels were unchanged: one BF16 head was replaced
+by the integer GEMM and quantization/rescaling, 16 kernels in total. Thus the
+roughly 4.5 ms draft reduction is directly visible, while target time remains
+similar. Kernel sums are not exclusive wall time or service throughput.
+
+Default-off sampling then collected 16 Chinese and 16 short-code steps from
+the INT8 service, seven real hidden rows per step. All 32 saved samples exactly
+reproduced their pre-selector candidate IDs and logits when recomputed with
+the same deterministic radix top-k. BF16 versus INT8 head argmax differed on
+3/112 Chinese rows and 1/112 code rows. Final selector tokens are not generally
+head argmax and were not used as that reference. These are INT8-trajectory
+samples, not paired BF16/INT8 generation trajectories or broad quality proof.
+
+A 2823-token retrieval prompt passed three times, including prefix reuse.
+JSON was correct; a complete generated primality function exactly matched the
+BF16 response already validated by its five assertions and 10033 independent
+sieve checks over integers -32 through 10000. The throughput code responses
+remain capped and are not complete-program quality tests.
+
+The INT8 experimental service was retained with profiling and hidden sampling
+off, health 200 and approximately 83 GiB host memory available. The original
+BF16 container and Flash Next launch configuration remain available for
+rollback. The clearest measured gain is short-code throughput at identical
+text and acceptance. Next inspect the original target's FP8 projection
+shapes and kernel choices while retaining its current weights and precision.
+Raw scripts, traces and hidden-state samples remain outside Git.
+
 ## References
 
 - [Original SGLang deployment reference for DGX Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) — adapted and measured on Thor; its Spark CPU affinity and attention settings are not directly transferable.
