@@ -56,7 +56,7 @@ let
     "xiaomi_mimo/mimo-v2.5-pro" = reasoningTextModel "MiMo V2.5 Pro" 1048576 131072;
     "zai/glm-5.2" = reasoningTextModel "GLM-5.2" 1048576 131072;
 
-    "Qwen3.6-27B-4bit" = reasoningVisionTextModel "Qwen3.6 27B 4bit" 32768 8192;
+    "Qwen3.8-27B-4bit" = reasoningVisionTextModel "Qwen3.8 27B 4bit" 32768 8192;
     "gemma-4-26b-a4b-it-4bit" = visionTextModel "Gemma 4 26B A4B IT 4bit" 65536 8192;
     "gemma-4-31b-it-4bit" = visionTextModel "Gemma 4 31B IT 4bit" 8192 2048;
     "gemma-4-e4b-it-4bit" = visionTextModel "Gemma 4 E4B IT 4bit" 131072 16384;
