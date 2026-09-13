@@ -14,6 +14,11 @@ let
     overlays = [ inputs.llmAgents.overlays.shared-nixpkgs ];
   };
   agentRules = ../../rules/AGENTS.md;
+  modelCredential = name: env:
+    let
+      path = osConfig.sops.secrets."personal/beacoworks-models/${name}".path or null;
+    in
+    if path != null then "{file:${path}}" else "{env:${env}}";
   textModel = name: context: output: {
     inherit name;
     limit = { inherit context output; };
@@ -52,7 +57,6 @@ let
     "zai/glm-5.2" = reasoningTextModel "GLM-5.2" 1048576 131072;
 
     "Qwen3.6-27B-4bit" = reasoningVisionTextModel "Qwen3.6 27B 4bit" 32768 8192;
-    "Qwen3.6-35B-A3B-4bit" = reasoningVisionTextModel "Qwen3.6 35B A3B 4bit" 65536 16384;
     "gemma-4-26b-a4b-it-4bit" = visionTextModel "Gemma 4 26B A4B IT 4bit" 65536 8192;
     "gemma-4-31b-it-4bit" = visionTextModel "Gemma 4 31B IT 4bit" 8192 2048;
     "gemma-4-e4b-it-4bit" = visionTextModel "Gemma 4 E4B IT 4bit" 131072 16384;
@@ -183,8 +187,8 @@ in
           name = "Beacoworks";
           npm = "@ai-sdk/openai-compatible";
           options = {
-            baseURL = "{env:BEACOWORKS_MODELS_API_BASE}";
-            apiKey = "{env:BEACOWORKS_MODELS_API_KEY}";
+            baseURL = modelCredential "api_base" "BEACOWORKS_MODELS_API_BASE";
+            apiKey = modelCredential "api_key" "BEACOWORKS_MODELS_API_KEY";
           };
           models = beacoworksModels;
         };

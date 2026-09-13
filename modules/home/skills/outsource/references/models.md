@@ -23,7 +23,6 @@ opencode models beacoworks
 - `beacoworks/xiaomi_mimo/mimo-v2.5-pro` - MiMo V2.5 Pro
 - `beacoworks/zai/glm-5.2` - GLM-5.2
 - `beacoworks/Qwen3.6-27B-4bit` - Qwen3.6 27B 4bit
-- `beacoworks/Qwen3.6-35B-A3B-4bit` - Qwen3.6 35B A3B 4bit
 - `beacoworks/gemma-4-26b-a4b-it-4bit` - Gemma 4 26B A4B IT 4bit
 - `beacoworks/gemma-4-31b-it-4bit` - Gemma 4 31B IT
 - `beacoworks/gemma-4-e4b-it-4bit` - Gemma 4 E4B IT

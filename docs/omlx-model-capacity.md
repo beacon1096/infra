@@ -1,20 +1,18 @@
 # oMLX 自部署模型容量
 
-## 初始容量规划
+## 当前容量规划
 
-下表记录 Gemma 4 31B dense 迁移到 Mac mini M4 之前的容量规划。常用请求是日常建议范围；oMLX 硬上限用于拒绝超过本机容量的请求，不代表该长度适合日常使用。
+下表记录 Mac mini M4 上的模型容量规划。AGX Thor 的替代部署待确认，暂不列入可用模型。常用请求是日常建议范围；oMLX 硬上限用于拒绝超过本机容量的请求，不代表该长度适合日常使用。
 
 | 模型 | 机器 | 常用请求 | oMLX 硬上限 | 输出上限 |
 | --- | --- | ---: | ---: | ---: |
-| Qwen3.6-35B-A3B | M2 Ultra | 32–64K | 128K | 16K |
-| Gemma-4-26B-A4B | M2 Ultra | 16–32K | 64K | 8K |
-| Gemma-4-31B dense | M2 Ultra | 8–16K | 32K | 8K |
 | Qwen3.6-27B dense | M4 | 8–16K | 32K | 8K |
+| Gemma-4-31B dense | M4 | 输入约 6K 内 | 8K | 2K |
 | Gemma-4-E4B | M4 | 32–64K | 128K | 8–16K |
 
-## 当前部署例外
+## Gemma 4 31B 部署限制
 
-Gemma-4-31B dense 已迁移到 32GB Mac mini M4。其 4-bit 权重实际占用约 17.9GB，而 oMLX 自动模型内存预算约为 25.6GB，只剩约 7.7GB 供 KV cache、图片编码、预填充和 Metal 运行时使用。因此不要沿用上表中 M2 Ultra 的 32K/8K 硬上限。
+Gemma-4-31B dense 已迁移到 32GB Mac mini M4。其 4-bit 权重实际占用约 17.9GB，而 oMLX 自动模型内存预算约为 25.6GB，只剩约 7.7GB 供 KV cache、图片编码、预填充和 Metal 运行时使用。因此使用 8K 上下文和 2K 输出硬上限。
 
 M4 上的 Gemma-4-31B dense 使用：
 
