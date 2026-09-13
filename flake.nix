@@ -123,6 +123,7 @@
       };
     };
 
+    darwinModules.omlx = ./modules/darwin/omlx;
     darwinModules."beacon-mac-mini-m4" = ./hosts/personal/beacon-mac-mini-m4/configuration.nix;
 
     # ──────────────────────────────────────────────────────────
@@ -670,6 +671,8 @@
         }).config.system.build.toplevel;
 
     };
+
+    packages.aarch64-darwin.omlx = nixpkgs.legacyPackages.aarch64-darwin.callPackage ./packages/omlx { };
 
     packages.aarch64-darwin.common-darwin-closure =
       (nix-darwin.lib.darwinSystem {

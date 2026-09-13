@@ -1,5 +1,19 @@
 # oMLX 自部署模型容量
 
+## Nix 管理
+
+`darwinModules.omlx` 导出独立的 nix-darwin 模块。`packages/omlx/default.nix` 固定官方 oMLX 应用版本与 DMG 校验值，复用应用内的 Python、MLX 和 Metal 运行环境。在 Mac 上可用 `nix build .#omlx` 单独构建程序。默认包适用于 macOS 26/27；macOS 15 可用 `pkgs.callPackage ./packages/omlx { macosVersion = "15"; }` 设置 `services.omlx.package`。
+
+M4 的 `services.omlx.models` 声明模型仓库、完整 commit revision 和受管推理参数。权重保存在运行目录，不进入 Nix store。新增模型时先在 Mac 上构建并下载，再应用服务配置：
+
+```bash
+nix build .#darwinConfigurations.beacon-mac-mini-m4.config.system.build.omlx
+./result/sync/bin/omlx-sync --download-only
+sudo darwin-rebuild switch --flake .#beacon-mac-mini-m4
+```
+
+下载会验证固定 revision 的文件大小及内容哈希，完成后才发布模型目录。服务启动前只合并受管的每模型参数，保留其他模型和认证配置；不会自动下载或删除权重。`settings.json` 与 `model_settings.json` 保持可写，不链接到只读 store。
+
 ## 当前容量规划
 
 下表记录 Mac mini M4 上的模型容量规划。AGX Thor 的替代部署待确认，暂不列入可用模型。常用请求是日常建议范围；oMLX 硬上限用于拒绝超过本机容量的请求，不代表该长度适合日常使用。

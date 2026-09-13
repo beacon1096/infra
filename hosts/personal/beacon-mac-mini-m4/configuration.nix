@@ -4,6 +4,7 @@
 {
   imports = [
     ../common/configuration.nix
+    ../../../modules/darwin/omlx
     ../../../modules/darwin/comin.nix
     ../../../modules/darwin/forgejo-runner.nix
   ];
@@ -34,6 +35,27 @@
       RunAtLoad = true;
       StandardOutPath = "/var/log/iogpu-wired-limit.log";
       StandardErrorPath = "/var/log/iogpu-wired-limit.log";
+    };
+  };
+
+  services.omlx = {
+    enable = true;
+    modelDir = "/Users/beacon/.exo/models";
+    extraArgs = [ "--host" "0.0.0.0" "--port" "8000" ];
+    models."mlx-community--Qwen3.8-27B-4bit" = {
+      repo = "mlx-community/Qwen3.8-27B-4bit";
+      revision = "3e6447f082e89cc7f0bc6e5441afd38dfce760ff";
+      settings = {
+        max_context_window = 32768;
+        max_tokens = 8192;
+        enable_thinking = false;
+        chat_template_kwargs.enable_thinking = false;
+        turboquant_kv_enabled = true;
+        turboquant_kv_bits = 8.0;
+        turboquant_skip_last = true;
+        is_pinned = false;
+        is_default = false;
+      };
     };
   };
 
