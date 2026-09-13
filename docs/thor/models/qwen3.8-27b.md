@@ -335,6 +335,60 @@ Raw probes, patch generator, launch/rollback scripts and traces remain outside
 Git. Further work should prioritize larger measured costs, such as the target
 LM head, while preserving target precision and validating generated output.
 
+## Original target BF16 head backend probe (2026-09-13)
+
+The retained GDN-BV16 service spends 9.812 ms per verification replay in the
+full-vocabulary target head. Its actual entrypoint is `torch.matmul` with
+BF16 hidden states and transposed BF16 weights, producing BF16 logits before
+copying them into the FP32 sampling buffer. Verification projects all eight
+rows. Direct FP32 GEMM output would bypass this BF16 rounding step and was
+not treated as an equivalent replacement.
+
+The real `[248320, 5120]` head contains 2542796800 bytes (2.368 GiB).
+Dividing that size by the serving time gives approximately 259 GB/s; this
+is a weight-bytes/time ratio, not a measured memory-bandwidth ceiling.
+The standalone probe checked the complete vocabulary and recorded the raw
+weight SHA256, while using synthetic BF16 hidden states. It retained the
+existing reduced-precision-reduction setting and did not quantize the head.
+
+All backends shared fixed inputs during timing. Five batches of 20 CUDA Graph
+replays alternated forward/reverse backend order. GEMM medians, excluding the
+subsequent FP32 copy:
+
+| Backend | M8 | M1 |
+| --- | ---: | ---: |
+| Current Torch matmul | 9.7837 ms | 9.8691 ms |
+| Torch F.linear | 9.7457 ms | 9.8404 ms |
+| Torch addmm, beta=0 | 9.7515 ms | 9.8251 ms |
+| Vocabulary chunks of 65536 plus concatenation | 9.8734 ms | 9.9349 ms |
+| FlashInfer cuBLASLt | 9.7672 ms | 9.8292 ms |
+| FlashInfer cuDNN | 9.7769 ms | 9.8669 ms |
+| FlashInfer TinyGEMM | 9.4113 ms | 9.4230 ms |
+
+The baseline, F.linear, addmm, cuBLASLt and cuDNN dispatched identical kernel
+names and grids at each M. At M8 they exactly matched the serving trace's
+`nvjet_sm110_tst_128x8_64x12_2x1_v_bz_TNT`, grid `[1940, 1, 1]`.
+Their outputs were bitwise identical in all eight random/changed/zero/recovery
+cases per backend. Their sub-0.5% timing differences do not establish a useful
+backend change when the captured GPU work is the same.
+
+All 56 changing-input Graph checks matched their own backend's eager output,
+were finite and retained the baseline argmax on these synthetic inputs.
+TinyGEMM and vocabulary chunking nevertheless differed from baseline logits
+in all six nonzero cases each, with maximum absolute difference 0.03125.
+Their worst differing-element fractions were 0.234% and 0.122% respectively.
+TinyGEMM's M8 improvement is approximately 3.8% (0.372 ms), but unchanged
+synthetic argmax is not evidence of equivalent target acceptance or sampling
+on real hidden states. No service A/B or model-quality claim was made for it.
+
+No head backend was promoted. The existing INT8-draft/GDN-BV16 service remained
+healthy with its memory watchdog active and hidden sampling off. Probe peak
+PyTorch allocation/reservation was 2.506/2.627 GiB, excluding the server and
+non-PyTorch allocations. Raw scripts, checksums, numerical results and kernel
+traces remain outside Git. The next larger measured target cost is the pair
+of NVFP4 projection groups, about 37 ms per replay; inspect their actual shapes
+and tactics before proposing another service change.
+
 ## References
 
 - [Original SGLang deployment reference for DGX Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) — adapted and measured on Thor; its Spark CPU affinity and attention settings are not directly transferable.
