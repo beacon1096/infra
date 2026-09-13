@@ -247,6 +247,94 @@ results and traces are retained outside Git. The next useful experiment is
 GDN attention-state/kernel overhead on this original checkpoint; another
 wrapper around these FP8 GEMMs is not supported by the measured results.
 
+## Original target GDN tiling experiment (2026-09-13)
+
+The preceding INT8-draft traces attribute 4.234 ms (Chinese) / 3.691 ms
+(long code) of each target replay to GDN recurrent update, convolution,
+QKV/Z splitting and gated normalization. Recurrent update alone accounts
+for 3.238 / 2.667 ms across 48 calls, with grid `[1, 4, 48]`. Outside the
+graph, SSM state and convolution-window scatter add approximately 0.738 ms
+per verification round. These kernel sums are not exclusive wall time.
+
+DFlash verifies eight valid tokens per round in this configuration. The
+acceptance count selects a saved state after verification; it does not shorten
+the recurrent loop. SSM verification keeps its source state intact and saves
+BF16 state snapshots at every step. Convolution verification has different
+write-back behavior and its accepted window is restored during commit.
+
+The installed FlashInfer backend's verification guard excludes SM110, and
+the CuteDSL backend has no target-verification implementation. Instead of
+switching backend, this experiment swept the existing Triton kernel's value
+block size (16/32/64) and warp count (1/2/4), keeping three stages.
+Only the one-warp configurations passed all bitwise checks; the larger warp
+counts changed numerical results and were rejected.
+
+The probe used synthetic packed Q/K/V with the model's 16 key heads, 48 value
+heads and 128-dimensional key/value heads, plus nonzero BF16 initial state.
+It checked all per-token snapshots, unchanged source state, nonzero pool
+indices, untouched padding and an allocated snapshot stride larger than the
+runtime token count. Changing-input CUDA Graph checks also compared output
+and snapshots with the original kernel.
+
+A second probe held inputs fixed and alternated baseline/candidate order
+across ten batches of 100 Graph replays:
+
+| Valid tokens | Original BV32, one warp | BV16, one warp | Kernel reduction |
+| --- | ---: | ---: | ---: |
+| 1 | 0.012309 ms | 0.010264 ms | 16.6% |
+| 3 | 0.023340 ms | 0.018680 ms | 20.0% |
+| 8 | 0.056102 ms | 0.041098 ms | 26.7% |
+
+All three fixed-input comparisons were bitwise equal. The candidate patch
+is opt-in and limited to SM110, batch one, the original eight-token verify
+shape, BF16 state and inputs, and the existing non-tree/non-KDA/non-ring
+path. It changes BV alone; arithmetic, warp count and state commit remain
+unchanged. These standalone checks do not replace service-level validation.
+
+### Service A/B
+
+A fresh baseline reproduced the previous INT8 service's texts and throughput.
+The same three workloads, with one short warmup and three measured repetitions
+each, then produced:
+
+| Workload | Original BV32 | Candidate BV16 | Change |
+| --- | ---: | ---: | ---: |
+| Chinese | 20.671 TPS | 20.792 TPS | +0.59% |
+| Short code | 46.930 TPS | 47.206 TPS | +0.59% |
+| Long code | 57.681 TPS | 58.023 TPS | +0.59% |
+
+All nine measured response texts and token usages were identical. Candidate
+and baseline throughput ranges did not overlap in these three repetitions;
+this remains a small fixed-workload experiment, not a broad performance claim.
+
+| Profile metric | Chinese BV32 → BV16 | Long code BV32 → BV16 |
+| --- | ---: | ---: |
+| Recurrent kernel sum per target replay | 3.238 → 2.652 ms | 2.667 → 2.073 ms |
+| Target Graph median span | 80.842 → 80.253 ms | 82.796 → 82.107 ms |
+| Draft Graph median span | 18.825 → 18.813 ms | 19.145 → 19.115 ms |
+
+Each trace contained 11 draft/target replays. The only target kernel-grid
+change was the 48 recurrent calls, from `[1, 4, 48]` to `[1, 8, 48]`.
+All other target kernel names, grids and counts were unchanged, as were all
+draft kernels. The approximately 0.59 ms recurrent reduction is visible in
+both workloads; whole-model savings are smaller than the standalone 27%.
+
+Five native requests (the three workloads, JSON and a complete primality
+function) retained identical texts and all per-request speculative counters.
+Chinese/short-code/long-code acceptance remained 16.71% / 57.69% / 73.31%.
+The functional response was identical to the previously validated program;
+the capped throughput responses are still not complete-program quality tests.
+A 2823-token retrieval prompt passed three times, including prefix reuse.
+
+The BV16 configuration was selected for the experimental service after these
+checks. After restart, retrieval passed three more times, health was 200,
+hidden sampling remained off and the memory watchdog was active. The original
+INT8-draft/BV32 container remains available for rollback.
+This is a roughly 0.6% service improvement, not the standalone kernel's 27%.
+Raw probes, patch generator, launch/rollback scripts and traces remain outside
+Git. Further work should prioritize larger measured costs, such as the target
+LM head, while preserving target precision and validating generated output.
+
 ## References
 
 - [Original SGLang deployment reference for DGX Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) — adapted and measured on Thor; its Spark CPU affinity and attention settings are not directly transferable.
