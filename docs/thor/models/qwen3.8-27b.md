@@ -389,6 +389,76 @@ traces remain outside Git. The next larger measured target cost is the pair
 of NVFP4 projection groups, about 37 ms per replay; inspect their actual shapes
 and tactics before proposing another service change.
 
+## Original target NVFP4 tactic probe (2026-09-13)
+
+The retained service's 128 NVFP4 GEMMs are the 64 merged gate/up projections
+and 64 down projections. They account for 36.973 ms (Chinese) / 37.074 ms
+(long code) per target replay:
+
+| Projection | Logical weight `[N, K]` | Packed U8 weight | Serving grid | Mean time per call, Chinese |
+| --- | --- | --- | --- | ---: |
+| Gate/up | `[34816, 5120]` | `[34816, 2560]` | `[2, 272, 1]` | 0.3812 ms |
+| Down | `[5120, 17408]` | `[5120, 8704]` | `[1, 40, 1]` | 0.1965 ms |
+
+The probe loaded real layer 0 weights and reproduced the original runtime
+scale processing: block-16 E4M3 scales in the 128-by-4 swizzled layout,
+maximum shard input/global weight scales, and their product as GEMM alpha.
+These shapes need no padding. Packed weights were not requantized, and
+activations used the installed SGLang `fp4_quantize` on synthetic BF16 inputs.
+
+An initial signature guard correctly stopped the probe: the independent
+FlashInfer wrapper's default kernel differed from the serving kernel despite
+an identical grid. SGLang loads a persistent FlashInfer autotune cache during
+startup; the standalone wrapper had not loaded it. Thus neither uncached
+wrapper timing nor raw tactic `-1` is the service baseline.
+
+The complete M8 sweep covered 32 explicit CUTLASS tactics plus the uncached
+wrapper and raw default for each shape. All 68 combinations ran, and all
+272 changing-input Graph checks matched both their own eager output and the
+wrapper output bitwise, including zero and recovery. The full kernel name
+and grid uniquely identified serving tactic 4 for gate/up and 21 for down;
+the saved service autotune cache independently confirmed both IDs. These
+IDs are specific to the installed FlashInfer build and these shapes.
+
+The first sequential scan suggested only small improvements among explicit
+tactics. It also produced an unusually fast down-wrapper sample (0.1762 ms)
+that its identical raw kernel did not reproduce (approximately 0.1953 ms).
+This discrepancy required fixed-input interleaved confirmation before any
+service conclusion. The raw first attempt and complete scan are retained.
+
+The confirmation held inputs fixed and rotated/reversed candidate order
+across ten batches of 50 Graph replays. It measured both GEMM alone and the
+original activation-quantization-to-GEMM path, without an artificial FP4 copy
+inside the timed graph:
+
+| Projection / tactic | GEMM | Quantization + GEMM |
+| --- | ---: | ---: |
+| Gate/up: serving 4 | 0.383210 ms | 0.387218 ms |
+| Gate/up: 6 | 0.382875 ms | 0.386581 ms |
+| Gate/up: uncached wrapper | 0.382726 ms | 0.386377 ms |
+| Down: serving 21 | 0.198322 ms | 0.203461 ms |
+| Down: 29 | 0.198083 ms | 0.202881 ms |
+| Down: 0 | 0.197301 ms | 0.202329 ms |
+| Down: uncached wrapper | 0.197597 ms | 0.202400 ms |
+
+All 56 additional changing-input checks matched the serving tactic and their
+own eager output bitwise. Both serving tactics again matched the full serving
+kernel signature. The unusually fast down-wrapper result did not reproduce.
+The best nominal complete-path differences were 0.22% for gate/up and 0.56%
+for down. Summing the per-call time differences over 64 calls of each
+projection gives only about 0.126 ms per verification round, before accounting
+for full-model cache behavior or
+integration overhead; this is not a measured service gain.
+
+No tactic override was deployed. The original INT8-draft/GDN-BV16 service
+remained healthy, with its watchdog active and hidden sampling off. All
+probes used synthetic activations and representative real layer 0 weights;
+there was no new service throughput or model-quality experiment. Raw scripts,
+autotune evidence, first-attempt failure and traces remain outside Git.
+With the tested exact-output kernel alternatives largely exhausted, the next
+experiment should compare DFlash draft block sizes on the existing workloads,
+especially the Chinese case with low draft acceptance.
+
 ## References
 
 - [Original SGLang deployment reference for DGX Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) — adapted and measured on Thor; its Spark CPU affinity and attention settings are not directly transferable.
