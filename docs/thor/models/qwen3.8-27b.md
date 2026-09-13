@@ -644,6 +644,41 @@ metadata remain 4K. Before promotion, qualify timeout behavior, incremental
 conversations, cache eviction and representative tool workloads. Keep
 concurrency and kernel tuning as separate follow-up experiments.
 
+## 256K service qualification — 2026-09-14
+
+A subsequent OpenAI-compatible gateway trial raised model request/stream
+transport timeouts to 2400 seconds and disabled automatic model retries.
+It retained the native 256K candidate, block16 and one active request.
+
+| Case | Input tokens | First text (s) | Complete (s) | Result |
+| --- | ---: | ---: | ---: | --- |
+| Cold archive | 131072 | 398.648 | 401.928 | HTTP 200, 3/3 facts |
+| Short request queued ten seconds later | — | 392.751 | 392.852 | HTTP 200, expected text |
+| Appended assistant answer and user follow-up | 131149 | 2.225 | 4.890 | HTTP 200, 3/3 facts |
+| Separate archive before cache flush | 32769 | 32.070 | 33.572 | HTTP 200, 3/3 facts |
+| Same archive after explicit cache flush | 32769 | 31.698 | 33.203 | HTTP 200, 3/3 facts |
+
+The incremental case reused 131072 tokens and processed 77 new tokens,
+confirmed in backend logs. Gateway usage omitted cache details. The 32K
+case before the flush also missed cache; its raw filename `warm-32k` is a
+fixture label, not evidence of a cache hit. Explicit flushing validates
+recovery after cache loss, not an exhaustive multi-user eviction workload.
+All archive responses stopped normally; 128K produced 50 output tokens
+with JSON fences, while 32K produced 45. This remains synthetic retrieval,
+not a general coding-quality or long-output qualification.
+
+With gateway disconnect cancellation enabled, a client disconnected a
+128K request after 15.027 seconds. A short request five seconds later
+completed in 0.364 seconds, confirming release of the inference slot.
+An oversized 263169-token input returned HTTP 400 in 1.786 seconds.
+
+After these checks, native 262144 context and pool270336 were promoted to
+the persistent service configuration. Daily output budget defaults to
+4096, with 8192 advertised; reserve output space within the shared context.
+Cold near-256K still takes about 25 minutes. Single-slot queueing and cold
+cache misses remain latency limitations, and multiple long queued requests
+can exceed the timeout. Performance and concurrency tuning remain deferred.
+
 ## References
 
 - [Original SGLang deployment reference for DGX Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) — adapted and measured on Thor; its Spark CPU affinity and attention settings are not directly transferable.

@@ -52,6 +52,7 @@ data:
       drop_params: true
 
     general_settings:
+      cancel_on_disconnect: true
       master_key: os.environ/LITELLM_MASTER_KEY
       database_url: os.environ/DATABASE_URL
       store_model_in_db: true
