@@ -543,6 +543,63 @@ next priority is a persistent OpenAI-compatible service through the shared
 LiteLLM entrypoint. Further tuning waits for infrastructure stabilization
 and operational handover.
 
+## Context capacity assessment and deferred YaRN tests — 2026-09-14
+
+This was a read-only assessment; the service was not enlarged or restarted.
+Both pinned target and DFlash2 draft configurations declare
+`max_position_embeddings=262144` with default RoPE, so native 256K does not
+require YaRN. The deployed 4096-token context and 8192-token KV pool were
+explicit experiment limits, not measured hardware capacity limits.
+
+With the model running, the host reported approximately 122 GiB total,
+40 GiB used and 82 GiB available memory. Target attention has 16 full-attention
+layers (4 KV heads, head dimension 256) and 48 linear-attention layers;
+the draft has 5 layers (8 KV heads, head dimension 128). Current KV dtype is
+BF16. The target and draft KV allocations therefore cost 64 and 20 KiB/token,
+respectively, matching startup logs at 8192 tokens.
+
+| Context/pool tokens | Target KV | Draft KV | Combined KV |
+| --- | --- | --- | --- |
+| 32768 | 2 GiB | 0.625 GiB | 2.625 GiB |
+| 65536 | 4 GiB | 1.25 GiB | 5.25 GiB |
+| 131072 | 8 GiB | 2.5 GiB | 10.5 GiB |
+| 262144 | 16 GiB | 5 GiB | 21 GiB |
+
+These are calculated cache sizes, not measured long-context memory peaks.
+Existing Mamba/state buffers consume about 2.93 GiB at 8 cache slots and
+block16. The inspected DFlash prefill path immediately writes each chunk's
+auxiliary hidden states into draft KV rather than retaining a second full
+history of those states. Temporary attention/workspace allocations and
+long-input behavior still need measurement.
+
+A candidate native-context test is `--context-length 262144
+--max-total-tokens 270336`, retaining chunked prefill 1024, memory fraction
+0.65, one active request, BF16 KV and block16. The larger pool includes 8192
+extra slots and calculates to 21.65625 GiB of combined KV. Increasing only
+context length would leave the old token-pool bottleneck. SGLang may also
+clamp the requested pool to its memory-profiled capacity; verify actual
+startup allocation. Input and output share the context, with additional
+scheduler boundary reservations.
+
+### Manufacturer technical lead's reports (not local measurements)
+
+The references below were published by ManateeLazyCat, the Lazycat
+manufacturer's technical lead. The two YaRN reports are dated 2026-08-28.
+
+- [YaRN 768K context test](https://manateelazycat.github.io/2026/08/28/qwen-3-8-27b-yarn-768k/): reports 1M startup failure (83.68 GiB KV required versus 80.32 GiB available); 768K startup success with `max_model_len=786432` and approximately 882K token cache capacity; and a successful 100K-token request under a 512K configuration. The 760K/500K requests did not produce a first token within the test window. Reported unified-memory use was 107.5/125.8 GB with about 17 GB available. Its then-current 768K conclusion is a configuration-specific result, not a universal maximum.
+- [900K code context report](https://manateelazycat.github.io/2026/08/28/qwen-3-8-27b-900k-context/): subsequently reports extending the 786K configuration to 900K using YaRN, with about 120 GB memory use. It also quotes 133 tokens/s single-stream performance, but does not establish that speed at a 900K prompt. The article does not provide the exact token count behind “900K”, complete runtime/YaRN/KV/draft settings, timed long-request results or retrieval/quality measurements. Treat 900K as a reported achieved configuration to investigate, not a proven maximum or a reproduced stable-service result.
+
+The [2026-08-27 throughput report](https://manateelazycat.github.io/2026/08/27/qwen-3-8-27b-125-tokens/) additionally reports prefill 3754 TPS, long-code decode 125 TPS, eight-session code decode 231 TPS and memory use 70 GB on one Lazycat unit. It does not provide per-session rates, prompt/output lengths, exact context occupancy, quantization or runtime settings. Do not interpret 231 TPS as the rate of each session, or combine these figures with the later 900K report to claim eight simultaneous 900K requests. This is a separate future concurrency comparison; first qualify native 256K with one active request.
+
+### Deferred validation checklist
+
+- Validate native 256K first, with progressively larger real inputs, retrieval at several positions, prefix reuse and generation near the shared context boundary.
+- Then investigate YaRN 512K → 768K (`786432`) → the reported 900K setting. Obtain exact target/draft RoPE settings, runtime revision, KV dtype, cache capacity, concurrency and hardware configuration before comparing results; do not invent missing parameters from the article titles.
+- Record exact input/output tokens, startup and peak memory, first-token latency, decode throughput, finish reason and correctness. Distinguish startup, first-token response and full-request completion.
+- Check long-prefill progress against the generation-health monitor and API timeouts. Streaming alone does not guarantee an early model token. Keep existing memory protection; do not copy a reported 120 GB occupancy by lowering safety margins.
+
+Performance tuning remains deferred. These references preserve future capacity-test targets; no YaRN setting or larger advertised context was deployed by this documentation update.
+
 ## References
 
 - [Original SGLang deployment reference for DGX Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) — adapted and measured on Thor; its Spark CPU affinity and attention settings are not directly transferable.
