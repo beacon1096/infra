@@ -459,6 +459,90 @@ With the tested exact-output kernel alternatives largely exhausted, the next
 experiment should compare DFlash draft block sizes on the existing workloads,
 especially the Chinese case with low draft acceptance.
 
+## DFlash block-size comparison (2026-09-13)
+
+This experiment compares block sizes 4 and 16 with the retained block-8
+service. A block includes one anchor token, so sizes 4/8/16 propose at most
+3/7/15 draft tokens respectively. The draft checkpoint declares block size 8;
+the installed runtime permits an override and synchronizes draft convolution
+boundaries, mask/position buffers and selector lengths. Runtime support does
+not establish training or quality coverage for the overridden size.
+
+Draft attention is non-causal, so block 4 is not simply a truncation of the
+first three block-8 proposals. Changed verification/commit boundaries can
+also affect BF16 computation. Cross-size response equality was measured,
+not assumed. The comparison retains the existing GDN guard: block 8 uses the
+validated BV16 optimization, while blocks 4 and 16 use original BV32. It compares
+actual deployment configurations rather than isolating block size alone.
+
+The first block-4 launch was rejected by the experimental hidden-capture
+startup guard. Merely removing the sampling trigger file was insufficient:
+setting its capture-directory environment variable still constructs a
+block-8-only diagnostic object. The retry omitted the capture-directory and
+limit variables entirely, leaving the independent INT8-head switch enabled.
+No guard was weakened. The failed launch log and rollback were preserved.
+
+A fresh block-8 baseline reproduced the retained service's response texts.
+Each configuration used one short warmup and three measured repetitions per
+workload, with the same sampling settings, prompts and output caps:
+
+| Workload | Block 4 | Block 8 | Block 16 | Block 4 / 16 change versus 8 |
+| --- | ---: | ---: | ---: | ---: |
+| Chinese | 19.272 TPS | 20.742 TPS | 19.474 TPS | -7.1% / -6.1% |
+| Short code | 35.289 TPS | 47.094 TPS | 72.454 TPS | -25.1% / +53.9% |
+| Long code | 35.145 TPS | 57.883 TPS | 74.560 TPS | -39.3% / +28.8% |
+
+Each configuration was text-stable across its three repetitions, but all
+nine measured responses changed between block 8 and each alternative.
+Token usages remained identical. These are observed workload differences,
+not equal-text speedups or isolated arithmetic savings.
+
+Native requests using the same tokenized prompts reported these per-request
+counters (block 8 / block 4 / block 16):
+
+| Workload | Draft acceptance rate | Accepted length per round | Verification rounds |
+| --- | --- | --- | --- |
+| Chinese | 16.71% / 32.31% / 7.62% | 2.169 / 1.969 / 2.151 | 118 / 130 / 119 |
+| Short code | 57.69% / 87.32% / 47.50% | 4.923 / 3.606 / 8.000 | 52 / 71 / 32 |
+| Long code | 73.31% / 88.02% / 48.78% | 6.132 / 3.644 / 8.325 | 167 / 281 / 123 |
+
+A higher acceptance percentage alone was misleading: block 4 accepted fewer
+tokens per round and required more verification rounds. Block 16 reduced
+code verification rounds substantially despite its lower acceptance rate.
+These counters belong to the observed, different output trajectories; proposal
+accounting may extend beyond the requested output cap.
+
+The traces contained 11 draft/target replays per workload. Target/draft Graph
+medians in milliseconds, using the retained block-8 reference traces:
+
+| Workload | Block 8 target / draft | Block 4 target / draft | Block 16 target / draft |
+| --- | --- | --- | --- |
+| Chinese | 80.253 / 18.813 | 79.023 / 18.809 | 85.939 / 19.027 |
+| Long code | 82.107 / 19.115 | 80.150 / 19.003 | 87.922 / 19.260 |
+
+Block 4 did not halve per-round cost. It still ran all model projections,
+and the INT8 draft head padded both three and seven input rows to M32.
+Block 16 paid more per verification round, but its code workloads accepted
+enough additional tokens to improve throughput. This explains the direction
+of the measurements without attributing all differences to one kernel.
+
+Both alternatives passed the 2823-token retrieval test three times, including
+prefix reuse. JSON remained correct. Block 4's complete primality response
+matched the previously validated program. Block 16 produced a different
+complete program that passed its five generated assertions and an independent
+sieve comparison over -32 through 10000 (10033 checks). Capped throughput
+responses were not treated as complete-program quality tests.
+
+Block 16 was selected for the experimental service, prioritizing measured
+code throughput while accepting the roughly 6% Chinese slowdown. INT8 draft
+projection remains enabled; the narrow GDN-BV16 optimization is inactive at
+block 16, which uses original BV32. The validated block-8 container remains
+available for rollback. Raw launchers, failure logs, benchmark responses,
+profiles and checks stay outside Git. Performance tuning is paused; the
+next priority is a persistent OpenAI-compatible service through the shared
+LiteLLM entrypoint. Further tuning waits for infrastructure stabilization
+and operational handover.
+
 ## References
 
 - [Original SGLang deployment reference for DGX Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) — adapted and measured on Thor; its Spark CPU affinity and attention settings are not directly transferable.
