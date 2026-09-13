@@ -192,6 +192,61 @@ text and acceptance. Next inspect the original target's FP8 projection
 shapes and kernel choices while retaining its current weights and precision.
 Raw scripts, traces and hidden-state samples remain outside Git.
 
+## Original target FP8 backend probe (2026-09-13)
+
+The retained INT8-draft service spends 27.985 ms (Chinese) / 30.107 ms
+(long code) per target replay in 128 FP8 attention projections. Checkpoint
+and runtime inspection mapped them to these merged weight shapes:
+
+| Projection | Calls per replay | Weight shape `[N, K]` | Chinese / long-code kernel sum |
+| --- | ---: | --- | ---: |
+| GDN QKV/Z input | 48 | `[16384, 5120]` | 15.204 / 15.347 ms |
+| Attention output | 64 | `[5120, 6144]` | 8.353 / 10.310 ms |
+| Full-attention QKV | 16 | `[14336, 5120]` | 4.428 / 4.450 ms |
+
+The 128 static FP8 activation quantizations add about 0.277 ms. The current
+GEMMs use CUTLASS SM100-family kernels on SM110, with FP8 E4M3 operands.
+The probe loaded representative real layer 0/3 weights, reproduced SGLang's
+maximum-scale requantization when merging shards, and kept the same static
+activation quantization. Inputs were synthetic BF16 hidden states.
+
+CUDA Graph GEMM medians at M8, in milliseconds (five batches of 50 replays):
+
+| Backend | QKV/Z | Output | QKV |
+| --- | ---: | ---: | ---: |
+| Current SGLang CUTLASS | 0.316970 | 0.117955 | 0.277806 |
+| Torch scaled MM | 0.316388 | 0.120396 | 0.280870 |
+| Torch scaled MM, fast accumulation | 0.317197 | 0.119820 | 0.280940 |
+| FlashInfer cuBLAS | 0.342858 | 0.119924 | 0.280975 |
+| FlashInfer CUTLASS | 0.318436 | 0.117555 | 0.277946 |
+
+M1 was also measured; no alternative improved the current baseline there.
+The best alternative pure-GEMM differences at M8 are below 0.4%.
+With activation quantization and an identical FP8 copy included, one output
+projection batch measured 0.121337 ms for the baseline versus 0.115972 ms for
+FlashInfer CUTLASS (4.4%). The latter is even below its separately measured
+pure-GEMM time, showing that these sequential batches are sensitive to cache
+state and timing variation. Repeated single-layer replays also differ from
+a full model. This isolated result does not establish an end-to-end gain or
+justify a service change.
+
+Across three shapes, M1/M8 and random/changed/zero inputs, FlashInfer CUTLASS
+matched the current output bitwise in all 18 cases. Torch and cuBLAS each
+matched 11/18; all outputs were finite, with maximum absolute differences
+of 0.0078125 and 0.015625 respectively. This is a limited numerical check,
+not a model-quality evaluation. All 120 changing-input CUDA Graph checks
+matched their own backend's eager output bitwise, including zero and recovery
+after zero. The three baseline probe kernel names and grids matched the
+serving trace exactly. Probe peak PyTorch allocation was below
+351 MiB, with peak reserved memory below 395 MiB; these exclude the running
+server and non-PyTorch allocations.
+
+No backend was promoted and no serving throughput gain is claimed. The
+original target weights and INT8 draft service remain unchanged. Raw scripts,
+results and traces are retained outside Git. The next useful experiment is
+GDN attention-state/kernel overhead on this original checkpoint; another
+wrapper around these FP8 GEMMs is not supported by the measured results.
+
 ## References
 
 - [Original SGLang deployment reference for DGX Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) — adapted and measured on Thor; its Spark CPU affinity and attention settings are not directly transferable.
