@@ -713,6 +713,33 @@ Pi 应复用这一源，生成适配器需要的配置，而不是再维护服�
 服务同时包含本地 stdio 命令和远程 HTTP/headers；实施时需转换环境变量占位符，
 并验证宿主进程实际继承的环境。这里的选项是 OpenCode 集成入口，不能直接给 Pi 打开同名开关。
 
+## Coder 与 Multica 部署（2026-09-14）
+
+Coder 的 `coding-agent` 模板已按运行中的配置回收进仓库，保留持久化 home、
+设施凭据挂载与 Multica daemon 启动。新镜像由私有 Nix 配置 `fb76e2a` 构建，
+模板版本为 `pi-fb76e2a`，镜像固定为
+`sha256:9c4c4fc218fcb334e494612ac383d2e8809826a229f109409afadeced87f22c4`。
+运行中的 `nixos-agent-coder` 已更新，实测 Pi `0.85.1` 可以发现 LiteLLM 模型。
+
+Workspace 内 Pi 与 OpenCode 统一读取 `BEACOWORKS_MODELS_API_BASE`，
+使用集群内部 LiteLLM 入口。Tavily 凭据通过加密 Secret 与运行时环境变量提供；
+部署时确认 Flux 已应用对应提交，避免手工补字段被下一次协调还原。
+本机 Chrome 登录状态不会复制进 workspace；订阅登录仍需在相应环境单独完成。
+
+Thor 开启 4 并发后，从 workspace 经内网 LiteLLM 的短请求返回 `PI_CODER_OK`。
+首次短请求仍曾因长输入冷 prefill 超时，重试成功；该测试证明链路可用，
+不构成四路同时生成的吞吐或延迟验收。
+
+Multica `0.4.24` 无需升级即可发现 Pi runtime。已创建私有 `Pi Thor` 身份，
+模型为 `litellm/thor/qwen3.8-27b`，单身份并发限制为 1；已有身份配置不变。
+验收工单为 `BEACO-20`：实际 run 启动约 7 秒收到首 token，随后 Pi 的 Bash
+成功执行平台工单查询，证明 Multica → Pi → LiteLLM → Thor 的工具调用链路可用。
+初次验收说明把 Bash 调用次数限制与平台 CLI 操作混在一起，并要求与平台
+`in_review` 流程冲突的完成状态，导致模型长时间反复思考。已取消该测试运行、
+修正文案后重跑；验收提示应限制业务命令次数，并允许必要的平台状态操作。
+修正后的运行约 54 秒完成验收命令，工具结果为 `PI_MULTICA_OK exit=0`。
+Pi 随后发布验收评论并将工单置为 `in_review`，实际工具执行与平台回写均通过。
+
 ## 下一步与待验证项
 
 建议顺序（待后续讨论调整）：exec 完成通知 → 可见 todo → MCP 最小接入 →
