@@ -908,6 +908,108 @@ verified against an independent oracle before reuse; similar layout names
 are not evidence of byte compatibility. A16 results are not a native NVFP4
 hardware-performance ceiling.
 
+### Native SM110 MLP down trial
+
+The subsequent exclusive trial used SM110's native block-scaled Tensor Core route,
+starting with MLP down `[N=5120,K=17408]`. The reference implementation is
+FlashInfer 0.6.17 (`a0a6b019b9b27d49d209f85d028a1ae5a9b347d7`)'s
+`fp4_gemm_template_sm100.h` and its vendored CUTLASS. A standalone C++/CUDA
+probe instantiates one 1-SM `128×128×256` tile, cluster `1×1×1`, with BF16
+output and FP32 accumulation. It ran on Thor SM110a with CUDA 13.0 and driver
+13.2; it does not invoke Python inference.
+
+The packed weight bytes and `blockscale-k16-m128x4-v1` scales match CUTLASS's
+SFB layout directly. Every logical weight coordinate was checked against
+an independently written offset formula. No second weight copy or runtime
+repacking is needed. Activation scales differ from NInfer's SM120 layout:
+SFA must use the same swizzle, with its row extent padded to 128. For K=17408,
+the scale plane needs `ceil(T/128)*128*1088` bytes.
+
+The prepacked-input probe passed independent FP64 sampled GEMM oracles and
+full-output finite checks for T=1,8,16,17,32,64,127,129,256,1024. It uses
+signed E2M1 codes, nonuniform E4M3 scales and global alpha=0.75. This verifies
+the packed arithmetic and final BF16 rounding; it does not establish the
+accuracy of BF16 activation quantization or model quality.
+
+With 10 warmups and 30 samples, median CUDA-event times after a 256 MiB cache
+eviction were:
+
+| Tokens T | A16 pure Linear, ms | Native prepacked GEMM, ms |
+|---|---:|---:|
+| 1 | 0.303 | 0.214 |
+| 8 | 0.639 | 0.216 |
+| 16 | 1.144 | 0.267 |
+| 32 | 2.179 | 0.267 |
+| 64 | 4.357 | 0.269 |
+| 256 | 17.402 | 0.277 |
+| 1024 | 69.603 | 0.585 |
+
+Both columns exclude residual addition; native also excludes BF16-to-NVFP4
+activation quantization. These are kernel-level potential gains, not
+end-to-end model speedups. The A16 benchmark's baked-in RTX 5090 bandwidth
+percentages are inapplicable to Thor and are not used here.
+
+
+The complete port enables native `[5120,17408]` LinearAdd for `AllowA4` and
+T≥8 through an explicit `NINFER_CUTLASS_INCLUDE_DIR` build option. Only the
+27B MLP down execution policy and matching workspace planner select this
+route. Gate/up and other NVFP4 Ops retain the previous SM110 A16 behavior.
+The native path reuses the existing K16 activation codec, writes swizzled
+SFA directly, initializes padding, and fuses residual addition before the
+final BF16 store. All temporary storage belongs to the caller's arena;
+there is no runtime weight repacking or hidden GPU allocation.
+
+The extended public LinearAdd test passed unchanged A4 error criteria
+against independently decoded weights and represented BF16 inputs in FP64.
+Coverage includes T7/8/16/17/127/128/129/1024, exact-size workspace and guards,
+Graph replay with changed signed inputs, and exact residual preservation
+for zero input. A first test-fixture run rejected zero-size borrowed arena
+storage before reaching the native kernel; zero-workspace A16 tests now
+provide a 256-byte backing while still requiring a zero allocation peak.
+Native routes retain exact reported workspace capacity.
+
+Complete LinearAdd (including activation quantization and residual) measured
+0.283 ms at T8, 0.284 ms at T16, 0.318 ms at T256 and 0.750 ms at T1024,
+using 10 warmups and 30 cold-cache CUDA-event samples. The nine previous
+short model cases also passed in eager, CUDA Graph and DFlash2 modes.
+These functional and mathematical checks do not establish broad model
+quality equivalence.
+
+The [complete source patch](../patches/ninfer-sm110-complete.patch) includes
+this native route, target policy, tests and build instructions, and was
+replayed against the original source tar. The independent packed-input
+[probe](../probes/ninfer-sm110-native/native-probe.cu) and
+[compile command](../probes/ninfer-sm110-native/compile.sh) are archived
+separately; they require the qualified FlashInfer-vendored CUTLASS headers.
+
+
+End-to-end measurement retained the same matched NVFP4 artifact, 32K
+context/64K pool, four-request capacity, FP8 KV, CUDA Graph, disabled prefix
+reuse, greedy sampling and 512-token output budget. Only MLP down changed.
+Code rates are medians of two runs using the previous exact code prompt;
+all four code runs emitted 512 tokens and finished with `length`.
+
+| Measurement | Previous A16 port | Native MLP down | Change |
+|---|---:|---:|---:|
+| No-draft code decode | 10.47 tok/s | 10.46 tok/s | Essentially unchanged |
+| DFlash2 draft7 code decode | 25.51 tok/s | 28.43 tok/s | +11.4% |
+| No-draft, 1843-token input TTFT | 25.00 s | 17.84 s | −28.6% |
+
+Native draft7 also measured 17.88 s TTFT on that input; its earlier draft7
+TTFT was not measured, so no matching speedup is asserted. The earlier
+SGLang code result remains 66.47 tok/s, substantially above this partial
+port. This trial supports continuing with the remaining MLP gate/up path;
+it does not justify replacing the daily SGLang service.
+
+Four concurrent explicit JSON requests subsequently returned the exact
+expected 95-token objects; server statistics showed four running,
+decode-ready requests and batch size 4. An earlier short prompt returned
+all four responses but three used the requested number as a JSON key;
+that failed fixture is retained, and is not counted as a pass or evidence
+of model quality. The explicit fixtures verify concurrent execution, not
+throughput. Machine-readable [results](../probes/ninfer-sm110-native/results.json)
+record the successful checks, measurements and these limitations.
+
 ## References
 
 - [Original SGLang deployment reference for DGX Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) — adapted and measured on Thor; its Spark CPU affinity and attention settings are not directly transferable.

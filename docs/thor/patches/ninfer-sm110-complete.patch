@@ -31,6 +31,25 @@
      "${CMAKE_CUDA_COMPILER_VERSION}")
  endif()
  
+--- a/README.md
++++ b/README.md
+@@ -25,7 +25,15 @@
+ NInfer requires 64-bit Linux, an NVIDIA GeForce RTX 5090, CUDA Toolkit 13.1 or newer, CMake 3.28 or
+ newer, a C++20 host compiler, Ninja, `pkg-config`, FFmpeg development libraries
+ (`libavformat >= 60`, `libavcodec >= 60`, `libavutil >= 58`, and `libswscale >= 7`), and
+-`libcurl >= 7.85`. The build rejects CUDA architectures other than `sm_120a`.
++`libcurl >= 7.85`. The default build targets `sm_120a`.
++
++This experimental Thor port also accepts `-DCMAKE_CUDA_ARCHITECTURES=110a`
++with CUDA 13.0. Its 27B NVFP4 execution uses A16 fallbacks except for the
++optional native MLP down LinearAdd route. To enable that route, set
++`-DNINFER_CUTLASS_INCLUDE_DIR=/path/to/cutlass/include`; the qualified headers
++are vendored by FlashInfer 0.6.17, revision
++`a0a6b019b9b27d49d209f85d028a1ae5a9b347d7`. The build depends on CUTLASS headers,
++not the FlashInfer Python runtime. Other SM110 NVFP4 Ops remain A16.
+ 
+ Build the product binaries:
+ 
 --- a/docs/maintainer/model-weight-execution.md
 +++ b/docs/maintainer/model-weight-execution.md
 @@ -1121,17 +1121,12 @@
@@ -69,6 +88,31 @@
  resolves its qualified route from the exact geometry and T; Prefill, ordinary decode, and
  speculative target verify do not create separate activation-policy variants. MTP and Vision use
  their registered storage and execution paths. With all startup features enabled, 1054 tensors and six
+--- a/include/ninfer/ops/linear_add.h
++++ b/include/ninfer/ops/linear_add.h
+@@ -55,7 +55,10 @@
+  *   Q5, W8, and BF16_CTRL admit only A16Only. NVFP4 admits A16Only and AllowA4. Row-scaled FP8
+  *   admits A16Only and AllowA8. Each registration owns its production plan. A permissive policy
+  *   allows the private resolver to select either qualified
+- *   arithmetic profile; it does not itself prescribe a kernel.
++ *   arithmetic profile; it does not itself prescribe a kernel. The optional SM110 CUTLASS
++ *   build uses native A4 for [5120,17408] at T >= 8; its other NVFP4 cases use A16.
++ *   The SM110 route quantizes BF16 activations with K16 E4M3 scales and fuses the FP32
++ *   projection with the existing BF16 residual before one final BF16 store.
+  *
+  * Effects:
+  *   Updates the full residual tensor in place; x/weight must not alias residual.
+@@ -63,7 +66,9 @@
+  * Workspace:
+  *   Caller-owned transient storage reported by linear_add_workspace_capacity_bytes(), scoped to
+  *   the call. A16 routes require no storage; quantized-activation routes use the reported capacity.
+- *   There is no persistent state side effect.
++ *   SM110 A4 scratch includes packed activation codes, K16 scales padded to 128 rows in
++ *   BlockScaleK16M128x4 order, and the CUTLASS-reported GEMM workspace. Resident packed weights
++ *   are consumed directly without repacking. There is no persistent state side effect.
+  */
+ void linear_add(const Tensor& x, const Weight& w, Tensor& residual, WorkspaceArena& ws,
+                 cudaStream_t stream);
 --- a/include/ninfer/ops/linear_swiglu.h
 +++ b/include/ninfer/ops/linear_swiglu.h
 @@ -25,7 +25,7 @@
@@ -101,12 +145,11 @@
    core/dtype.cpp
    core/host_worker_pool.cpp
    core/gdn_replay_records.cpp
-@@ -46,13 +47,33 @@
+@@ -46,15 +47,50 @@
  ninfer_internal_includes(ninfer_artifact)
  target_link_libraries(ninfer_artifact PUBLIC ninfer_core)
  
-+# These W4A4 kernels have not been qualified for SM110. Keep its target policy
-+# on the A16 implementation until that kernel port is validated.
++# SM120 warp MMA and SM110 tensor-memory MMA have separate implementations.
 +if(CMAKE_CUDA_ARCHITECTURES STREQUAL "120a")
 +  set(NINFER_HAS_NVFP4_W4A4 1)
 +  set(NINFER_NVFP4_W4A4_SOURCES
@@ -123,8 +166,19 @@
 +  set(NINFER_NVFP4_W4A4_SOURCES ops/linear/nvfp4/nvfp4_w4a4_stub.cpp)
 +  set(NINFER_NVFP4_W4A4_TMA_SOURCES)
 +endif()
++set(NINFER_CUTLASS_INCLUDE_DIR "" CACHE PATH "CUTLASS include directory for SM110 NVFP4 LinearAdd")
++set(NINFER_HAS_SM110_NVFP4_LINEAR_ADD 0)
++if(CMAKE_CUDA_ARCHITECTURES STREQUAL "110a" AND NINFER_CUTLASS_INCLUDE_DIR)
++  if(NOT EXISTS "${NINFER_CUTLASS_INCLUDE_DIR}/cutlass/detail/sm100_blockscaled_layout.hpp")
++    message(FATAL_ERROR "NINFER_CUTLASS_INCLUDE_DIR requires SM100/SM110 block-scaled CUTLASS headers")
++  endif()
++  set(NINFER_HAS_SM110_NVFP4_LINEAR_ADD 1)
++  list(APPEND NINFER_NVFP4_W4A4_TMA_SOURCES
++    ops/linear_add/nvfp4/nvfp4_linear_add_sm110.cu)
++endif()
 +target_compile_definitions(ninfer_core PUBLIC
-+  NINFER_HAS_NVFP4_W4A4=${NINFER_HAS_NVFP4_W4A4})
++  NINFER_HAS_NVFP4_W4A4=${NINFER_HAS_NVFP4_W4A4}
++  NINFER_HAS_SM110_NVFP4_LINEAR_ADD=${NINFER_HAS_SM110_NVFP4_LINEAR_ADD})
 +
  # Warp-specialized SM120 NVFP4 kernels use setmaxnreg to transfer registers from producer
  # warpgroups to consumer warpgroups. Relocatable device code makes ptxas discard that contract, so
@@ -136,8 +190,15 @@
 +  ${NINFER_NVFP4_W4A4_TMA_SOURCES}
    ops/softmax_attention/dense/causal_cache/prompt_nvfp4_non_rdc.cu)
  ninfer_internal_includes(ninfer_nvfp4_non_rdc)
++if(NINFER_HAS_SM110_NVFP4_LINEAR_ADD)
++  target_include_directories(ninfer_nvfp4_non_rdc SYSTEM PRIVATE "${NINFER_CUTLASS_INCLUDE_DIR}")
++  target_compile_options(ninfer_nvfp4_non_rdc PRIVATE
++    $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>)
++endif()
  set_target_properties(ninfer_nvfp4_non_rdc PROPERTIES
-@@ -136,7 +157,7 @@
+   CUDA_SEPARABLE_COMPILATION OFF
+   CUDA_RESOLVE_DEVICE_SYMBOLS OFF)
+@@ -136,7 +172,7 @@
    ops/attn_input_proj/fp8/fp8_attn_input_plan.cpp
    ops/attn_input_proj/nvfp4/nvfp4_attn_input_decode.cu
    ops/attn_input_proj/nvfp4/nvfp4_attn_input_small_t.cu
@@ -146,7 +207,7 @@
    ops/attn_input_proj/nvfp4/nvfp4_attn_input_plan.cpp
    ops/attn_input_proj/q4_q5/q4_q5_attn_input_gemm_mma.cu
    ops/attn_input_proj/q4_q5/q4_q5_attn_input_small_t.cu
-@@ -155,7 +176,6 @@
+@@ -155,7 +191,6 @@
    ops/gdn_input_proj/fp8/fp8_gdn_conv_plan.cpp
    ops/gdn_input_proj/nvfp4/nvfp4_gdn_input_decode.cu
    ops/gdn_input_proj/nvfp4/nvfp4_gdn_input_small_t.cu
@@ -154,7 +215,7 @@
    ops/gdn_input_proj/nvfp4/nvfp4_gdn_input_plan.cpp
    ops/gdn_input_proj/nvfp4/nvfp4_gdn_snapshot_decode.cu
    ops/gdn_input_proj/nvfp4/nvfp4_gdn_snapshot_small_t.cu
-@@ -193,7 +213,6 @@
+@@ -193,7 +228,6 @@
    ops/linear/nvfp4/nvfp4_format.cpp
    ops/linear/nvfp4/nvfp4_gemv.cu
    ops/linear/nvfp4/nvfp4_small_t.cu
@@ -162,7 +223,7 @@
    ops/linear/nvfp4/nvfp4_dispatch.cpp
    ops/linear/q4/q4_small_t_mma.cu
    ops/linear/q4/q4_rowsplit_gemm_mma.cu
-@@ -210,7 +229,6 @@
+@@ -210,7 +244,6 @@
    ops/linear_add/bf16/bf16_linear_add_plan.cpp
    ops/linear_add/nvfp4/nvfp4_linear_add_decode.cu
    ops/linear_add/nvfp4/nvfp4_linear_add_small_t.cu
@@ -170,7 +231,7 @@
    ops/linear_add/nvfp4/nvfp4_linear_add_plan.cpp
    ops/linear_add/fp8/fp8_linear_add_decode.cu
    ops/linear_add/fp8/fp8_linear_add_small_t.cu
-@@ -229,7 +247,6 @@
+@@ -229,7 +262,6 @@
    ops/linear_swiglu/q4/q4_linear_swiglu_plan.cpp
    ops/linear_swiglu/nvfp4/nvfp4_linear_swiglu_decode.cu
    ops/linear_swiglu/nvfp4/nvfp4_linear_swiglu_small_t.cu
@@ -392,6 +453,252 @@
 +}
 +
 +} // namespace ninfer::ops::detail
+--- a/src/ops/linear_add/nvfp4/nvfp4_linear_add_plan.cpp
++++ b/src/ops/linear_add/nvfp4/nvfp4_linear_add_plan.cpp
+@@ -1,6 +1,9 @@
+ #include "ops/linear_add/nvfp4/nvfp4_linear_add_plan.h"
+ 
+ #include "ops/linear/nvfp4/nvfp4_config.h"
++#if NINFER_HAS_SM110_NVFP4_LINEAR_ADD
++#include "ops/linear_add/nvfp4/nvfp4_linear_add_sm110.h"
++#endif
+ 
+ #include <algorithm>
+ #include <cstdint>
+@@ -12,6 +15,7 @@
+ enum class Nvfp4LinearAddRoute : std::uint8_t {
+     A16,
+     W4A4,
++    Sm110,
+ };
+ 
+ Nvfp4LinearAddRoute resolve_route(std::int32_t output_rows, std::int32_t input_rows,
+@@ -23,8 +27,15 @@
+     if (policy != LinearPolicy::AllowA4) {
+         throw std::invalid_argument("nvfp4 linear_add: unsupported policy");
+     }
++#if NINFER_HAS_SM110_NVFP4_LINEAR_ADD
++    if (input_rows == 17408 && tokens >= 8) { return Nvfp4LinearAddRoute::Sm110; }
++#endif
++#if !NINFER_HAS_NVFP4_W4A4
++    return Nvfp4LinearAddRoute::A16;
++#else
+     const std::int32_t first_w4a4 = input_rows == 6144 ? 7 : 8;
+     return tokens >= first_w4a4 ? Nvfp4LinearAddRoute::W4A4 : Nvfp4LinearAddRoute::A16;
++#endif
+ }
+ 
+ void launch_a16(const Tensor& x, const Weight& weight, Tensor& residual, cudaStream_t stream) {
+@@ -55,6 +66,11 @@
+         throw std::invalid_argument("nvfp4 linear_add workspace: invalid token interval");
+     }
+     (void)resolve_route(output_rows, input_rows, policy, min_tokens);
++#if NINFER_HAS_SM110_NVFP4_LINEAR_ADD
++    if (resolve_route(output_rows, input_rows, policy, max_tokens) == Nvfp4LinearAddRoute::Sm110) {
++        return nvfp4_linear_add_sm110_workspace_capacity_bytes(max_tokens);
++    }
++#endif
+     return resolve_route(output_rows, input_rows, policy, max_tokens) == Nvfp4LinearAddRoute::W4A4
+                ? nvfp4_w4a4_workspace_capacity_bytes(max_tokens, input_rows)
+                : 0;
+@@ -67,6 +83,12 @@
+         launch_a16(x, weight, residual, stream);
+         return;
+     }
++#if NINFER_HAS_SM110_NVFP4_LINEAR_ADD
++    if (resolve_route(weight.n, weight.k, policy, x.ne[1]) == Nvfp4LinearAddRoute::Sm110) {
++        nvfp4_linear_add_sm110_launch(x, weight, residual, workspace, stream);
++        return;
++    }
++#endif
+     auto scope                       = workspace.scope();
+     const Nvfp4W4a4Workspace scratch = allocate_nvfp4_w4a4_workspace(workspace, x.ne[1], weight.k);
+     nvfp4_linear_add_w4a4_launch(x, weight, residual, scratch, stream);
+--- /dev/null
++++ b/src/ops/linear_add/nvfp4/nvfp4_linear_add_sm110.cu
+@@ -0,0 +1,161 @@
++/*
++ * Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++// CUTLASS collective construction follows NVIDIA's Apache-2.0 licensed FlashInfer
++// fp4_gemm_template_sm100.h (Copyright NVIDIA CORPORATION, 2020-2023).
++#include "ops/linear_add/nvfp4/nvfp4_linear_add_sm110.h"
++
++#include "core/device.h"
++#include "core/layout.h"
++#include "ops/linear/nvfp4/nvfp4_codec.cuh"
++#include "ops/linear/nvfp4/nvfp4_w4a4_plan.h"
++
++#include "cutlass/cutlass.h"
++#include "cutlass/epilogue/collective/collective_builder.hpp"
++#include "cutlass/gemm/collective/collective_builder.hpp"
++#include "cutlass/gemm/device/gemm_universal_adapter.h"
++#include "cutlass/gemm/kernel/gemm_universal.hpp"
++#include "cute/tensor.hpp"
++
++#include <algorithm>
++#include <cstdint>
++#include <stdexcept>
++#include <string>
++
++namespace ninfer::ops::detail {
++namespace {
++
++constexpr int kOutputRows = 5120;
++constexpr int kInputRows = 17408;
++using Element = cutlass::float_e2m1_t;
++using Scale = cutlass::float_ue4m3_t;
++using Output = cutlass::bfloat16_t;
++using Tile = cute::Shape<cute::_128, cute::_128, cute::_256>;
++using Cluster = cute::Shape<int, int, cute::_1>;
++using Epilogue = cutlass::epilogue::collective::CollectiveBuilder<
++    cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp, Tile, Cluster,
++    cutlass::epilogue::collective::EpilogueTileAuto, float, float,
++    Output, cutlass::layout::RowMajor, 8, Output, cutlass::layout::RowMajor, 8,
++    cutlass::epilogue::TmaWarpSpecialized1Sm,
++    cutlass::epilogue::fusion::LinearCombination<Output, float, Output, float>>::CollectiveOp;
++using Mainloop = cutlass::gemm::collective::CollectiveBuilder<
++    cutlass::arch::Sm100, cutlass::arch::OpClassBlockScaledTensorOp,
++    cute::tuple<Element, Scale>, cutlass::layout::RowMajor, 32,
++    cute::tuple<Element, Scale>, cutlass::layout::ColumnMajor, 32,
++    float, Tile, Cluster,
++    cutlass::gemm::collective::StageCountAutoCarveout<sizeof(Epilogue::SharedStorage)>,
++    cutlass::gemm::KernelTmaWarpSpecialized1SmNvf4Sm100>::CollectiveOp;
++using Kernel = cutlass::gemm::kernel::GemmUniversal<cute::Shape<int, int, int, int>,
++    Mainloop, Epilogue, cutlass::gemm::PersistentScheduler>;
++using Gemm = cutlass::gemm::device::GemmUniversalAdapter<Kernel>;
++
++Gemm::Arguments arguments(std::int32_t tokens, const void* a = nullptr,
++                          const void* sa = nullptr, const Weight* weight = nullptr,
++                          void* residual = nullptr) {
++    Gemm::Arguments args{};
++    args.mode = cutlass::gemm::GemmUniversalMode::kGemm;
++    args.problem_shape = cute::make_shape(tokens, kOutputRows, kInputRows, 1);
++    args.mainloop.ptr_A = static_cast<const Element*>(a);
++    args.mainloop.ptr_SFA = static_cast<const Scale*>(sa);
++    args.mainloop.ptr_B = weight ? static_cast<const Element*>(weight->qdata) : nullptr;
++    args.mainloop.ptr_SFB = weight ? static_cast<const Scale*>(weight->scales) : nullptr;
++    args.mainloop.dA = cute::make_int_tuple_from<Kernel::StrideA>(kInputRows, 0);
++    args.mainloop.dB = cute::make_int_tuple_from<Kernel::StrideB>(kInputRows, 0);
++    args.mainloop.layout_SFA = Mainloop::Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(args.problem_shape);
++    args.mainloop.layout_SFB = Mainloop::Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(args.problem_shape);
++    args.epilogue.ptr_C = static_cast<const Output*>(residual);
++    args.epilogue.ptr_D = static_cast<Output*>(residual);
++    args.epilogue.dC = cute::make_int_tuple_from<Kernel::StrideC>(kOutputRows, 0);
++    args.epilogue.dD = args.epilogue.dC;
++    args.epilogue.thread.alpha = weight ? 1.0F / (weight->input_scale_divisor * weight->weight_scale_divisor) : 1.0F;
++    args.epilogue.thread.beta = 1.0F;
++    args.scheduler.max_swizzle_size = 1;
++    args.scheduler.raster_order = decltype(args.scheduler.raster_order)::Heuristic;
++    args.hw_info.cluster_shape = dim3(1, 1, 1);
++    args.hw_info.cluster_shape_fallback = dim3(1, 1, 1);
++    return args;
++}
++
++struct Scratch {
++    std::uint8_t* codes;
++    std::uint8_t* scales;
++    DeviceSpan gemm;
++};
++
++template<class Arena>
++Scratch allocate(Arena& arena, std::int32_t tokens) {
++    const std::size_t code_bytes = nvfp4_w4a4_checked_bytes(tokens, kInputRows / 2);
++    const std::size_t padded_tokens = (static_cast<std::size_t>(tokens) + 127) / 128 * 128;
++    const std::size_t scale_bytes = padded_tokens * (kInputRows / 16);
++    auto codes = arena.alloc_bytes(code_bytes, 256);
++    auto scales = arena.alloc_bytes(scale_bytes, 256);
++    const std::size_t gemm_bytes = Gemm::get_workspace_size(arguments(tokens));
++    DeviceSpan gemm{};
++    if (gemm_bytes != 0) { gemm = arena.alloc_bytes(gemm_bytes, 256); }
++    return {static_cast<std::uint8_t*>(codes.data), static_cast<std::uint8_t*>(scales.data), gemm};
++}
++
++__global__ void quantize(const __nv_bfloat16* input, std::uint8_t* codes,
++                          std::uint8_t* scales, std::int32_t tokens, float divisor) {
++    constexpr int kGroups = kInputRows / 16;
++    const std::int64_t padded_tokens = (static_cast<std::int64_t>(tokens) + 127) / 128 * 128;
++    for (std::int64_t task = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
++         task < padded_tokens * kGroups; task += static_cast<std::int64_t>(gridDim.x) * blockDim.x) {
++        const std::int64_t token = task / kGroups;
++        const int group = static_cast<int>(task % kGroups);
++        const std::int64_t scale_index = (token / 128 * (kInputRows / 64) + group / 4) * 512 +
++            token % 32 * 16 + token % 128 / 32 * 4 + group % 4;
++        if (token >= tokens) {
++            scales[scale_index] = 0;
++            continue;
++        }
++        const Nvfp4QuantizedK16 value = quantize_nvfp4_k16(input + token * kInputRows + group * 16, divisor);
++        store_vec(codes + token * (kInputRows / 2) + group * 8, make_uint2(value.codes_lo, value.codes_hi));
++        scales[scale_index] = value.scale;
++    }
++}
++
++void require_success(cutlass::Status status, const char* action) {
++    if (status != cutlass::Status::kSuccess) {
++        throw std::runtime_error(std::string("nvfp4 SM110 linear_add ") + action + ": " + cutlassGetStatusString(status));
++    }
++}
++
++} // namespace
++
++std::size_t nvfp4_linear_add_sm110_workspace_capacity_bytes(std::int32_t tokens) {
++    WorkspaceLayoutBuilder layout;
++    (void)allocate(layout, tokens);
++    return layout.peak_bytes(1);
++}
++
++void nvfp4_linear_add_sm110_launch(const Tensor& x, const Weight& weight, Tensor& residual,
++                                   WorkspaceArena& workspace, cudaStream_t stream) {
++    auto scope = workspace.scope();
++    const Scratch scratch = allocate(workspace, x.ne[1]);
++    const auto tasks = ((static_cast<std::int64_t>(x.ne[1]) + 127) / 128 * 128) * (kInputRows / 16);
++    const int blocks = static_cast<int>(std::min<std::int64_t>((tasks + 255) / 256, 65535));
++    quantize<<<blocks, 256, 0, stream>>>(static_cast<const __nv_bfloat16*>(x.data), scratch.codes,
++        scratch.scales, x.ne[1], weight.input_scale_divisor);
++    CUDA_CHECK(cudaGetLastError());
++    Gemm gemm;
++    auto args = arguments(x.ne[1], scratch.codes, scratch.scales, &weight, residual.data);
++    require_success(gemm.can_implement(args), "can_implement");
++    require_success(gemm.initialize(args, scratch.gemm.data, stream), "initialize");
++    require_success(gemm.run(args, scratch.gemm.data, stream, nullptr, true), "run");
++    CUDA_CHECK(cudaGetLastError());
++}
++
++} // namespace ninfer::ops::detail
+--- /dev/null
++++ b/src/ops/linear_add/nvfp4/nvfp4_linear_add_sm110.h
+@@ -0,0 +1,18 @@
++#pragma once
++
++#include "core/arena.h"
++#include "core/tensor.h"
++
++#include <cuda_runtime.h>
++
++#include <cstddef>
++#include <cstdint>
++
++namespace ninfer::ops::detail {
++
++[[nodiscard]] std::size_t nvfp4_linear_add_sm110_workspace_capacity_bytes(std::int32_t tokens);
++
++void nvfp4_linear_add_sm110_launch(const Tensor& x, const Weight& weight, Tensor& residual,
++                                   WorkspaceArena& workspace, cudaStream_t stream);
++
++} // namespace ninfer::ops::detail
 --- a/src/ops/linear_swiglu/nvfp4/nvfp4_linear_swiglu_plan.cpp
 +++ b/src/ops/linear_swiglu/nvfp4/nvfp4_linear_swiglu_plan.cpp
 @@ -8,6 +8,7 @@
@@ -507,7 +814,7 @@
  
 --- a/src/targets/qwen3_6_27b/impl/variant.cpp
 +++ b/src/targets/qwen3_6_27b/impl/variant.cpp
-@@ -43,7 +43,8 @@
+@@ -43,8 +43,16 @@
      }
  }
  
@@ -515,8 +822,37 @@
 +constexpr ops::LinearPolicy kNvfp4TextPolicy =
 +    NINFER_HAS_NVFP4_W4A4 ? ops::LinearPolicy::AllowA4 : ops::LinearPolicy::A16Only;
  constexpr ops::LinearPolicy kFp8TextPolicy   = ops::LinearPolicy::AllowA8;
++
++ops::LinearPolicy mlp_down_policy(QType qtype, ops::LinearPolicy policy) {
++    if (NINFER_HAS_SM110_NVFP4_LINEAR_ADD && qtype == QType::NVFP4) {
++        return ops::LinearPolicy::AllowA4;
++    }
++    return policy;
++}
  
  ops::LinearPolicy text_policy(const Weight& weight) {
+     switch (weight.qtype) {
+@@ -108,7 +116,8 @@
+     {
+         auto scope = layout.scope();
+         (void)layout.alloc_bytes(ops::linear_add_workspace_capacity_bytes(
+-            down_qtype, TextConfig::hidden, TextConfig::intermediate, policy, first, last));
++            down_qtype, TextConfig::hidden, TextConfig::intermediate,
++            mlp_down_policy(down_qtype, policy), first, last));
+     }
+     return layout.peak_bytes(1);
+ }
+@@ -307,8 +316,8 @@
+     Tensor activation = workspace.alloc(DType::BF16, {TextConfig::intermediate, hidden.ne[1]});
+     ops::linear_swiglu(hidden, weights.gate_up, activation, text_policy(weights.gate_up), workspace,
+                        stream);
+-    ops::linear_add(activation, weights.down, residual, text_policy(weights.down), workspace,
+-                    stream);
++    ops::linear_add(activation, weights.down, residual,
++                    mlp_down_policy(weights.down.qtype, text_policy(weights.down)), workspace, stream);
+ }
+ 
+ void Variant::mtp_post_mixer(const Tensor& hidden, const MtpPostMixerWeights& weights,
 --- a/src/targets/registry.cpp
 +++ b/src/targets/registry.cpp
 @@ -64,10 +64,9 @@
@@ -586,13 +922,37 @@
  ninfer_add_test(ninfer_arena_test        SOURCES test_arena.cpp)
 --- a/tests/ops/linear_add/test_nvfp4.cpp
 +++ b/tests/ops/linear_add/test_nvfp4.cpp
-@@ -89,19 +89,22 @@
+@@ -35,13 +35,19 @@
+ 
+ std::vector<std::int32_t> sampled_indices(std::int32_t extent) {
+     std::vector<std::int32_t> result;
+-    for (const std::int32_t index :
+-         {0, 1, extent / 4, extent / 2, (3 * extent) / 4, extent - 2, extent - 1}) {
++    const auto append = [&](std::int32_t index) {
+         if (index >= 0 && index < extent &&
+             std::find(result.begin(), result.end(), index) == result.end()) {
+             result.push_back(index);
+         }
+-    }
++    };
++    for (std::int32_t sample = 0; sample < 32; ++sample) {
++        append(static_cast<std::int32_t>(static_cast<std::int64_t>(extent - 1) * sample / 31));
++    }
++    for (std::int32_t boundary : {7, 8, 15, 16, 31, 32, 63, 64, 126, 127, 128, 129}) {
++        append(boundary);
++    }
++    std::sort(result.begin(), result.end());
+     return result;
+ }
+ 
+@@ -89,19 +95,24 @@
  
  int run_shape(std::int32_t n, std::int32_t k, std::uint32_t seed) {
      const std::int32_t first_a4 = k == 6144 ? 7 : 8;
-+    constexpr auto qualified_policy = NINFER_HAS_NVFP4_W4A4
-+                                          ? ops::LinearPolicy::AllowA4
-+                                          : ops::LinearPolicy::A16Only;
++    const bool native_shape = NINFER_HAS_SM110_NVFP4_LINEAR_ADD && k == 17408;
++    const auto qualified_policy = NINFER_HAS_NVFP4_W4A4 || native_shape
++                                      ? ops::LinearPolicy::AllowA4
++                                      : ops::LinearPolicy::A16Only;
      const std::array invocations{
          Invocation{1, ops::LinearPolicy::A16Only},
          Invocation{4, ops::LinearPolicy::A16Only},
@@ -606,19 +966,192 @@
 -        Invocation{96, ops::LinearPolicy::AllowA4},
 -        Invocation{128, ops::LinearPolicy::AllowA4},
 -        Invocation{129, ops::LinearPolicy::AllowA4},
-+        Invocation{first_a4, qualified_policy},
-+        Invocation{17, qualified_policy},
-+        Invocation{1024, qualified_policy},
++        Invocation{7, qualified_policy},
 +        Invocation{8, qualified_policy},
 +        Invocation{16, qualified_policy},
++        Invocation{17, qualified_policy},
 +        Invocation{32, qualified_policy},
 +        Invocation{64, qualified_policy},
 +        Invocation{96, qualified_policy},
++        Invocation{127, qualified_policy},
 +        Invocation{128, qualified_policy},
 +        Invocation{129, qualified_policy},
++        Invocation{1024, qualified_policy},
      };
      constexpr std::int32_t kMaximumTokens = 1024;
      quantized_weight::PatternedWeightOptions options;
+@@ -121,8 +132,14 @@
+     device_weight.copy_from_host(host_weight.payload.data(), host_weight.payload.size());
+     const Weight weight = host_weight.device_weight(device_weight.data());
+ 
++    std::vector<std::uint16_t> negative_activation = activation;
++    for (auto& bits : negative_activation) { bits ^= 0x8000U; }
++    const std::size_t interval_capacity = ops::linear_add_workspace_capacity_bytes(
++        QType::NVFP4, n, k, qualified_policy, 1, kMaximumTokens);
++    DeviceContext graph_context;
+     int failures = 0;
+     for (const Invocation invocation : invocations) {
++        device_activation.copy_from_host(activation.data(), device_activation.bytes());
+         const std::size_t output_words = static_cast<std::size_t>(n) * invocation.tokens;
+         GuardedDeviceBuffer output(output_words * sizeof(std::uint16_t));
+         output.copy_from_host(initial_residual.data(), output.bytes());
+@@ -130,47 +147,24 @@
+         Tensor residual(output.data(), DType::BF16, {n, invocation.tokens});
+         const std::size_t capacity = ops::linear_add_workspace_capacity_bytes(
+             QType::NVFP4, n, k, invocation.policy, invocation.tokens, invocation.tokens);
+-        WorkspaceArena workspace(std::max<std::size_t>(capacity, 256));
+-        ops::linear_add(x, weight, residual, invocation.policy, workspace, nullptr);
+-        cuda_check(cudaDeviceSynchronize(), "synchronize NVFP4 linear_add");
+-
+-        if (invocation.tokens == 128) {
+-            cudaStream_t stream;
+-            cudaGraph_t graph;
+-            cudaGraphExec_t executable;
+-            CUDA_CHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+-            CUDA_CHECK(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));
+-            ops::linear_add(x, weight, residual, invocation.policy, workspace, stream);
+-            CUDA_CHECK(cudaStreamEndCapture(stream, &graph));
+-            CUDA_CHECK(cudaGraphInstantiate(&executable, graph, nullptr, nullptr, 0));
+-            for (int replay = 0; replay < 2; ++replay) {
+-                CUDA_CHECK(cudaMemcpyAsync(output.data(), initial_residual.data(), output.bytes(),
+-                    cudaMemcpyHostToDevice, stream));
+-                CUDA_CHECK(cudaGraphLaunch(executable, stream));
+-                CUDA_CHECK(cudaStreamSynchronize(stream));
+-            }
+-            CUDA_CHECK(cudaGraphExecDestroy(executable));
+-            CUDA_CHECK(cudaGraphDestroy(graph));
+-            CUDA_CHECK(cudaStreamDestroy(stream));
+-        }
+-
+-        const bool a4           = invocation.policy == ops::LinearPolicy::AllowA4;
++        const std::size_t storage_bytes = capacity == 0 ? 256 : capacity;
++        GuardedDeviceBuffer scratch(storage_bytes);
++        WorkspaceArena workspace(DeviceSpan{scratch.data(), storage_bytes});
++        const bool a4 = invocation.policy == ops::LinearPolicy::AllowA4 &&
++                        invocation.tokens >= first_a4;
+         const std::string label = "NVFP4 linear_add [" + std::to_string(n) + "," +
+                                   std::to_string(k) + "] " + (a4 ? "A4" : "A16") +
+                                   " T=" + std::to_string(invocation.tokens);
+-        if (workspace.peak_used() != capacity) {
+-            std::cerr << label << ": workspace query/execution high-water mismatch\n";
++        if (capacity > interval_capacity || (native_shape && a4 && capacity == 0) ||
++            (!a4 && capacity != 0)) {
++            std::cerr << label << ": invalid interval or arithmetic-profile workspace bound\n";
+             ++failures;
+         }
+-        failures += output.verify_guards(label);
+-
+-        std::vector<std::uint16_t> actual_bits(output_words);
+-        output.copy_to_host(actual_bits.data(), output.bytes());
+         const std::vector<std::int32_t> tokens = sampled_indices(invocation.tokens);
+-        std::vector<double> actual;
+-        std::vector<double> expected;
+-        actual.reserve(rows.size() * tokens.size());
+-        expected.reserve(rows.size() * tokens.size());
++        std::vector<double> sums;
++        std::vector<double> residual_values;
++        sums.reserve(rows.size() * tokens.size());
++        residual_values.reserve(rows.size() * tokens.size());
+         for (std::size_t sampled_row = 0; sampled_row < rows.size(); ++sampled_row) {
+             const std::int32_t row = rows[sampled_row];
+             const float* weight_row =
+@@ -184,13 +178,91 @@
+                            static_cast<double>(bf16_to_f32(activation_row[column]));
+                 }
+                 const std::size_t index = static_cast<std::size_t>(token) * n + row;
+-                actual.push_back(static_cast<double>(bf16_to_f32(actual_bits[index])));
+-                expected.push_back(sum + static_cast<double>(bf16_to_f32(initial_residual[index])));
++                sums.push_back(sum);
++                residual_values.push_back(static_cast<double>(bf16_to_f32(initial_residual[index])));
+             }
+         }
+-        failures += verify_reduction(label, actual, expected, a4 ? kA4Tolerance : kA16Tolerance);
+-    }
+-
++        const auto verify_output = [&](bool negative, const std::string& phase) {
++            std::vector<std::uint16_t> actual_bits(output_words);
++            output.copy_to_host(actual_bits.data(), output.bytes());
++            std::vector<double> actual;
++            std::vector<double> expected;
++            actual.reserve(sums.size());
++            expected.reserve(sums.size());
++            std::size_t sample = 0;
++            for (const auto row : rows) {
++                for (const auto token : tokens) {
++                    const std::size_t index = static_cast<std::size_t>(token) * n + row;
++                    actual.push_back(static_cast<double>(bf16_to_f32(actual_bits[index])));
++                    expected.push_back(residual_values[sample] +
++                                       (negative ? -sums[sample] : sums[sample]));
++                    ++sample;
++                }
++            }
++            failures += verify_reduction(label + phase, actual, expected,
++                                          a4 ? kA4Tolerance : kA16Tolerance);
++            failures += output.verify_guards(label + phase);
++            failures += scratch.verify_guards(label + phase + " workspace");
++        };
++        scratch.fill(0x3c);
++        ops::linear_add(x, weight, residual, invocation.policy, workspace, nullptr);
++        cuda_check(cudaDeviceSynchronize(), "synchronize NVFP4 linear_add");
++        if (workspace.used() != 0 || workspace.peak_used() != capacity) {
++            std::cerr << label << ": workspace query/execution high-water mismatch\n";
++            ++failures;
++        }
++        verify_output(false, " eager");
++        failures += verify_preserved(
++            device_activation,
++            std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(activation.data()),
++                                          activation.size() * sizeof(std::uint16_t)),
++            label + " eager activation");
++
++        if (invocation.tokens == 8 || invocation.tokens == 17 || invocation.tokens == 128 ||
++            invocation.tokens == 129) {
++            const cudaStream_t stream = graph_context.stream;
++            cudaGraph_t graph;
++            cudaGraphExec_t executable;
++            CUDA_CHECK(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));
++            ops::linear_add(x, weight, residual, invocation.policy, workspace, stream);
++            CUDA_CHECK(cudaStreamEndCapture(stream, &graph));
++            CUDA_CHECK(cudaGraphInstantiate(&executable, graph, nullptr, nullptr, 0));
++            for (int replay = 0; replay < 2; ++replay) {
++                const auto& replay_activation = replay ? negative_activation : activation;
++                device_activation.copy_from_host(replay_activation.data(),
++                                                 device_activation.bytes());
++                output.copy_from_host(initial_residual.data(), output.bytes());
++                scratch.fill(replay ? 0x6d : 0x3c);
++                CUDA_CHECK(cudaDeviceSynchronize());
++                CUDA_CHECK(cudaGraphLaunch(executable, stream));
++                CUDA_CHECK(cudaStreamSynchronize(stream));
++                verify_output(replay != 0,
++                              replay ? " graph negative input" : " graph positive input");
++                failures += verify_preserved(
++                    device_activation,
++                    std::span<const std::uint8_t>(
++                        reinterpret_cast<const std::uint8_t*>(replay_activation.data()),
++                        replay_activation.size() * sizeof(std::uint16_t)),
++                    label + " graph activation");
++            }
++            CUDA_CHECK(cudaGraphExecDestroy(executable));
++            CUDA_CHECK(cudaGraphDestroy(graph));
++        }
++        if (native_shape && invocation.tokens == 17) {
++            device_activation.fill(0);
++            output.copy_from_host(initial_residual.data(), output.bytes());
++            scratch.fill(0x6d);
++            ops::linear_add(x, weight, residual, invocation.policy, workspace, nullptr);
++            cuda_check(cudaDeviceSynchronize(), "synchronize zero-input NVFP4 linear_add");
++            failures += verify_preserved(
++                output,
++                std::span<const std::uint8_t>(
++                    reinterpret_cast<const std::uint8_t*>(initial_residual.data()), output.bytes()),
++                label + " zero-input exact residual");
++            failures += output.verify_guards(label + " zero input");
++            failures += scratch.verify_guards(label + " zero-input workspace");
++        }
++    }
+     failures += device_activation.verify_guards("NVFP4 linear_add activation");
+     failures += device_weight.verify_guards("NVFP4 linear_add weight");
+     failures += verify_preserved(
 --- a/tests/ops/linear_swiglu/test_nvfp4.cpp
 +++ b/tests/ops/linear_swiglu/test_nvfp4.cpp
 @@ -9,15 +9,19 @@
