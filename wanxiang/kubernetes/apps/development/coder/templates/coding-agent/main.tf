@@ -39,6 +39,11 @@ variable "git_ssh_secret_name" {
   default = "coder-workspace-git-ssh"
 }
 
+variable "infra_secret_name" {
+  type    = string
+  default = "coder-workspace-infra"
+}
+
 variable "cpu_request" {
   type    = string
   default = "500m"
@@ -71,7 +76,13 @@ resource "coder_agent" "main" {
 
   env = {
     CODER_WORKSPACE_DIR = "/home/coder/workspace"
+    GIT_CONFIG_COUNT    = "1"
+    GIT_CONFIG_KEY_0    = "user.signingKey"
+    GIT_CONFIG_VALUE_0  = "/home/coder/.ssh/runtime/id_ed25519"
     GIT_SSH_COMMAND     = "ssh -F /home/coder/.ssh/config -i /home/coder/.ssh/runtime/id_ed25519 -o UserKnownHostsFile=/home/coder/.ssh/known_hosts -o StrictHostKeyChecking=yes"
+    KUBECONFIG          = "/run/coder-infra/kubeconfig"
+    SOPS_AGE_KEY_FILE   = "/run/coder-infra/sops-age-keys"
+    TALOSCONFIG         = "/run/coder-infra/talosconfig"
   }
 
   startup_script = <<-EOT
@@ -87,6 +98,7 @@ resource "coder_agent" "main" {
     }
 
     install_secret CLAUDE_CREDENTIALS_JSON /home/coder/.claude/.credentials.json
+    install_secret CODEX_AUTH_JSON /home/coder/.codex/auth.json
     install_secret OPENCODE_AUTH_JSON /home/coder/.local/share/opencode/auth.json
     install_secret GH_HOSTS_YML /home/coder/.config/gh/hosts.yml
     install_secret FORGEJO_GIT_CREDENTIALS /home/coder/.config/git/credentials
@@ -101,6 +113,14 @@ resource "coder_agent" "main" {
         ssh-keygen -y -f /home/coder/.ssh/runtime/id_ed25519 > /home/coder/.ssh/runtime/id_ed25519.pub
         chmod 0644 /home/coder/.ssh/runtime/id_ed25519.pub
       fi
+    fi
+
+    if [ -S /tmp/tailscale/tailscaled.sock ]; then
+      tailscale --socket=/tmp/tailscale/tailscaled.sock set --accept-routes=true
+    fi
+
+    if command -v multica >/dev/null 2>&1; then
+      multica daemon start || multica daemon status >/dev/null
     fi
   EOT
 }
@@ -152,7 +172,7 @@ resource "kubernetes_pod" "workspace" {
   }
 
   spec {
-    restart_policy = "Never"
+    restart_policy = "Always"
 
     container {
       name              = "dev"
@@ -180,6 +200,26 @@ resource "kubernetes_pod" "workspace" {
         value = "/home/coder/workspace"
       }
 
+      env {
+        name  = "TS_HOSTNAME"
+        value = local.app
+      }
+
+      env {
+        name  = "KUBECONFIG"
+        value = "/run/coder-infra/kubeconfig"
+      }
+
+      env {
+        name  = "SOPS_AGE_KEY_FILE"
+        value = "/run/coder-infra/sops-age-keys"
+      }
+
+      env {
+        name  = "TALOSCONFIG"
+        value = "/run/coder-infra/talosconfig"
+      }
+
       dynamic "env" {
         for_each = var.agent_secret_name == "" ? [] : [var.agent_secret_name]
         content {
@@ -189,6 +229,27 @@ resource "kubernetes_pod" "workspace" {
               name     = env.value
               key      = "TS_AUTHKEY"
               optional = true
+            }
+          }
+        }
+      }
+
+      env {
+        name  = "BEACOWORKS_MODELS_API_BASE"
+        value = "http://litellm.ai.svc.cluster.local:4000/v1"
+      }
+
+      dynamic "env" {
+        for_each = var.agent_secret_name == "" ? [] : [
+          "BEACOWORKS_MODELS_API_KEY",
+          "TAVILY_API_KEY",
+        ]
+        content {
+          name = env.value
+          value_from {
+            secret_key_ref {
+              name = var.agent_secret_name
+              key  = env.value
             }
           }
         }
@@ -231,6 +292,15 @@ resource "kubernetes_pod" "workspace" {
           read_only  = true
         }
       }
+
+      dynamic "volume_mount" {
+        for_each = var.infra_secret_name == "" ? [] : [var.infra_secret_name]
+        content {
+          name       = "infra-secrets"
+          mount_path = "/run/coder-infra"
+          read_only  = true
+        }
+      }
     }
 
     volume {
@@ -259,6 +329,16 @@ resource "kubernetes_pod" "workspace" {
       for_each = var.agent_secret_name == "" ? [] : [var.agent_secret_name]
       content {
         name = "agent-secrets"
+        secret {
+          secret_name = volume.value
+        }
+      }
+    }
+
+    dynamic "volume" {
+      for_each = var.infra_secret_name == "" ? [] : [var.infra_secret_name]
+      content {
+        name = "infra-secrets"
         secret {
           secret_name = volume.value
         }
