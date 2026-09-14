@@ -769,6 +769,50 @@ contexts, or a sustained agent workload. No persistent service parameters
 were changed. For isolated performance tests, stop the other model server
 using the independent restoration job described above.
 
+### NInfer serving and continuation trial
+
+Rebuilt `ninfer-serve` against the integrated-memory correction and tested
+its OpenAI Chat Completions endpoint with the existing SGLang service
+resident. The experimental listener was container-loopback only; no
+production gateway route or service configuration was changed.
+
+Relevant startup parameters were `--max-context 32768 --kv-capacity 65536
+--max-concurrency 4 --kv-dtype fp8 --spec dflash2 --draft-tokens 7
+--lm-head-draft --host-kv-mib 1024 --host-state-slots 4
+--default-max-tokens 2048 --default-thinking-budget 128 --preserve-thinking`.
+The thinking cap was a bounded test setting. Host KV was explicitly 1 GiB
+instead of the default 8 GiB; four pinned Host state slots additionally
+occupied 747.3 MiB. Device checkpoints retained the default four extra slots.
+The 64K Main KV pool is shared, not four independent 32K reservations.
+
+All twelve generation requests returned HTTP 200 and passed their output
+checks: plain text, SSE text, a typed `add(7,9)` tool call, tool-result
+continuation, SSE tool-call argument assembly, four simultaneous counting
+requests, separate thinking/answer output, and the long-input pair below.
+The model-list request also passed. Server telemetry confirmed four active
+requests with an actual decode batch of four during the concurrent case.
+These were HTTP probes, not a full Pi agent session or a coding benchmark.
+
+| Long-input case | Input tokens | Reused tokens | Client elapsed | Result |
+| --- | ---: | ---: | ---: | --- |
+| Cold three-key archive | 27916 | 0 | 96.377 s | All three values correct |
+| Appended answer and follow-up | 27981 | 27957 | 1.163 s | Requested value correct |
+
+The follow-up used `private_endpoint` and computed only 24 new prefill
+tokens, as recorded by the Engine. Its server TTFT was 0.891 s. During
+288 half-second host samples, minimum Available was 30.92 GiB. The main
+service retained the same invocation with zero automatic restarts; a short
+production gateway request during the long prefill also passed. This is
+coexistence evidence, not isolated throughput or four-long-request
+qualification. The experiment container was stopped after successful cleanup.
+
+The inspected serving contract supports ordinary non-strict automatic tool
+selection. It rejects forced/named tool selection, `strict:true`, and JSON
+constrained-output requests. These limits were read from the implementation
+and serving guide; this trial exercised the supported tool path. Full Pi
+compatibility, cancellation/queue saturation, long-output quality and larger
+contexts remain unqualified.
+
 ## References
 
 - [Original SGLang deployment reference for DGX Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) — adapted and measured on Thor; its Spark CPU affinity and attention settings are not directly transferable.
