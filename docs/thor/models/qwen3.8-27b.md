@@ -685,8 +685,9 @@ Continued the Pi agent's port using its existing source/build and
 `qwen3_8_27b.ninfer` artifact. The artifact identifies itself as
 `qwen3.8-27b/groupwise-int`, not NVFP4. Pi's source changes admit `110a` in
 CMake and the runtime capability gate, omit SM120 W4A4 implementations and
-link throwing stubs. The NVFP4 dispatcher still permits those W4A4 paths;
-this work therefore does not establish NVFP4 support on Thor.
+link throwing stubs. The initial NVFP4 dispatcher still permitted those W4A4
+paths, so the initial groupwise trial did not establish NVFP4 support. The
+later A16 follow-up below addresses that dispatch gap.
 
 The previous startup failure compared 19,677,323,776 required weight bytes
 (18.326 GiB) against 17,820,422,144 CUDA free bytes (16.597 GiB), before
@@ -812,6 +813,100 @@ constrained-output requests. These limits were read from the implementation
 and serving guide; this trial exercised the supported tool path. Full Pi
 compatibility, cancellation/queue saturation, long-output quality and larger
 contexts remain unqualified.
+
+### Exclusive engine comparison and NVFP4 follow-up
+
+Each measured engine ran alone in this exclusive GPU trial. An independent
+bounded systemd job stopped/restored the production service.
+The existing SGLang baseline retained four-request/256K configuration,
+BF16 KV, its ModelOpt NVFP4/FP8 weights and BF16 output head. NInfer used
+four-request/32K configuration with a shared 64K FP8 KV pool. These are
+end-to-end configuration comparisons, not an equal-quantization kernel
+benchmark or a quality-equivalence claim.
+
+All requests used identical prompts, temperature zero, zero presence/frequency
+penalties, thinking disabled, SSE and 512 output tokens. Prompt counts matched:
+43 for counting, 82 for code generation and 1843 for the longer-prefill case.
+SGLang's prefix cache was flushed before each timed request/group; NInfer
+prefix reuse was disabled. The count task asks for integers 1 through 2000;
+the code task asks for an asynchronous Python job queue with retries,
+deadlines, persistence and tests. Outputs deliberately hit the length limit:
+code throughput does not establish correctness of a complete implementation.
+
+Single-request rate is `(completion_tokens - 1) / (last_stream_time -
+first_content_time)`, using the median of three counting runs and two code
+runs. Four-request aggregate rate includes all four requests' prefill and
+decode wall time. Those rates have different denominators and should not be
+mixed. Counting is highly predictable and favorable to speculative decoding.
+
+| Configuration | Counting decode tok/s | Code decode tok/s | Four-request counting aggregate tok/s |
+| --- | ---: | ---: | ---: |
+| SGLang, DFlash block16 | 119.44 | 66.47 | 331.51 |
+| NInfer groupwise-int, no draft | 10.45 | 10.45 | 24.38 |
+| NInfer groupwise-int, DFlash2 draft7 | 31.31 | 22.79 | 74.57 |
+| NInfer groupwise-int, DFlash2 draft15 | 41.85 | 19.06 | 105.47 |
+| NInfer mixed NVFP4, A16, no draft | 10.47 | 10.47 | 30.77 |
+| NInfer mixed NVFP4, A16, DFlash2 draft15 | 46.60 | 20.78 | 53.37 |
+| NInfer mixed NVFP4, A16, DFlash2 draft7 | — | 25.51 | — |
+
+The NVFP4 draft7 supplement measured only the two code requests. Relative
+to groupwise draft7, its code rate improved about 11.9%, but SGLang remained
+at about 2.6 times its decode rate on this workload. NVFP4 draft15 regressed in the
+four-request workload despite faster single-request counting. No single
+NInfer configuration in this trial improved on the deployed SGLang baseline.
+
+For the 1843-token input, client TTFT was 0.679 s for SGLang, 6.093 s for
+NInfer groupwise plain, and 24.997 s for NVFP4 A16 plain; NVFP4 draft15 still
+took 25.051 s. Speculative decoding does not remove that prefill cost.
+All timed outputs reached the requested 512-token limit. The experiment
+therefore remains a port/qualification candidate, not a production upgrade.
+
+Increasing the groupwise draft window helped counting but hurt this code
+workload. SGLang's block16 corresponds to a 15-draft-plus-anchor block in
+NInfer; the draft7 result is retained to expose this parameter sensitivity.
+
+The [complete SM110 source patch](../patches/ninfer-sm110-complete.patch)
+contains the original architecture gate/stubs, integrated-memory correction,
+and an A16 functional route for NVFP4. It applies to the original upstream
+archive identified by SHA256 above, without needing an unarchived Pi working
+tree. Application to pristine source was checked and reproduced the source
+snapshot byte for byte. A16 policy is selected consistently for planning and
+execution; NVFP4 SwiGLU now processes longer inputs in at-most-16-token chunks.
+The actual native W4A4 implementation remains unported.
+
+Five device tests passed: NVFP4 A16 Linear, NVFP4 Linear+Residual, NVFP4
+SwiGLU, FP8 A16 Linear, and FP8 A8 Linear. The Linear checks use sampled
+independent FP64 references at real shapes. SwiGLU checks all output rows with dense first-token and sparse
+subsequent-token inputs, including T=17/31/32/33/256/257 and Graph replay.
+The first boundary test exposed an erroneous reuse of a generic 32-token
+limit; a shared SwiGLU-specific 16-token limit now controls both partitioning
+and its launcher table. The oracle cases and tolerances were preserved.
+
+The matched NVFP4 artifact then passed the same nine short JSON, retrieval
+and arithmetic cases across eager, Graph and DFlash2 modes. These checks
+establish functional execution of the tested A16 route, not broad model
+quality or native W4A4 qualification.
+
+The matched published artifact is
+[neroued/Qwen3.8-27B-nvfp4-NInfer](https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer),
+revision `11dbbbbbc33db198afe2f02c9232c771ff7031be`, size 23719496192 bytes,
+SHA256 `552c374c685dce302603b95fbe940fb04243c0cd44c083efc644ad3d980d462c`.
+It uses the author's mixed FP8/NVFP4 recipe, including FP8 output head;
+it is not the deployed ModelOpt/BF16-head checkpoint. The latter has a
+different tensor/scale layout and cannot be passed directly to this recipe.
+
+For subsequent native-kernel work, NInfer's current warp-level
+`mma.sync.aligned.kind::mxf4nvf4` route differs from the SM100/SM110
+`tcgen05.mma` route, which uses Tensor Memory and different CTA/synchronization
+contracts. See the [NVIDIA PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-instructions-mma).
+The installed FlashInfer `mm_fp4` Cutlass dispatcher accepts SM major 10/11
+and selects `fp4_gemm_template_sm100.h`; the vendored CUTLASS
+`mma_sm100_umma.hpp` contains the actual block-scaled `tcgen05.mma` instruction.
+A concrete next port target is the MLP down GEMM `[5120,17408]`, followed by
+residual add. Packed codes, K16 scale layouts and global scales must be
+verified against an independent oracle before reuse; similar layout names
+are not evidence of byte compatibility. A16 results are not a native NVFP4
+hardware-performance ceiling.
 
 ## References
 
