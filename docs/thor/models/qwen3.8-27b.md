@@ -679,6 +679,96 @@ Cold near-256K still takes about 25 minutes. Single-slot queueing and cold
 cache misses remain latency limitations, and multiple long queued requests
 can exceed the timeout. Performance and concurrency tuning remain deferred.
 
+## NInfer SM110 follow-up — 2026-09-14
+
+Continued the Pi agent's port using its existing source/build and
+`qwen3_8_27b.ninfer` artifact. The artifact identifies itself as
+`qwen3.8-27b/groupwise-int`, not NVFP4. Pi's source changes admit `110a` in
+CMake and the runtime capability gate, omit SM120 W4A4 implementations and
+link throwing stubs. The NVFP4 dispatcher still permits those W4A4 paths;
+this work therefore does not establish NVFP4 support on Thor.
+
+The previous startup failure compared 19,677,323,776 required weight bytes
+(18.326 GiB) against 17,820,422,144 CUDA free bytes (16.597 GiB), before
+materialization or KV allocation. The shortfall was 1.729 GiB for weights
+alone. Dropping `--spec dflash2 --draft-tokens 7 --lm-head-draft` avoids
+materializing the draft weights/head; `--spec none` is not a valid option.
+
+A minimal real CLI invocation succeeded with explicit 4096 context and KV
+capacity, FP8 KV, greedy sampling, thinking disabled and CUDA Graph off.
+Then fixed JSON, three-value retrieval and arithmetic (17×23, then −19)
+were tested under eager, default Graph and DFlash2 (`draft-tokens=7` plus
+`lm-head-draft`) modes: all nine exited successfully, produced the expected
+JSON values and stopped normally. Each process loaded the artifact afresh;
+these are short functional checks, not coding-quality or long-context tests.
+
+| Mode | Logged GPU weights | Runtime reservation | Graph allowance | Planned device total |
+| --- | ---: | ---: | ---: | ---: |
+| No draft, eager | 15.9 GiB | 440.3 MiB | 0 | 16.3 GiB |
+| No draft, Graph | 15.9 GiB | 452.3 MiB | 12 MiB | 16.4 GiB |
+| DFlash2 + draft head, Graph | 18.3 GiB | 803.7 MiB | 256 MiB | 19.1 GiB |
+
+These are engine-reported allocation/planning figures, not measured whole
+machine peaks. The original startup command already used 4K and FP8 KV;
+shrinking KV would not have resolved its weight-precheck failure.
+
+The relevant existing tests built for 110a and passed serially:
+`ninfer_linear_q4_a16_test`, `ninfer_linear_q5_a16_test`,
+`ninfer_linear_w8_a16_test` and
+`ninfer_gated_delta_net_replay_record_test` (24.20 s total).
+The Linear tests use independent FP64 GEMM references. GDN checks replay
+records, invariants and Graph state updates; it is not a full independent
+GDN mathematical oracle. No new CUDA implementation was introduced here.
+
+The standalone inference checks and device tests ran with the other model
+server stopped. An independent systemd task restored it afterward, with
+cleanup also configured for failure/timeout. No throughput advantage over
+the deployed SGLang model is claimed: artifact quantization and workloads
+differ, and the short generations are unsuitable for that comparison.
+
+### Integrated-memory budget correction
+
+A subsequent coexistence attempt failed before loading even the no-draft
+weights: CUDA reported 10.69 GiB free, while Linux reported 56.65 GiB
+`MemAvailable` (including reclaimable memory). NInfer used `cudaMemGetInfo`
+for both weight admission and later KV planning. SGLang already uses host
+available memory when CUDA identifies an integrated GPU. NVIDIA also
+[documents this Tegra memory-estimation limitation](https://docs.nvidia.com/cuda/cuda-for-tegra-appnote/).
+
+The correction centralizes these checks in `DeviceContext::available_memory()`.
+On Linux integrated GPUs it uses `MemAvailable`, capped by CUDA/device total
+memory; absent or malformed host data falls back to CUDA free. Discrete GPU
+behavior is unchanged. Swap is not added, and neither allocation failures
+nor KV headroom checks are bypassed. This corrects an admission estimate;
+it does not reduce allocations or reserve memory against competing processes.
+
+The [source patch](../patches/ninfer-linux-integrated-memory.patch) applies
+with `patch -p1` from the Pi SM110 working tree root. Its original upstream
+archive SHA256 was
+`7d5b943fac1f88363da72d3e7f39b6a15d3261f2d0f73d2880a1385f88529056`;
+the archive was not a Git checkout. This patch contains only the memory
+correction, not the earlier SM110 port or a completed NVFP4 implementation.
+
+The new CPU test covers parsing, missing/unreadable/malformed data, overflow,
+zero availability, capacity caps and discrete-GPU behavior, and passed.
+The complete CLI then rebuilt successfully for `110a`.
+
+After the correction, the same nine cases passed again with the deployed
+SGLang service resident throughout, including DFlash2. A 0.5-second host
+sampler recorded 173 samples: minimum Available 35.71 GiB and minimum Free
+8.20 GiB (separate minima, not guaranteed instantaneous peaks). Two short
+requests through the production OpenAI gateway also returned HTTP 200 and
+expected output during the run, in 0.539 and 0.645 seconds. Production's
+service invocation remained unchanged with zero automatic restarts.
+After cleanup stopped the experiment container, another request passed in
+0.318 seconds.
+
+This qualifies short 4K NInfer/SGLang coexistence. It does not establish
+headroom under four simultaneous long production requests, long NInfer
+contexts, or a sustained agent workload. No persistent service parameters
+were changed. For isolated performance tests, stop the other model server
+using the independent restoration job described above.
+
 ## References
 
 - [Original SGLang deployment reference for DGX Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) — adapted and measured on Thor; its Spark CPU affinity and attention settings are not directly transferable.

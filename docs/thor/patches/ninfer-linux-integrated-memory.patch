@@ -1,0 +1,256 @@
+--- a/src/core/device.h
++++ b/src/core/device.h
+@@ -38,6 +38,7 @@
+     int multiprocessor_count() const noexcept;
+     DeviceExecutionView execution_view() const noexcept;
+     std::size_t total_vram() const noexcept;
++    std::size_t available_memory() const;
+     void synchronize() const;
+ };
+ 
+--- a/src/core/device.cu
++++ b/src/core/device.cu
+@@ -1,7 +1,10 @@
+ #include "core/device.h"
+-
++#include "core/memory.h"
++
++#include <algorithm>
+ #include <cstdio>
+ #include <cstdlib>
++#include <fstream>
+ #include <stdexcept>
+ #include <string>
+ #include <utility>
+@@ -128,6 +131,22 @@
+ }
+ 
+ std::size_t DeviceContext::total_vram() const noexcept { return props.totalGlobalMem; }
++
++std::size_t DeviceContext::available_memory() const {
++    bind_to_current_thread();
++    std::size_t free_bytes = 0;
++    std::size_t total_bytes = 0;
++    CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_bytes));
++#if defined(__linux__)
++    if (props.integrated) {
++        // CUDA free memory excludes reclaimable Linux page cache on integrated GPUs.
++        std::ifstream meminfo("/proc/meminfo");
++        return select_available_memory(true, free_bytes, std::min(total_bytes, total_vram()),
++                                       parse_mem_available(meminfo));
++    }
++#endif
++    return free_bytes;
++}
+ 
+ void DeviceContext::synchronize() const { CUDA_CHECK(cudaStreamSynchronize(stream)); }
+ 
+--- /dev/null
++++ b/src/core/memory.h
+@@ -0,0 +1,14 @@
++#pragma once
++
++#include <cstddef>
++#include <istream>
++#include <optional>
++
++namespace ninfer {
++
++std::optional<std::size_t> parse_mem_available(std::istream& input);
++std::size_t select_available_memory(bool integrated, std::size_t cuda_free,
++                                    std::size_t device_total,
++                                    std::optional<std::size_t> host_available) noexcept;
++
++} // namespace ninfer
+--- /dev/null
++++ b/src/core/memory.cpp
+@@ -0,0 +1,43 @@
++#include "core/memory.h"
++
++#include <algorithm>
++#include <charconv>
++#include <limits>
++#include <sstream>
++#include <string>
++
++namespace ninfer {
++
++std::optional<std::size_t> parse_mem_available(std::istream& input) {
++    std::optional<std::size_t> available;
++    std::string line;
++    while (std::getline(input, line)) {
++        std::istringstream fields(line);
++        std::string key;
++        if (!(fields >> key) || key != "MemAvailable:") { continue; }
++        std::string value;
++        std::string unit;
++        std::string extra;
++        if (available || !(fields >> value >> unit) || unit != "kB" || fields >> extra) {
++            return std::nullopt;
++        }
++        std::size_t kib = 0;
++        const auto result = std::from_chars(value.data(), value.data() + value.size(), kib);
++        if (result.ec != std::errc{} || result.ptr != value.data() + value.size() ||
++            kib > std::numeric_limits<std::size_t>::max() / 1024) {
++            return std::nullopt;
++        }
++        available = kib * 1024;
++    }
++    if (input.bad() || !input.eof()) { return std::nullopt; }
++    return available;
++}
++
++std::size_t select_available_memory(bool integrated, std::size_t cuda_free,
++                                    std::size_t device_total,
++                                    std::optional<std::size_t> host_available) noexcept {
++    if (integrated && host_available) { return std::min(*host_available, device_total); }
++    return cuda_free;
++}
++
++} // namespace ninfer
+--- a/src/targets/registry.cpp
++++ b/src/targets/registry.cpp
+@@ -64,10 +64,9 @@
+     }
+ }
+ 
+-std::size_t runtime_bytes_after_planned_weights(std::uint64_t weight_bytes) {
+-    std::size_t free_bytes  = 0;
+-    std::size_t total_bytes = 0;
+-    CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_bytes));
++std::size_t runtime_bytes_after_planned_weights(const DeviceContext& device,
++                                               std::uint64_t weight_bytes) {
++    const std::size_t free_bytes = device.available_memory();
+     if (weight_bytes > free_bytes) {
+         throw std::invalid_argument("model weights require " + std::to_string(weight_bytes) +
+                                     " bytes of device memory, but only " +
+@@ -75,13 +74,6 @@
+                                     " bytes are free before loading weights");
+     }
+     return free_bytes - static_cast<std::size_t>(weight_bytes);
+-}
+-
+-std::size_t current_free_device_bytes() {
+-    std::size_t free_bytes  = 0;
+-    std::size_t total_bytes = 0;
+-    CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_bytes));
+-    return free_bytes;
+ }
+ 
+ template <class Target, class Loaded, class Instance>
+@@ -106,7 +98,7 @@
+     auto sequence_planner = Target::make_sequence_planner(device, options, weights_profile);
+     const runtime::SequenceCapacityCurve curve = sequence_planner.capacity_curve();
+     const std::size_t preflight_runtime_bytes =
+-        runtime_bytes_after_planned_weights(load_plan.materialization().device_capacity_bytes);
++        runtime_bytes_after_planned_weights(device, load_plan.materialization().device_capacity_bytes);
+     (void)runtime::resolve_kv_capacity(options.kv_capacity, curve, preflight_runtime_bytes);
+     target_plan_phase.complete();
+ 
+@@ -118,7 +110,7 @@
+     auto model = Target::construct_loaded_model(std::move(load_plan), std::move(materialized));
+     device.synchronize();
+     runtime::KvCapacityResolution capacity_resolution =
+-        runtime::resolve_kv_capacity(options.kv_capacity, curve, current_free_device_bytes());
++        runtime::resolve_kv_capacity(options.kv_capacity, curve, device.available_memory());
+     auto sequence_plan = std::move(sequence_planner).finalize(capacity_resolution.main_page_groups);
+     if (sequence_plan.device_reservation_bytes() != capacity_resolution.runtime_reservation_bytes ||
+         sequence_plan.kv_capacity() != capacity_resolution.resolved_tokens) {
+@@ -136,7 +128,7 @@
+                                    device, options.startup_observer);
+     device.synchronize();
+     program_phase.complete();
+-    instance->kv_capacity_resolution.available_after_startup_bytes = current_free_device_bytes();
++    instance->kv_capacity_resolution.available_after_startup_bytes = device.available_memory();
+ 
+     LoadSummary summary;
+     summary.target               = std::string(target_key);
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -17,6 +17,7 @@
+ add_library(ninfer_core STATIC
+   core/arena.cu
+   core/device.cu
++  core/memory.cpp
+   core/dtype.cpp
+   core/host_worker_pool.cpp
+   core/gdn_replay_records.cpp
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -68,6 +68,7 @@
+   SOURCES test_pretty_logging.cpp
+   LIBRARIES ninfer_product_logging)
+ ninfer_add_test(ninfer_device_test       SOURCES test_device.cpp)
++ninfer_add_test(ninfer_memory_test       SOURCES test_memory.cpp)
+ ninfer_add_test(ninfer_decode_graph_test SOURCES test_decode_graph.cpp)
+ ninfer_add_test(ninfer_tensor_test       SOURCES test_tensor.cpp)
+ ninfer_add_test(ninfer_arena_test        SOURCES test_arena.cpp)
+--- /dev/null
++++ b/tests/test_memory.cpp
+@@ -0,0 +1,66 @@
++#include "core/memory.h"
++
++#include <iostream>
++#include <limits>
++#include <sstream>
++#include <stdexcept>
++#include <string>
++
++namespace {
++
++void require(bool value, const char* message) {
++    if (!value) { throw std::runtime_error(message); }
++}
++
++std::optional<std::size_t> parse(const std::string& text) {
++    std::istringstream input(text);
++    return ninfer::parse_mem_available(input);
++}
++
++} // namespace
++
++int main() {
++    try {
++        using ninfer::select_available_memory;
++        require(parse("MemTotal: 128000000 kB\nMemFree: 100 kB\n"
++                      "MemAvailable:   59402308 kB\nCached: 123 kB\n") ==
++                    std::size_t{59402308} * 1024,
++                "Linux available memory was not parsed in KiB");
++        require(parse("MemAvailable:\t0 kB") == 0, "zero available memory was discarded");
++        for (const std::string text : {
++                 "MemFree: 100 kB\n", "MemAvailable: -1 kB\n",
++                 "MemAvailable: +1 kB\n", "MemAvailable: 1 MB\n",
++                 "MemAvailable: 1x kB\n", "MemAvailable: 1\n",
++                 "MemAvailable: 1 kB extra\n",
++                 "MemAvailable: 1 kB\nMemAvailable: 2 kB\n"}) {
++            require(!parse(text), "malformed or missing available memory was accepted");
++        }
++        require(!parse("MemAvailable: " +
++                       std::to_string(std::numeric_limits<std::size_t>::max()) + " kB"),
++                "KiB multiplication overflow was accepted");
++        require(!parse("MemAvailable: 99999999999999999999999999 kB"),
++                "integer parsing overflow was accepted");
++        std::istringstream unreadable("MemAvailable: 123 kB");
++        unreadable.setstate(std::ios::badbit);
++        require(!ninfer::parse_mem_available(unreadable), "read failure was accepted");
++        std::istringstream unopened;
++        unopened.setstate(std::ios::failbit);
++        require(!ninfer::parse_mem_available(unopened), "open failure was accepted");
++        require(select_available_memory(true, 11, 128, 56) == 56,
++                "integrated GPU did not include reclaimable memory");
++        require(select_available_memory(true, 11, 128, 4) == 4,
++                "host memory pressure was ignored");
++        require(select_available_memory(true, 11, 128, 200) == 128,
++                "host estimate exceeded device capacity");
++        require(select_available_memory(true, 11, 128, 0) == 0,
++                "zero host availability incorrectly fell back to CUDA");
++        require(select_available_memory(true, 11, 128, std::nullopt) == 11,
++                "missing host estimate did not fall back to CUDA");
++        require(select_available_memory(false, 11, 128, 56) == 11,
++                "discrete GPU incorrectly used host memory");
++    } catch (const std::exception& error) {
++        std::cerr << error.what() << '\n';
++        return 1;
++    }
++    return 0;
++}
