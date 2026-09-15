@@ -245,6 +245,23 @@ const blockedMergeNotice = execute("Build Policy Notice", {
 assert.equal(blockedMergeNotice.RESPONSE_CODE, 409);
 assert.match(blockedMergeNotice.MESSAGE_TEXT, /merge blocked/);
 
+const dependencyFailureNotice = execute("Build Policy Notice", {
+  $json: {},
+  $: (name) => ({
+    first: () => ({
+      json: name === "Verify Current Renovate PR"
+        ? { PR_READ_FAILED: true, REPO: event.REPO, PR_NUMBER: 999999 }
+        : {},
+    }),
+  }),
+  $execution: { id: "dependency-failure-test" },
+}).json;
+assert.equal(dependencyFailureNotice.RESPONSE_CODE, 424);
+assert.equal(
+  dependencyFailureNotice.RESPONSE_BODY.error,
+  "failed to read current Forgejo PR",
+);
+
 for (const name of [
   "Renovate Merge Status Can Proceed",
   "Human Merge Status Can Proceed",
