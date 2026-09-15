@@ -200,7 +200,7 @@ resource "kubernetes_pod" "workspace" {
   }
 
   spec {
-    restart_policy = "Never"
+    restart_policy = "Always"
 
     container {
       name              = "dev"
