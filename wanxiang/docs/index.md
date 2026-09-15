@@ -51,6 +51,8 @@ ADRs are organized by their scope:
 
 ## Operations
 
+- [Repository CI/CD and fleet delivery](../../docs/ci-cd/README.md) — release
+  approval, protected merging, Forgejo service accounts, and Nix rollout.
 - [Syncthing introducer](operations/syncthing-introducer.md)
 
 - [zot — multi-registry pull-through cache](operations/zot-mirror.md) — what the LAN registry on `172.16.80.240:5000` does, how nodes are configured to use it, performance characteristics, how to add an upstream.
