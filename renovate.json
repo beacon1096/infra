@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "dependencyDashboard": true,
+  "prConcurrentLimit": 5,
+  "automerge": false,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/helmrelease\\.yaml$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+tag: (?<currentValue>\\S+)"
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      "matchPackageNames": ["code.forgejo.org/forgejo/forgejo"],
+      "allowedVersions": "/^15\\.0\\.\\d+-rootless$/",
+      "automerge": false
+    }
+  ]
+}
