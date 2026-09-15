@@ -166,8 +166,11 @@ control plane.
 
 All validation failures are closed: no merge is scheduled. A rejected or stale
 review writes or retains a failing gate. Forgejo API errors return an explicit
-failure to the callback and remain visible in n8n execution history. Updating a
-PR produces a new SHA and a new pending gate; approval of the previous SHA has
+failure to the callback and remain visible in n8n execution history. Operational
+dependency failures use HTTP 424 with a JSON error body: the public proxy
+replaces upstream 5xx bodies with a generic error page, while 424 preserves the
+machine-readable result and remains a non-success, fail-closed outcome. Updating
+a PR produces a new SHA and a new pending gate; approval of the previous SHA has
 no effect on it.
 
 ## Pull request validation
