@@ -67,7 +67,7 @@ spec:
           ENABLE_OPENID_SIGNIN: true
           ENABLE_OPENID_SIGNUP: false
         webhook:
-          ALLOWED_HOST_LIST: "*.svc.cluster.local"
+          ALLOWED_HOST_LIST: "*.svc.cluster.local,multica.beaco.works"
         mirror:
           ENABLED: true
           DEFAULT_INTERVAL: 8h
