@@ -76,6 +76,79 @@ assert.equal(normalized.ACTOR, "human-reviewer");
 assert.equal(normalized.PR_AUTHOR, "renovate");
 assert.equal(normalized.IS_RENOVATE_PR, true);
 
+const humanReviewEvent = execute("Normalize Forgejo Event", {
+  $json: {
+    headers: {
+      "x-forgejo-event": "pull_request",
+      "x-forgejo-event-type": "pull_request_review_approved",
+    },
+    body: {
+      action: "reviewed",
+      review: { id: 10, type: "approved" },
+      repository: { full_name: "infrastructure/infra" },
+      sender: { login: "beacon1096" },
+      pull_request: {
+        number: 8,
+        user: { login: "contributor" },
+        head: { sha: event.PR_HEAD_SHA },
+        base: { ref: "main" },
+      },
+    },
+  },
+  $execution: { id: "human-review-execution" },
+}).json;
+assert.equal(humanReviewEvent.SUPPORTED, true);
+assert.equal(humanReviewEvent.IS_HUMAN_APPROVAL_SIGNAL, true);
+assert.equal(humanReviewEvent.IS_RENOVATE_PR, false);
+assert.match(humanReviewEvent.EVENT_KEY, /pull_request_review_approved:10$/);
+
+const verifyHumanApproval = (reviews, headSha = event.PR_HEAD_SHA) =>
+  execute("Verify Human Approval", {
+    $json: { statusCode: 200, body: reviews },
+    $: (name) => ({
+      item: {
+        json: name === "Decide Event Transition"
+          ? { ...humanReviewEvent, PR_HEAD_SHA: event.PR_HEAD_SHA }
+          : {
+              statusCode: 200,
+              body: {
+                state: "open",
+                html_url: "https://forgejo.beaco.works/infrastructure/infra/pulls/8",
+                user: { login: "contributor" },
+                base: { ref: "main" },
+                head: { sha: headSha },
+              },
+            },
+      },
+    }),
+  }).json;
+
+assert.equal(verifyHumanApproval([{
+  id: 10,
+  state: "APPROVED",
+  commit_id: event.PR_HEAD_SHA,
+  user: { login: "beacon1096" },
+}]).HUMAN_APPROVAL_VALID, true);
+assert.equal(verifyHumanApproval([{
+  id: 11,
+  state: "APPROVED",
+  commit_id: event.PR_HEAD_SHA,
+  user: { login: "untrusted-reviewer" },
+}]).HUMAN_APPROVAL_VALID, false);
+assert.equal(verifyHumanApproval([{
+  id: 12,
+  state: "APPROVED",
+  commit_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  user: { login: "beacon1096" },
+}]).HUMAN_APPROVAL_VALID, false);
+assert.equal(verifyHumanApproval([{
+  id: 13,
+  state: "APPROVED",
+  commit_id: event.PR_HEAD_SHA,
+  dismissed: true,
+  user: { login: "beacon1096" },
+}]).HUMAN_APPROVAL_VALID, false);
+
 const capability = execute("Create Review Capability", {
   $: () => ({ first: () => ({ json: event }) }),
   $env: { REVIEW_CAPABILITY_SECRET: secret },
@@ -134,5 +207,14 @@ assert.match(reviewStatusFields.state, /human_required|pending/);
 const approvalCondition = nodes.get("Multica Review Approved")
   .parameters.conditions.conditions[0];
 assert.equal(approvalCondition.rightValue, "approve");
+
+const humanMerge = nodes.get("Merge Human-Approved PR");
+assert.equal(humanMerge.credentials.httpHeaderAuth.id, "multicaMerger01");
+const humanMergeFields = Object.fromEntries(
+  humanMerge.parameters.bodyParameters.parameters.map((field) => [field.name, field.value]),
+);
+assert.equal(humanMergeFields.force_merge, undefined);
+assert.equal(humanMergeFields.merge_when_checks_succeed, true);
+assert.match(humanMergeFields.head_commit_id, /Verify Human Approval/);
 
 console.log("n8n infra CI workflow checks passed");

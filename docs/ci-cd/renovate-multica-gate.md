@@ -44,6 +44,7 @@ and outdated branches.
 | --- | --- |
 | `renovate` | Create and update dependency PRs; cannot merge `main` |
 | Multica agent | Analyze one supplied PR revision and return a scoped decision; receives no Forgejo PAT |
+| Authorized human reviewer | Approve an ordinary PR in Forgejo; initial allowlist is `beacon1096` |
 | `multica-gate` | Read the two infrastructure repositories and write `policy/merge-gate`; cannot merge |
 | n8n | Validate review capabilities, write the policy result, and request a protected merge |
 | `multica-merger` | Merge only through its isolated n8n credential and Forgejo's merge whitelist |
@@ -162,8 +163,23 @@ specific host or deployment artifact.
 
 ## Non-Renovate pull requests
 
-The protected `policy/merge-gate` context applies to every pull request, while
-the automated merge path intentionally accepts only Renovate-authored PRs.
-Ordinary PRs therefore remain fail-closed until a separate SHA-bound human
-approval path is implemented in n8n. Do not weaken the merge whitelist or mark
-ordinary PRs successful merely to bypass this boundary.
+The protected `policy/merge-gate` context applies to every pull request.
+Opening, reopening, or updating an ordinary PR sets the gate on its current SHA
+to pending. To approve it, an authorized human uses Forgejo's normal PR review
+UI and submits an `Approve` review.
+
+The review webhook is only a wake-up signal. n8n does not trust its claimed
+reviewer or verdict. It re-reads the open PR and its reviews through the fixed
+Forgejo API origin, then requires all of the following:
+
+- repository is one of the two infrastructure repositories and base is `main`;
+- PR author is not `renovate`;
+- webhook PR head, current PR head, and approved review `commit_id` are equal;
+- review is neither stale nor dismissed;
+- reviewer is in the explicit human allowlist, initially `beacon1096`.
+
+Only then does `multica-gate` mark that SHA successful and the isolated
+`multica-merger` credential request a protected merge with the same
+`head_commit_id`. A replay for an older review cannot approve a changed head.
+Multica decisions continue to use their separate signed-capability path; an
+agent cannot impersonate a Forgejo human review.

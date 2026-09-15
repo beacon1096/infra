@@ -68,7 +68,7 @@
         "parameters": {
           "mode": "runOnceForEachItem",
           "language": "javaScript",
-          "jsCode": "const incoming = $json;\nconst body = incoming.body ?? {};\nconst headers = Object.fromEntries(Object.entries(incoming.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]));\nconst eventHeader = String(headers['x-forgejo-event'] ?? headers['x-gitea-event'] ?? '').toLowerCase();\nconst deliveryId = String(headers['x-forgejo-delivery'] ?? headers['x-gitea-delivery'] ?? body.delivery_id ?? $execution.id);\nconst actionRaw = String(body.action ?? '').toLowerCase();\nconst run = body.run ?? {};\nconst parseObject = (value) => {\n  if (value && typeof value === 'object') return value;\n  if (typeof value !== 'string' || value.length === 0) return {};\n  try {\n    const parsed = JSON.parse(value);\n    return parsed && typeof parsed === 'object' ? parsed : {};\n  } catch {\n    return {};\n  }\n};\nconst eventPayload = parseObject(run.event_payload);\nconst repository = body.repository ?? run.repository ?? eventPayload.repository ?? {};\nconst repo = String(repository.full_name ?? repository.name ?? 'unknown/unknown');\nconst actor = String(body.pusher?.username ?? body.pusher?.login ?? body.sender?.login ?? body.sender?.username ?? eventPayload.pusher?.username ?? eventPayload.pusher?.login ?? eventPayload.sender?.login ?? eventPayload.sender?.username ?? run.trigger_user?.login ?? run.trigger_user?.username ?? 'unknown');\nconst pullRequest = body.pull_request ?? {};\nconst prAuthor = String(pullRequest.user?.login ?? pullRequest.user?.username ?? 'unknown');\nlet eventType = 'unsupported';\nif (body.executionMode === 'test' || incoming.executionMode === 'test') eventType = 'test';\nelse if (eventHeader.includes('pull_request') || body.pull_request) eventType = 'pull_request';\nelse if (eventHeader === 'push' || body.head_commit || Array.isArray(body.commits)) eventType = 'push';\nelse if (eventHeader.includes('package') || body.package) eventType = 'package';\nelse if (eventHeader.includes('release') || body.release) eventType = 'release';\nelse if (eventHeader.includes('workflow') || eventHeader.includes('action') || body.run) eventType = 'action';\nconst ref = String(eventPayload.ref ?? run.ref ?? body.ref ?? '');\nconst workflowId = String(run.workflow_id ?? run.workflow_name ?? 'Forgejo Actions');\nconst workflowName = String(run.workflow_name ?? run.workflow_id ?? 'Forgejo Actions');\nconst runTitle = String(run.title ?? '');\nconst runId = String(run.id ?? run.run_number ?? run.commit_sha ?? body.after ?? body.head_commit?.id ?? body.package?.id ?? body.release?.id ?? deliveryId);\nconst statusCandidate = String(run.conclusion ?? run.status ?? actionRaw).toLowerCase();\nlet actionStatus = 'unknown';\nif (['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(actionRaw) || ['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(statusCandidate)) actionStatus = 'failure';\nelse if (['recovered', 'recovery'].includes(actionRaw) || ['recovered', 'recovery'].includes(statusCandidate)) actionStatus = 'recovery';\nelse if (['success', 'successful'].includes(actionRaw) || ['success', 'successful'].includes(statusCandidate)) actionStatus = 'success';\nconst packageInfo = body.package ?? {};\nconst releaseInfo = body.release ?? {};\nconst prNumber = String(pullRequest.number ?? pullRequest.index ?? body.number ?? '');\nconst prHeadSha = String(pullRequest.head?.sha ?? pullRequest.head?.id ?? '');\nconst objectId = eventType === 'pull_request'\n  ? [prNumber || deliveryId, prHeadSha || deliveryId].join(':')\n  : eventType === 'push'\n    ? String(body.after ?? body.head_commit?.id ?? body.compare_url ?? deliveryId)\n    : eventType === 'package'\n      ? String(packageInfo.id ?? ((packageInfo.name ?? 'package') + '@' + (packageInfo.version ?? 'unknown')))\n      : eventType === 'release'\n        ? String(releaseInfo.id ?? releaseInfo.tag_name ?? releaseInfo.name ?? deliveryId)\n        : runId;\nconst eventKey = [repo, eventType, objectId, eventType === 'package' || eventType === 'release' ? actionRaw : ''].join('::');\nconst stateKey = eventType === 'action'\n  ? [repo, 'action', workflowId, ref].join('::')\n  : eventKey;\nconst prActionSupported = ['opened', 'synchronize', 'synchronized', 'reopened'].includes(actionRaw);\nconst supported = ['test', 'push', 'package', 'release'].includes(eventType) || (eventType === 'pull_request' && prActionSupported) || (eventType === 'action' && actionStatus !== 'unknown');\nconst commits = Array.isArray(body.commits) ? body.commits.slice(0, 10).map((commit) => ({\n  id: String(commit.id ?? '').slice(0, 7),\n  message: String(commit.message ?? '').split('\\n')[0],\n  url: String(commit.url ?? ''),\n})) : [];\nreturn { json: {\n  SUPPORTED: supported,\n  EVENT_TYPE: eventType,\n  EVENT_HEADER: eventHeader,\n  EVENT_KEY: eventKey,\n  STATE_KEY: stateKey,\n  DELIVERY_ID: deliveryId,\n  ACTION_RAW: actionRaw,\n  ACTION_STATUS: actionStatus,\n  REPO: repo,\n  REPO_URL: String(repository.html_url ?? repository.url ?? ''),\n  ACTOR: actor,\n  PR_AUTHOR: prAuthor,\n  REF: ref,\n  SHA: String(run.commit_sha ?? body.after ?? body.head_commit?.id ?? prHeadSha),\n  RUN_ID: runId,\n  RUN_URL: String(run.html_url ?? run.url ?? ''),\n  RUN_TITLE: runTitle,\n  WORKFLOW_ID: workflowId,\n  WORKFLOW_NAME: workflowName,\n  TRIGGER_EVENT: String(run.trigger_event ?? run.event ?? ''),\n  PUSH_COMPARE_URL: String(body.compare_url ?? ''),\n  PUSH_COMMITS: commits,\n  PUSH_COMMIT_COUNT: Array.isArray(body.commits) ? body.commits.length : 0,\n  PACKAGE_NAME: String(packageInfo.name ?? ''),\n  PACKAGE_VERSION: String(packageInfo.version ?? ''),\n  PACKAGE_URL: String(packageInfo.html_url ?? packageInfo.url ?? ''),\n  RELEASE_NAME: String(releaseInfo.name ?? ''),\n  RELEASE_TAG: String(releaseInfo.tag_name ?? ''),\n  RELEASE_URL: String(releaseInfo.html_url ?? releaseInfo.url ?? ''),\n  PR_NUMBER: prNumber,\n  PR_TITLE: String(pullRequest.title ?? ''),\n  PR_BODY: String(pullRequest.body ?? ''),\n  PR_URL: String(pullRequest.html_url ?? pullRequest.url ?? ''),\n  PR_HEAD_REF: String(pullRequest.head?.ref ?? pullRequest.head?.label ?? ''),\n  PR_HEAD_SHA: prHeadSha,\n  PR_BASE_REF: String(pullRequest.base?.ref ?? pullRequest.base?.label ?? ''),\n  IS_RENOVATE_PR: eventType === 'pull_request' && prActionSupported && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) && pullRequest.base?.ref === 'main' && prAuthor === 'renovate',\n} };\n"
+          "jsCode": "const incoming = $json;\nconst body = incoming.body ?? {};\nconst headers = Object.fromEntries(Object.entries(incoming.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]));\nconst eventHeader = String(headers['x-forgejo-event-type'] ?? headers['x-gitea-event-type'] ?? headers['x-forgejo-event'] ?? headers['x-gitea-event'] ?? '').toLowerCase();\nconst deliveryId = String(headers['x-forgejo-delivery'] ?? headers['x-gitea-delivery'] ?? body.delivery_id ?? $execution.id);\nconst actionRaw = String(body.action ?? '').toLowerCase();\nconst run = body.run ?? {};\nconst parseObject = (value) => {\n  if (value && typeof value === 'object') return value;\n  if (typeof value !== 'string' || value.length === 0) return {};\n  try {\n    const parsed = JSON.parse(value);\n    return parsed && typeof parsed === 'object' ? parsed : {};\n  } catch {\n    return {};\n  }\n};\nconst eventPayload = parseObject(run.event_payload);\nconst repository = body.repository ?? run.repository ?? eventPayload.repository ?? {};\nconst repo = String(repository.full_name ?? repository.name ?? 'unknown/unknown');\nconst actor = String(body.pusher?.username ?? body.pusher?.login ?? body.sender?.login ?? body.sender?.username ?? eventPayload.pusher?.username ?? eventPayload.pusher?.login ?? eventPayload.sender?.login ?? eventPayload.sender?.username ?? run.trigger_user?.login ?? run.trigger_user?.username ?? 'unknown');\nconst pullRequest = body.pull_request ?? {};\nconst prAuthor = String(pullRequest.user?.login ?? pullRequest.user?.username ?? 'unknown');\nlet eventType = 'unsupported';\nif (body.executionMode === 'test' || incoming.executionMode === 'test') eventType = 'test';\nelse if (eventHeader.includes('pull_request') || body.pull_request) eventType = 'pull_request';\nelse if (eventHeader === 'push' || body.head_commit || Array.isArray(body.commits)) eventType = 'push';\nelse if (eventHeader.includes('package') || body.package) eventType = 'package';\nelse if (eventHeader.includes('release') || body.release) eventType = 'release';\nelse if (eventHeader.includes('workflow') || eventHeader.includes('action') || body.run) eventType = 'action';\nconst ref = String(eventPayload.ref ?? run.ref ?? body.ref ?? '');\nconst workflowId = String(run.workflow_id ?? run.workflow_name ?? 'Forgejo Actions');\nconst workflowName = String(run.workflow_name ?? run.workflow_id ?? 'Forgejo Actions');\nconst runTitle = String(run.title ?? '');\nconst runId = String(run.id ?? run.run_number ?? run.commit_sha ?? body.after ?? body.head_commit?.id ?? body.package?.id ?? body.release?.id ?? deliveryId);\nconst statusCandidate = String(run.conclusion ?? run.status ?? actionRaw).toLowerCase();\nlet actionStatus = 'unknown';\nif (['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(actionRaw) || ['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(statusCandidate)) actionStatus = 'failure';\nelse if (['recovered', 'recovery'].includes(actionRaw) || ['recovered', 'recovery'].includes(statusCandidate)) actionStatus = 'recovery';\nelse if (['success', 'successful'].includes(actionRaw) || ['success', 'successful'].includes(statusCandidate)) actionStatus = 'success';\nconst packageInfo = body.package ?? {};\nconst releaseInfo = body.release ?? {};\nconst prNumber = String(pullRequest.number ?? pullRequest.index ?? body.number ?? '');\nconst prHeadSha = String(pullRequest.head?.sha ?? pullRequest.head?.id ?? '');\nconst objectId = eventType === 'pull_request'\n  ? [prNumber || deliveryId, prHeadSha || deliveryId].join(':')\n  : eventType === 'push'\n    ? String(body.after ?? body.head_commit?.id ?? body.compare_url ?? deliveryId)\n    : eventType === 'package'\n      ? String(packageInfo.id ?? ((packageInfo.name ?? 'package') + '@' + (packageInfo.version ?? 'unknown')))\n      : eventType === 'release'\n        ? String(releaseInfo.id ?? releaseInfo.tag_name ?? releaseInfo.name ?? deliveryId)\n        : runId;\nconst eventVariant = eventType === 'package' || eventType === 'release' ? actionRaw : (eventHeader.startsWith('pull_request_review_') ? eventHeader + ':' + String(body.review?.id ?? body.commit_id ?? deliveryId) : '');\nconst eventKey = [repo, eventType, objectId, eventVariant].join('::');\nconst stateKey = eventType === 'action'\n  ? [repo, 'action', workflowId, ref].join('::')\n  : eventKey;\nconst humanApprovalSignal = eventType === 'pull_request' && eventHeader === 'pull_request_review_approved' && actionRaw === 'reviewed';\nconst prActionSupported = ['opened', 'synchronize', 'synchronized', 'reopened'].includes(actionRaw);\nconst supported = ['test', 'push', 'package', 'release'].includes(eventType) || (eventType === 'pull_request' && (prActionSupported || humanApprovalSignal)) || (eventType === 'action' && actionStatus !== 'unknown');\nconst commits = Array.isArray(body.commits) ? body.commits.slice(0, 10).map((commit) => ({\n  id: String(commit.id ?? '').slice(0, 7),\n  message: String(commit.message ?? '').split('\\n')[0],\n  url: String(commit.url ?? ''),\n})) : [];\nreturn { json: {\n  SUPPORTED: supported,\n  EVENT_TYPE: eventType,\n  EVENT_HEADER: eventHeader,\n  EVENT_KEY: eventKey,\n  STATE_KEY: stateKey,\n  DELIVERY_ID: deliveryId,\n  ACTION_RAW: actionRaw,\n  ACTION_STATUS: actionStatus,\n  REPO: repo,\n  REPO_URL: String(repository.html_url ?? repository.url ?? ''),\n  ACTOR: actor,\n  PR_AUTHOR: prAuthor,\n  REF: ref,\n  SHA: String(run.commit_sha ?? body.after ?? body.head_commit?.id ?? prHeadSha),\n  RUN_ID: runId,\n  RUN_URL: String(run.html_url ?? run.url ?? ''),\n  RUN_TITLE: runTitle,\n  WORKFLOW_ID: workflowId,\n  WORKFLOW_NAME: workflowName,\n  TRIGGER_EVENT: String(run.trigger_event ?? run.event ?? ''),\n  PUSH_COMPARE_URL: String(body.compare_url ?? ''),\n  PUSH_COMMITS: commits,\n  PUSH_COMMIT_COUNT: Array.isArray(body.commits) ? body.commits.length : 0,\n  PACKAGE_NAME: String(packageInfo.name ?? ''),\n  PACKAGE_VERSION: String(packageInfo.version ?? ''),\n  PACKAGE_URL: String(packageInfo.html_url ?? packageInfo.url ?? ''),\n  RELEASE_NAME: String(releaseInfo.name ?? ''),\n  RELEASE_TAG: String(releaseInfo.tag_name ?? ''),\n  RELEASE_URL: String(releaseInfo.html_url ?? releaseInfo.url ?? ''),\n  PR_NUMBER: prNumber,\n  PR_TITLE: String(pullRequest.title ?? ''),\n  PR_BODY: String(pullRequest.body ?? ''),\n  PR_URL: String(pullRequest.html_url ?? pullRequest.url ?? ''),\n  PR_HEAD_REF: String(pullRequest.head?.ref ?? pullRequest.head?.label ?? ''),\n  PR_HEAD_SHA: prHeadSha,\n  PR_BASE_REF: String(pullRequest.base?.ref ?? pullRequest.base?.label ?? ''),\n  IS_ORDINARY_PR_UPDATE: eventType === 'pull_request' && prActionSupported && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) && pullRequest.base?.ref === 'main' && prAuthor !== 'renovate',\n  IS_HUMAN_APPROVAL_SIGNAL: humanApprovalSignal && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) && pullRequest.base?.ref === 'main' && prAuthor !== 'renovate',\n  IS_RENOVATE_PR: eventType === 'pull_request' && prActionSupported && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) && pullRequest.base?.ref === 'main' && prAuthor === 'renovate',\n} };\n"
         }
       },
       {
@@ -1375,6 +1375,333 @@
             "responseCode": 200
           }
         }
+      },
+      {
+        "id": "21744ad0-b2a0-4eca-88b3-a5f30a31d113",
+        "name": "Is Human Approval Signal",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2240,
+          192
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $(\"Decide Event Transition\").item.json.IS_HUMAN_APPROVAL_SIGNAL }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "a2794f5c-d1dc-4706-8595-09502cd0d101",
+        "name": "Is Ordinary PR Update",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2464,
+          288
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $(\"Decide Event Transition\").item.json.IS_ORDINARY_PR_UPDATE }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "bf324512-0480-42f4-9d83-a7456edee785",
+        "name": "Set Human Review Pending",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2688,
+          288
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Decide Event Transition\").item.json.REPO + '/statuses/' + $(\"Decide Event Transition\").item.json.PR_HEAD_SHA }}",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "keypair",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "state",
+                "value": "pending"
+              },
+              {
+                "name": "context",
+                "value": "policy/merge-gate"
+              },
+              {
+                "name": "description",
+                "value": "Waiting for an authorized Forgejo review of this exact commit"
+              },
+              {
+                "name": "target_url",
+                "value": "={{ $(\"Decide Event Transition\").item.json.PR_URL }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "75230ec4-cebd-456c-91ed-01e010720e1f",
+        "name": "Get Current Human PR",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2464,
+          160
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Decide Event Transition\").item.json.REPO + '/pulls/' + $(\"Decide Event Transition\").item.json.PR_NUMBER }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "5f241025-c312-4331-b6d1-c32171099078",
+        "name": "Get Human PR Reviews",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2688,
+          160
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Decide Event Transition\").item.json.REPO + '/pulls/' + $(\"Decide Event Transition\").item.json.PR_NUMBER + '/reviews?limit=50' }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "6ec9ca96-38da-49cf-aada-8c2dbbb9ecb5",
+        "name": "Verify Human Approval",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2912,
+          160
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const source = $(\"Decide Event Transition\").item.json;\nconst prResponse = $(\"Get Current Human PR\").item.json;\nconst reviewsResponse = $json;\nconst pr = prResponse.body ?? {};\nconst reviews = Array.isArray(reviewsResponse.body) ? reviewsResponse.body : [];\nconst allowedReviewers = ['beacon1096'];\nconst currentHead = String(pr.head?.sha ?? pr.head?.id ?? '').toLowerCase();\nconst approval = reviews\n  .filter((review) => allowedReviewers.includes(String(review.user?.login ?? review.user?.username ?? ''))\n    && String(review.state ?? review.type ?? '').toLowerCase() === 'approved'\n    && review.dismissed !== true\n    && review.stale !== true\n    && String(review.commit_id ?? '').toLowerCase() === currentHead)\n  .sort((a, b) => Number(b.id ?? 0) - Number(a.id ?? 0))[0];\nconst valid = prResponse.statusCode === 200\n  && reviewsResponse.statusCode === 200\n  && pr.state === 'open'\n  && pr.base?.ref === 'main'\n  && String(pr.user?.login ?? pr.user?.username ?? '') !== 'renovate'\n  && ['infrastructure/infra', 'infrastructure/infra-private'].includes(source.REPO)\n  && currentHead === String(source.PR_HEAD_SHA ?? '').toLowerCase()\n  && Boolean(approval);\nreturn { json: { HUMAN_APPROVAL_VALID: valid, REPO: source.REPO, PR_NUMBER: Number(source.PR_NUMBER), HEAD_SHA: currentHead, PR_URL: String(pr.html_url ?? source.PR_URL ?? ''), REVIEWER: valid ? String(approval.user?.login ?? approval.user?.username) : '', REVIEW_ID: valid ? Number(approval.id) : 0 } };"
+        }
+      },
+      {
+        "id": "87d0e51e-9d08-45b0-8127-99ceea7c1f35",
+        "name": "Human Approval Is Valid",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          3136,
+          160
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.HUMAN_APPROVAL_VALID }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "ec7787a4-27e6-46d5-9f91-3ed1877a7887",
+        "name": "Set Human Review Status",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          3360,
+          128
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $json.REPO + '/statuses/' + $json.HEAD_SHA }}",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "keypair",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "state",
+                "value": "success"
+              },
+              {
+                "name": "context",
+                "value": "policy/merge-gate"
+              },
+              {
+                "name": "description",
+                "value": "={{ 'Approved by Forgejo reviewer ' + $json.REVIEWER + ' for this exact commit' }}"
+              },
+              {
+                "name": "target_url",
+                "value": "={{ $json.PR_URL }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "83a9188b-b1a9-4b96-ab05-b39780a2222c",
+        "name": "Merge Human-Approved PR",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          3584,
+          128
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Verify Human Approval\").item.json.REPO + '/pulls/' + $(\"Verify Human Approval\").item.json.PR_NUMBER + '/merge' }}",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "keypair",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "Do",
+                "value": "merge"
+              },
+              {
+                "name": "delete_branch_after_merge",
+                "value": true
+              },
+              {
+                "name": "head_commit_id",
+                "value": "={{ $(\"Verify Human Approval\").item.json.HEAD_SHA }}"
+              },
+              {
+                "name": "merge_when_checks_succeed",
+                "value": true
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaMerger01",
+            "name": "Forgejo Multica Merger Token"
+          }
+        }
       }
     ],
     "connections": {
@@ -1717,7 +2044,13 @@
               "index": 0
             }
           ],
-          []
+          [
+            {
+              "node": "Is Human Approval Signal",
+              "type": "main",
+              "index": 0
+            }
+          ]
         ]
       },
       "Set Renovate Review Pending": {
@@ -1885,6 +2218,92 @@
           [
             {
               "node": "Reject Failed Renovate Merge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Human Approval Signal": {
+        "main": [
+          [
+            {
+              "node": "Get Current Human PR",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Is Ordinary PR Update",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Ordinary PR Update": {
+        "main": [
+          [
+            {
+              "node": "Set Human Review Pending",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Get Current Human PR": {
+        "main": [
+          [
+            {
+              "node": "Get Human PR Reviews",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Human PR Reviews": {
+        "main": [
+          [
+            {
+              "node": "Verify Human Approval",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verify Human Approval": {
+        "main": [
+          [
+            {
+              "node": "Human Approval Is Valid",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Human Approval Is Valid": {
+        "main": [
+          [
+            {
+              "node": "Set Human Review Status",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Set Human Review Status": {
+        "main": [
+          [
+            {
+              "node": "Merge Human-Approved PR",
               "type": "main",
               "index": 0
             }
