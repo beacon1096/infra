@@ -1913,9 +1913,9 @@
         ],
         "parameters": {
           "respondWith": "json",
-          "responseBody": "={{ $(\"Build Policy Notice\").item.json.RESPONSE_BODY }}",
+          "responseBody": "={{ $(\"Build Policy Notice\").first().json.RESPONSE_BODY }}",
           "options": {
-            "responseCode": "={{ $(\"Build Policy Notice\").item.json.RESPONSE_CODE }}"
+            "responseCode": "={{ $(\"Build Policy Notice\").first().json.RESPONSE_CODE }}"
           }
         }
       },
