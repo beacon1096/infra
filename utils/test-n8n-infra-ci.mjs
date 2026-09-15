@@ -174,6 +174,10 @@ assert.equal(valid.PR_NUMBER, Number(event.PR_NUMBER));
 assert.equal(valid.HEAD_SHA, event.PR_HEAD_SHA);
 assert.equal(valid.JTI.length > 0, true);
 assert.equal(Number.isInteger(valid.EXPIRES_AT), true);
+assert.equal(typeof execute("Create Review Capability", {
+  $: () => ({ first: () => ({ json: event }) }),
+  $env: { REVIEW_CAPABILITY_SECRET: secret },
+}).json.REVIEW_JTI, "string");
 assert.equal(validate(capability, "human_required").REVIEW_VALID, true);
 assert.equal(validate(capability, "unknown").REVIEW_VALID, false);
 
@@ -286,6 +290,22 @@ assert.match(nodes.get("Respond Policy Event").parameters.responseBody, /\.first
 assert.deepEqual(
   workflow.connections["Build Policy Notice"].main[0].map(({ node }) => node).sort(),
   ["Notify Matrix Policy Event", "Respond Policy Event"].sort(),
+);
+
+const dispatchStore = nodes.get("Store Multica Review Dispatch");
+assert.equal(dispatchStore.credentials.postgres.id, "reviewCapabilityPg");
+assert.match(dispatchStore.parameters.query, /multica_review_dispatches/);
+assert.match(dispatchStore.parameters.query, /run_id uuid NOT NULL UNIQUE/);
+assert.doesNotMatch(dispatchStore.parameters.query, /\$json|\$\(/);
+
+for (const name of ["Get Multica Autopilot Run", "Complete Multica Review Issue"]) {
+  assert.equal(nodes.get(name).credentials.httpHeaderAuth.id, "multicaCloser01");
+}
+assert.match(nodes.get("Complete Multica Review Issue").parameters.jsonBody, /status: 'done'/);
+assert.deepEqual(
+  workflow.connections["Renovate Merge Completed"].main.map((branch) =>
+    branch.map(({ node }) => node)),
+  [["Get Multica Review Dispatch"], []],
 );
 
 const consumeCapability = nodes.get("Consume Review Capability");
