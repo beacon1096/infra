@@ -40,3 +40,26 @@ repository.
 Passwords, PATs, webhook URLs, and callback credentials must not be added to
 this document. Their source of truth is the corresponding SOPS Secret or the
 Forgejo credential store.
+
+## Deferred: per-agent development identities
+
+Multica agents that modify repositories should eventually receive independent
+runtime identities instead of inheriting one shared workspace configuration.
+This work is intentionally separate from the merge gate and remains pending.
+
+Each agent profile should define and isolate at least:
+
+- its Nix configuration, substituters, trusted keys, builders, and caches;
+- Git author name, no-reply email, signing policy, and credential helper;
+- a dedicated Forgejo account and narrowly scoped PAT when repository writes
+  are required;
+- repository allowlists and whether it may read, push branches, open PRs, or
+  review them;
+- separate cache, home, and temporary directories so global `gitconfig`, Nix
+  state, and credentials cannot leak between agents.
+
+Account names and no-reply email addresses belong in this public document once
+chosen. Tokens and private signing material remain in the appropriate secret
+store. An agent identity must not reuse `renovate`, `multica-gate`, or
+`multica-merger`: those accounts have distinct discovery, policy, and merge
+responsibilities.
