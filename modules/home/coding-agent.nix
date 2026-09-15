@@ -55,11 +55,6 @@ let
     "xiaomi_mimo/mimo-v2.5" = reasoningVisionTextModel "MiMo V2.5" 1048576 131072;
     "xiaomi_mimo/mimo-v2.5-pro" = reasoningTextModel "MiMo V2.5 Pro" 1048576 131072;
     "zai/glm-5.2" = reasoningTextModel "GLM-5.2" 1048576 131072;
-
-    "Qwen3.8-27B-4bit" = reasoningVisionTextModel "Qwen3.8 27B 4bit" 32768 8192;
-    "gemma-4-26b-a4b-it-4bit" = visionTextModel "Gemma 4 26B A4B IT 4bit" 65536 8192;
-    "gemma-4-31b-it-4bit" = visionTextModel "Gemma 4 31B IT 4bit" 8192 2048;
-    "gemma-4-e4b-it-4bit" = visionTextModel "Gemma 4 E4B IT 4bit" 131072 16384;
   };
   kdocsCliVersion = "2.5.17";
   kdocsCliTargets = {
@@ -165,19 +160,6 @@ in
       compaction.auto = true;
       plugin = [ "@warp-dot-dev/opencode-warp" ];
       permission = "allow";
-      agent.image-verifier = {
-        description = "Review food-safety evidence in attached images without tools";
-        mode = "primary";
-        model = "beacoworks/gemma-4-31b-it-4bit";
-        temperature = 0.1;
-        tools."*" = false;
-        permission."*" = "deny";
-        prompt = ''
-          你是食品安全事件的图片复核器。只分析用户提供的图片和文字，不使用工具，也不假设未提供的内容。
-
-          回复应简洁，并明确区分：图片中直接可见的事实、文字中明确声称的事实、图片是否支持该声称、结论（确认／疑似／无法确认／不支持）和置信度（高／中／低）。不得因为文字声称有虫、头发或异物，就断言图片中确实可见；分辨率、遮挡或画面不足时必须写“无法确认”。
-        '';
-      };
       disabled_providers = [
         "zen"
         "opencode"

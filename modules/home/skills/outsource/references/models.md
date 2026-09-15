@@ -22,11 +22,6 @@ opencode models beacoworks
 - `beacoworks/xiaomi_mimo/mimo-v2.5` - MiMo V2.5
 - `beacoworks/xiaomi_mimo/mimo-v2.5-pro` - MiMo V2.5 Pro
 - `beacoworks/zai/glm-5.2` - GLM-5.2
-- `beacoworks/Qwen3.8-27B-4bit` - Qwen3.8 27B 4bit
-- `beacoworks/gemma-4-26b-a4b-it-4bit` - Gemma 4 26B A4B IT 4bit
-- `beacoworks/gemma-4-31b-it-4bit` - Gemma 4 31B IT
-- `beacoworks/gemma-4-e4b-it-4bit` - Gemma 4 E4B IT
-
 如果用户没有指定模型，基础连通性检查优先用 `beacoworks/deepseek/deepseek-v4-flash`。选择高成本或特定任务模型前先询问用户。
 
 对 Beacoworks 网关来说，公司网关的价格和可用性是准确信息来源。公开厂商价格或 OpenRouter 价格只能作为参考，可能与公司网关不一致。

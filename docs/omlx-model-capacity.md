@@ -1,5 +1,7 @@
 # oMLX 自部署模型容量
 
+> **已退役（2026-09）：** M4 上的 oMLX 模型（Qwen3.8-27B-4bit，此前的 Gemma 4 系列）已全部下线，`beacon-mac-mini-m4` 系统配置已移除 oMLX 服务与 `iogpuWiredLimit`。食堂食品卫生事件筛查流程（含 `image-verifier` agent）整体废弃，算力分配见 infra-private `docs/ai-compute-inventory.md`。下文容量规划与复核 Agent 细节仅作历史参考；“Nix 管理”一节对后续 oMLX 模型部署仍然适用。磁盘上的权重（`~/.exo/models`）需手动清理。
+
 ## Nix 管理
 
 `darwinModules.omlx` 导出独立的 nix-darwin 模块。`packages/omlx/default.nix` 固定官方 oMLX 应用版本与 DMG 校验值，复用应用内的 Python、MLX 和 Metal 运行环境。在 Mac 上可用 `nix build .#omlx` 单独构建程序。默认包适用于 macOS 26/27；macOS 15 可用 `pkgs.callPackage ./packages/omlx { macosVersion = "15"; }` 设置 `services.omlx.package`。
@@ -49,7 +51,7 @@ LiteLLM 与客户端模型元数据同步声明：
 
 Qwen3.6/3.8-27B 与 Gemma-4-31B dense 不能在 32GB M4 上同时常驻，首次切换会包含卸载和加载时间。网关及客户端连通性测试应允许至少 60 秒超时，避免把冷启动误判为不可用。
 
-## Gemma 图片复核 Agent
+## Gemma 图片复核 Agent（已退役）
 
 默认 OpenCode Agent 注入的系统提示和工具定义约为 15.8K token，超过 Gemma-4-31B dense 在 M4 上的 8K 安全窗口。不要通过放宽模型硬上限来容纳与图片复核无关的工具定义。
 

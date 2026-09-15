@@ -57,19 +57,6 @@ opencode run 'Describe the attached images.' \
 
 多附件时重复使用 `--file=<path>`。不要使用“所有 `--file` 在前、提示词在末尾”的写法。
 
-食品安全事件的图片复核使用无工具的 `image-verifier` Agent。显式设置标题，避免为新会话额外调用一次模型生成标题：
-
-```bash
-opencode run --pure \
-  --agent image-verifier \
-  --title image-verifier \
-  -m beacoworks/gemma-4-31b-it-4bit \
-  '复核所附图片。' \
-  --file=event.jpg </dev/null
-```
-
-每次只复核一个事件和 1–3 张图片。该 Agent 不用于搜索文件或读取聊天记录；主 Agent 应先选出相关图片和必要上下文，再作为附件和提示词传入。
-
 ## 会话
 
 保存并恢复会话：
