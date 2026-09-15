@@ -866,8 +866,6 @@
         "parameters": {
           "method": "POST",
           "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Decide Event Transition\").item.json.REPO + '/statuses/' + $(\"Decide Event Transition\").item.json.PR_HEAD_SHA }}",
-          "authentication": "genericCredentialType",
-          "genericAuthType": "httpHeaderAuth",
           "sendBody": true,
           "contentType": "json",
           "specifyBody": "keypair",
@@ -893,12 +891,15 @@
           },
           "options": {
             "timeout": 15000
-          }
-        },
-        "credentials": {
-          "httpHeaderAuth": {
-            "id": "UWyo4vPWCPGUBG1N",
-            "name": "Forgejo Automaton Token"
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
           }
         }
       },
@@ -1036,8 +1037,6 @@
         "parameters": {
           "method": "GET",
           "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $json.REPO + '/pulls/' + $json.PR_NUMBER }}",
-          "authentication": "genericCredentialType",
-          "genericAuthType": "httpHeaderAuth",
           "options": {
             "response": {
               "response": {
@@ -1047,12 +1046,15 @@
               }
             },
             "timeout": 15000
-          }
-        },
-        "credentials": {
-          "httpHeaderAuth": {
-            "id": "UWyo4vPWCPGUBG1N",
-            "name": "Forgejo Automaton Token"
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
           }
         }
       },
@@ -1131,8 +1133,6 @@
         "parameters": {
           "method": "POST",
           "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $json.REPO + '/statuses/' + $json.HEAD_SHA }}",
-          "authentication": "genericCredentialType",
-          "genericAuthType": "httpHeaderAuth",
           "sendBody": true,
           "contentType": "json",
           "specifyBody": "keypair",
@@ -1158,12 +1158,15 @@
           },
           "options": {
             "timeout": 15000
-          }
-        },
-        "credentials": {
-          "httpHeaderAuth": {
-            "id": "UWyo4vPWCPGUBG1N",
-            "name": "Forgejo Automaton Token"
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
           }
         }
       },

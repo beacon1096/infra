@@ -72,6 +72,11 @@ spec:
                   secretKeyRef:
                     name: n8n-secret
                     key: review-callback-credential
+              FORGEJO_GATE_TOKEN:
+                valueFrom:
+                  secretKeyRef:
+                    name: n8n-secret
+                    key: forgejo-gate-token
               NODE_ENV: production
               TZ: Asia/Shanghai
               WEBHOOK_URL: https://automaton.${SECRET_DOMAIN}/
