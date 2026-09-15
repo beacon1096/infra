@@ -123,6 +123,8 @@ spec:
             args:
               - n8n import:workflow --input=/workflows/infra-ci.json && n8n publish:workflow --id=GzhPPYlazQObUguC
     defaultPodOptions:
+      annotations:
+        reloader.stakater.com/auto: "true"
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
