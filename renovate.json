@@ -17,7 +17,6 @@
   "packageRules": [
     {
       "matchPackageNames": ["code.forgejo.org/forgejo/forgejo"],
-      "allowedVersions": "/^15\\.0\\.\\d+-rootless$/",
       "automerge": false,
       "prPriority": 100
     }
