@@ -264,6 +264,7 @@ for (const name of [
   assert.equal(nodes.get(name).alwaysOutputData, true);
 }
 assert.match(nodes.get("Get Current Renovate PR").parameters.url, /\.first\(\)/);
+assert.match(nodes.get("Respond Policy Event").parameters.responseBody, /\.first\(\)/);
 
 assert.deepEqual(
   workflow.connections["Build Policy Notice"].main[0].map(({ node }) => node).sort(),
