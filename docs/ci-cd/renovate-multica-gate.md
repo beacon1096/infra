@@ -201,3 +201,20 @@ Only then does `multica-gate` mark that SHA successful and the isolated
 `head_commit_id`. A replay for an older review cannot approve a changed head.
 Multica decisions continue to use their separate signed-capability path; an
 agent cannot impersonate a Forgejo human review.
+
+## Merge readiness and observability
+
+Immediately before using the merger credential, n8n re-reads the combined
+Forgejo commit status for the exact reviewed SHA. A successful status requests
+an immediate protected merge with `merge_when_checks_succeed=false`; a pending
+status requests a queued merge with `merge_when_checks_succeed=true`. A failed,
+missing, or unreadable status never reaches the merger node. Both modes retain
+`head_commit_id`, omit force merge, and remain subject to branch protection.
+
+Policy outcomes are sent to the Forgejo CI Matrix room as plain-text notices.
+They cover invalid callbacks, capability replay, stale SHA, `reject`,
+`human_required`, blocked or failed merges, queued merges, and completed merges.
+Notices contain repository, PR, exact SHA, evidence URL when available, and the
+n8n execution URL, but never a capability or credential. Callback responses
+run in parallel with notification delivery, so a Matrix outage cannot turn an
+accepted decision into a retry that would collide with single-use consumption.

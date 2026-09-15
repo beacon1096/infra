@@ -197,7 +197,8 @@ const mergeFields = Object.fromEntries(
   merge.parameters.bodyParameters.parameters.map((field) => [field.name, field.value]),
 );
 assert.equal(mergeFields.force_merge, undefined);
-assert.equal(mergeFields.merge_when_checks_succeed, true);
+assert.match(mergeFields.merge_when_checks_succeed, /Get Renovate Merge Status/);
+assert.match(mergeFields.merge_when_checks_succeed, /state !== 'success'/);
 assert.match(mergeFields.head_commit_id, /HEAD_SHA/);
 
 const reviewStatus = nodes.get("Set Multica Review Status");
@@ -216,8 +217,47 @@ const humanMergeFields = Object.fromEntries(
   humanMerge.parameters.bodyParameters.parameters.map((field) => [field.name, field.value]),
 );
 assert.equal(humanMergeFields.force_merge, undefined);
-assert.equal(humanMergeFields.merge_when_checks_succeed, true);
+assert.match(humanMergeFields.merge_when_checks_succeed, /Get Human Merge Status/);
+assert.match(humanMergeFields.merge_when_checks_succeed, /state !== 'success'/);
 assert.match(humanMergeFields.head_commit_id, /Verify Human Approval/);
+
+assert.match(nodes.get("Check Renovate Merge Result").parameters.jsCode, /\[200, 201\]/);
+assert.match(nodes.get("Check Human Merge Result").parameters.jsCode, /\[200, 201\]/);
+
+const replayNotice = execute("Build Policy Notice", {
+  $json: { capability_consumed: false },
+  $: () => ({ first: () => ({ json: {} }) }),
+  $execution: { id: "policy-notice-test" },
+}).json;
+assert.equal(replayNotice.RESPONSE_CODE, 409);
+assert.equal(
+  replayNotice.RESPONSE_BODY.error,
+  "review capability has already been consumed",
+);
+assert.match(replayNotice.MESSAGE_TEXT, /capability replay blocked/);
+assert.doesNotMatch(replayNotice.MESSAGE_TEXT, /capability=/);
+
+const blockedMergeNotice = execute("Build Policy Notice", {
+  $json: { statusCode: 200, body: { state: "failure" } },
+  $: () => ({ first: () => ({ json: {} }) }),
+  $execution: { id: "merge-blocked-test" },
+}).json;
+assert.equal(blockedMergeNotice.RESPONSE_CODE, 409);
+assert.match(blockedMergeNotice.MESSAGE_TEXT, /merge blocked/);
+
+for (const name of [
+  "Renovate Merge Status Can Proceed",
+  "Human Merge Status Can Proceed",
+]) {
+  const branches = workflow.connections[name].main.map((branch) =>
+    branch.map(({ node }) => node));
+  assert.equal(branches[1][0], "Build Policy Notice");
+}
+
+assert.deepEqual(
+  workflow.connections["Build Policy Notice"].main[0].map(({ node }) => node).sort(),
+  ["Notify Matrix Policy Event", "Respond Policy Event"].sort(),
+);
 
 const consumeCapability = nodes.get("Consume Review Capability");
 assert.equal(consumeCapability.credentials.postgres.id, "reviewCapabilityPg");
@@ -233,7 +273,7 @@ assert.deepEqual(
 assert.deepEqual(
   workflow.connections["Capability Was Consumed"].main.map((branch) =>
     branch.map(({ node }) => node)),
-  [["Get Current Renovate PR"], ["Reject Replayed Capability"]],
+  [["Get Current Renovate PR"], ["Build Policy Notice"]],
 );
 
 console.log("n8n infra CI workflow checks passed");
