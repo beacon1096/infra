@@ -1059,7 +1059,7 @@
         ],
         "parameters": {
           "method": "GET",
-          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Validate Multica Review\").item.json.REPO + '/pulls/' + $(\"Validate Multica Review\").item.json.PR_NUMBER }}",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Validate Multica Review\").first().json.REPO + '/pulls/' + $(\"Validate Multica Review\").first().json.PR_NUMBER }}",
           "options": {
             "response": {
               "response": {
