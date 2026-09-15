@@ -106,6 +106,13 @@ validated allowlist and integer PR number. The request supplies the reviewed
 head as `head_commit_id` and does not force a merge. Forgejo waits for every
 protected-branch requirement and rejects a changed or outdated head.
 
+The existence of a successful status is not itself a merge trigger. Scheduling
+happens only in the same n8n execution that validates the signed capability,
+re-reads the PR, and writes the gate with the `multica-gate` credential. A
+different repository writer therefore cannot trigger merging merely by posting
+another status named `policy/merge-gate`; failure of n8n's status request stops
+the execution before the merger credential is used.
+
 ### Isolate the merger credential
 
 The `multica-merger` PAT belongs in n8n's encrypted credential store and is
@@ -121,4 +128,3 @@ review writes or retains a failing gate. Forgejo API errors return an explicit
 failure to the callback and remain visible in n8n execution history. Updating a
 PR produces a new SHA and a new pending gate; approval of the previous SHA has
 no effect on it.
-
