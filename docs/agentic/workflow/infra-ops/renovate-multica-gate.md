@@ -148,6 +148,8 @@ autopilot 与运行的绑定关系、取消所有仍在排队或执行中的先�
 
 目标为 `main` 的普通 PR 使用 `policy/merge-gate`；目标为 `infra-private/prod` 的热修复 PR 使用独立的 `policy/prod-merge-gate`。PR 在创建、重新打开或更新时，n8n 重新读取当前目标分支和头部 SHA，然后把对应门禁设为 pending。`main` PR 可由非作者通过 Forgejo 常规审查界面批准。Forgejo 有意禁止作者批准自己的 PR，因此允许名单中的作者在 `main` PR 上发布内容严格为 `/approve <full-40-character-head-SHA>` 的评论。`prod` PR 只接受 `/approve-prod <full-40-character-head-SHA>` 评论，不接受常规审查或 `/approve`。
 
+Forgejo 在 `X-Forgejo-Event-Type` 头中提供具体的审查事件类型；较通用的 `X-Forgejo-Event` 头可能只有 `pull_request`。
+
 审查或评论 webhook 仅用于唤醒流程。n8n 不信任其中声称的审查人、命令或结论。它通过固定的 Forgejo API 源地址重新读取开放的 PR，以及该 PR 的审查记录或指定评论，然后要求同时满足以下条件：
 
 - `/approve` 或常规审查仅适用于两个基础设施仓库的 `main`；`/approve-prod` 仅适用于 `infra-private/prod`；
