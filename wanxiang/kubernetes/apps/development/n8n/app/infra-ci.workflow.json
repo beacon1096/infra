@@ -923,7 +923,7 @@
         "parameters": {
           "mode": "runOnceForEachItem",
           "language": "javaScript",
-          "jsCode": "const crypto = require('crypto');\nconst event = $('Decide Event Transition').first().json;\nconst repo = String(event.REPO);\nconst prNumber = Number(event.PR_NUMBER);\nconst headSha = String(event.PR_HEAD_SHA).toLowerCase();\nconst secret = String($env.REVIEW_CAPABILITY_SECRET ?? '');\nif (!secret || !['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) || !Number.isInteger(prNumber) || prNumber <= 0 || !/^[0-9a-f]{40}$/.test(headSha)) throw new Error('Cannot create review capability');\nconst iat = Math.floor(Date.now() / 1000);\nconst claims = { v: 1, repo, pr_number: prNumber, head_sha: headSha, iat, exp: iat + 86400, jti: crypto.randomUUID() };\nconst encoded = Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url');\nconst signature = crypto.createHmac('sha256', secret).update(encoded).digest('base64url');\nreturn { json: { ...event, REVIEW_CAPABILITY: encoded + '.' + signature } };"
+          "jsCode": "const crypto = require('crypto');\nconst event = $('Decide Event Transition').first().json;\nconst repo = String(event.REPO);\nconst prNumber = Number(event.PR_NUMBER);\nconst headSha = String(event.PR_HEAD_SHA).toLowerCase();\nconst secret = String($env.REVIEW_CAPABILITY_SECRET ?? '');\nif (!secret || !['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) || !Number.isInteger(prNumber) || prNumber <= 0 || !/^[0-9a-f]{40}$/.test(headSha)) throw new Error('Cannot create review capability');\nconst iat = Math.floor(Date.now() / 1000);\nconst claims = { v: 1, repo, pr_number: prNumber, head_sha: headSha, iat, exp: iat + 86400, jti: crypto.randomUUID() };\nconst encoded = Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url');\nconst signature = crypto.createHmac('sha256', secret).update(encoded).digest('base64url');\nreturn { json: { ...event, REVIEW_CAPABILITY: encoded + '.' + signature, REVIEW_JTI: claims.jti } };"
         }
       },
       {
@@ -1980,6 +1980,223 @@
           },
           "options": {}
         }
+      },
+      {
+        "id": "9d00aac6-c860-4483-b7b3-88ec7d50fdb8",
+        "name": "Validate Multica Dispatch",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2496,
+          32
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const response = $json ?? {};\nconst body = response.body ?? {};\nconst review = $('Create Review Capability').first().json;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (response.statusCode !== 200 || body.status !== 'accepted' || !uuid.test(String(body.autopilot_id ?? '')) || !uuid.test(String(body.run_id ?? ''))) throw new Error('Multica did not accept review dispatch');\nreturn { json: { JTI: review.REVIEW_JTI, REPO: review.REPO, PR_NUMBER: review.PR_NUMBER, HEAD_SHA: review.PR_HEAD_SHA, AUTOPILOT_ID: body.autopilot_id, RUN_ID: body.run_id, EXPIRES_AT: Math.floor(Date.now() / 1000) + 604800 } };"
+        }
+      },
+      {
+        "id": "76e414e4-f2ed-49f5-98fe-c3bc9afb0878",
+        "name": "Store Multica Review Dispatch",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          2752,
+          32
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "CREATE TABLE IF NOT EXISTS multica_review_dispatches (\n  jti uuid PRIMARY KEY,\n  repo text NOT NULL,\n  pr_number bigint NOT NULL,\n  head_sha char(40) NOT NULL,\n  autopilot_id uuid NOT NULL,\n  run_id uuid NOT NULL UNIQUE,\n  created_at timestamptz NOT NULL DEFAULT now(),\n  expires_at timestamptz NOT NULL\n);\nDELETE FROM multica_review_dispatches WHERE expires_at < now() - interval '7 days';\nINSERT INTO multica_review_dispatches (jti, repo, pr_number, head_sha, autopilot_id, run_id, expires_at)\nVALUES ($1::uuid, $2, $3::bigint, $4, $5::uuid, $6::uuid, to_timestamp($7::bigint))\nON CONFLICT (jti) DO UPDATE SET autopilot_id = EXCLUDED.autopilot_id, run_id = EXCLUDED.run_id, expires_at = EXCLUDED.expires_at;",
+          "options": {
+            "queryBatching": "single",
+            "queryReplacement": "={{ [$json.JTI, $json.REPO, $json.PR_NUMBER, $json.HEAD_SHA, $json.AUTOPILOT_ID, $json.RUN_ID, $json.EXPIRES_AT] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "27fade1f-54c9-4520-b702-d2757f03849e",
+        "name": "Renovate Merge Completed",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          4448,
+          672
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "bc5f3549-137b-4e91-99b7-e5eb1c091a6a",
+                "leftValue": "={{ $json.MERGE_RESULT }}",
+                "rightValue": "merged",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "46cd5386-b556-426b-be69-b362053259ec",
+        "name": "Get Multica Review Dispatch",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          4704,
+          672
+        ],
+        "alwaysOutputData": true,
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT repo, pr_number, head_sha, autopilot_id::text, run_id::text FROM multica_review_dispatches WHERE jti = $1::uuid AND expires_at > now();",
+          "options": {
+            "queryBatching": "single",
+            "queryReplacement": "={{ [$(\"Validate Multica Review\").first().json.JTI] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "0109f299-2f49-45e6-865f-5a83d3e2a377",
+        "name": "Multica Dispatch Found",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          4960,
+          672
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "3e0e6926-00c5-45d2-a039-375bd12c51c3",
+                "leftValue": "={{ $json.run_id }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "e6818fd9-073f-405a-aff1-fc142563fce6",
+        "name": "Get Multica Autopilot Run",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          5216,
+          672
+        ],
+        "parameters": {
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "url": "={{ 'https://multica.beaco.works/api/autopilots/' + $(\"Get Multica Review Dispatch\").first().json.autopilot_id + '/runs/' + $(\"Get Multica Review Dispatch\").first().json.run_id }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Workspace-Slug",
+                "value": "beacoworks"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaCloser01",
+            "name": "Multica Issue Closer"
+          }
+        }
+      },
+      {
+        "id": "a2580c6c-3e69-4c89-bd28-129f26947857",
+        "name": "Verify Multica Autopilot Run",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          5472,
+          672
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const run = $json ?? {};\nconst dispatch = $('Get Multica Review Dispatch').first().json;\nconst review = $('Validate Multica Review').first().json;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (String(run.id) !== String(dispatch.run_id) || String(run.autopilot_id) !== String(dispatch.autopilot_id) || run.status !== 'completed' || !uuid.test(String(run.issue_id ?? '')) || dispatch.repo !== review.REPO || Number(dispatch.pr_number) !== Number(review.PR_NUMBER) || String(dispatch.head_sha) !== review.HEAD_SHA) throw new Error('Multica run binding mismatch');\nreturn { json: { ISSUE_ID: run.issue_id } };"
+        }
+      },
+      {
+        "id": "458079ce-95cb-492e-998d-12930091f046",
+        "name": "Complete Multica Review Issue",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          5728,
+          672
+        ],
+        "parameters": {
+          "method": "PUT",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "url": "={{ 'https://multica.beaco.works/api/issues/' + $json.ISSUE_ID }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Workspace-Slug",
+                "value": "beacoworks"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ { status: 'done' } }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaCloser01",
+            "name": "Multica Issue Closer"
+          }
+        }
       }
     ],
     "connections": {
@@ -2498,6 +2715,11 @@
               "node": "Build Policy Notice",
               "type": "main",
               "index": 0
+            },
+            {
+              "node": "Renovate Merge Completed",
+              "type": "main",
+              "index": 0
             }
           ],
           [
@@ -2725,6 +2947,95 @@
               "index": 0
             }
           ]
+        ]
+      },
+      "Trigger Multica Renovate Autopilot": {
+        "main": [
+          [
+            {
+              "node": "Validate Multica Dispatch",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Validate Multica Dispatch": {
+        "main": [
+          [
+            {
+              "node": "Store Multica Review Dispatch",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Store Multica Review Dispatch": {
+        "main": [
+          []
+        ]
+      },
+      "Renovate Merge Completed": {
+        "main": [
+          [
+            {
+              "node": "Get Multica Review Dispatch",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Get Multica Review Dispatch": {
+        "main": [
+          [
+            {
+              "node": "Multica Dispatch Found",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Multica Dispatch Found": {
+        "main": [
+          [
+            {
+              "node": "Get Multica Autopilot Run",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Get Multica Autopilot Run": {
+        "main": [
+          [
+            {
+              "node": "Verify Multica Autopilot Run",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verify Multica Autopilot Run": {
+        "main": [
+          [
+            {
+              "node": "Complete Multica Review Issue",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Complete Multica Review Issue": {
+        "main": [
+          []
         ]
       }
     },
