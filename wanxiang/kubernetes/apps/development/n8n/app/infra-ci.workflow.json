@@ -997,7 +997,7 @@
         "parameters": {
           "mode": "runOnceForEachItem",
           "language": "javaScript",
-          "jsCode": "const crypto = require('crypto');\nconst body = $json.body ?? {};\nconst capability = String(body.capability ?? '');\nconst verdict = String(body.verdict ?? '').toLowerCase();\nconst summary = String(body.summary ?? '').trim();\nconst evidenceUrl = String(body.evidence_url ?? '').trim();\nconst secret = String($env.REVIEW_CAPABILITY_SECRET ?? '');\nlet claims = {};\nlet signatureValid = false;\ntry {\n  const parts = capability.split('.');\n  if (secret && parts.length === 2 && parts.every(Boolean)) {\n    const actual = Buffer.from(parts[1], 'base64url');\n    const expected = crypto.createHmac('sha256', secret).update(parts[0]).digest();\n    signatureValid = actual.length === expected.length && crypto.timingSafeEqual(actual, expected);\n    if (signatureValid) claims = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));\n  }\n} catch {\n  signatureValid = false;\n  claims = {};\n}\nconst now = Math.floor(Date.now() / 1000);\nconst repo = String(claims.repo ?? '');\nconst prNumber = claims.pr_number;\nconst headSha = String(claims.head_sha ?? '').toLowerCase();\nconst claimsValid = signatureValid\n  && claims.v === 1\n  && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo)\n  && Number.isInteger(prNumber) && prNumber > 0\n  && /^[0-9a-f]{40}$/.test(headSha)\n  && Number.isInteger(claims.iat) && Number.isInteger(claims.exp)\n  && claims.iat <= now && claims.exp > now\n  && claims.exp - claims.iat === 86400\n  && typeof claims.jti === 'string' && claims.jti.length > 0;\nconst fieldsValid = ['approve', 'reject', 'human_required'].includes(verdict)\n  && summary.length > 0 && summary.length <= 10000\n  && (evidenceUrl === '' || /^https:\\/\\/[^\\s]+$/.test(evidenceUrl));\nreturn { json: { REVIEW_VALID: claimsValid && fieldsValid, REPO: repo, PR_NUMBER: prNumber, HEAD_SHA: headSha, VERDICT: verdict, SUMMARY: summary, EVIDENCE_URL: evidenceUrl } };"
+          "jsCode": "const crypto = require('crypto');\nconst body = $json.body ?? {};\nconst capability = String(body.capability ?? '');\nconst verdict = String(body.verdict ?? '').toLowerCase();\nconst summary = String(body.summary ?? '').trim();\nconst evidenceUrl = String(body.evidence_url ?? '').trim();\nconst secret = String($env.REVIEW_CAPABILITY_SECRET ?? '');\nlet claims = {};\nlet signatureValid = false;\ntry {\n  const parts = capability.split('.');\n  if (secret && parts.length === 2 && parts.every(Boolean)) {\n    const actual = Buffer.from(parts[1], 'base64url');\n    const expected = crypto.createHmac('sha256', secret).update(parts[0]).digest();\n    signatureValid = actual.length === expected.length && crypto.timingSafeEqual(actual, expected);\n    if (signatureValid) claims = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));\n  }\n} catch {\n  signatureValid = false;\n  claims = {};\n}\nconst now = Math.floor(Date.now() / 1000);\nconst repo = String(claims.repo ?? '');\nconst prNumber = claims.pr_number;\nconst headSha = String(claims.head_sha ?? '').toLowerCase();\nconst claimsValid = signatureValid\n  && claims.v === 1\n  && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo)\n  && Number.isInteger(prNumber) && prNumber > 0\n  && /^[0-9a-f]{40}$/.test(headSha)\n  && Number.isInteger(claims.iat) && Number.isInteger(claims.exp)\n  && claims.iat <= now && claims.exp > now\n  && claims.exp - claims.iat === 86400\n  && typeof claims.jti === 'string' && claims.jti.length > 0;\nconst fieldsValid = ['approve', 'reject', 'human_required'].includes(verdict)\n  && summary.length > 0 && summary.length <= 10000\n  && (evidenceUrl === '' || /^https:\\/\\/[^\\s]+$/.test(evidenceUrl));\nreturn { json: { REVIEW_VALID: claimsValid && fieldsValid, REPO: repo, PR_NUMBER: prNumber, HEAD_SHA: headSha, JTI: String(claims.jti ?? ''), EXPIRES_AT: claims.exp, VERDICT: verdict, SUMMARY: summary, EVIDENCE_URL: evidenceUrl } };"
         }
       },
       {
@@ -1059,7 +1059,7 @@
         ],
         "parameters": {
           "method": "GET",
-          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $json.REPO + '/pulls/' + $json.PR_NUMBER }}",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Validate Multica Review\").item.json.REPO + '/pulls/' + $(\"Validate Multica Review\").item.json.PR_NUMBER }}",
           "options": {
             "response": {
               "response": {
@@ -1702,6 +1702,78 @@
             "name": "Forgejo Multica Merger Token"
           }
         }
+      },
+      {
+        "id": "37b293e6-3334-47e8-9fbe-ef07a9675f8d",
+        "name": "Consume Review Capability",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          448,
+          1088
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "CREATE TABLE IF NOT EXISTS multica_review_capability_consumptions (\n  jti uuid PRIMARY KEY,\n  repo text NOT NULL,\n  pr_number bigint NOT NULL,\n  head_sha char(40) NOT NULL,\n  consumed_at timestamptz NOT NULL DEFAULT now(),\n  expires_at timestamptz NOT NULL\n);\nWITH cleanup AS (\n  DELETE FROM multica_review_capability_consumptions WHERE expires_at < now() - interval '7 days'\n), consumed AS (\n  INSERT INTO multica_review_capability_consumptions (jti, repo, pr_number, head_sha, expires_at)\n  VALUES ($1::uuid, $2, $3::bigint, $4, to_timestamp($5::bigint))\n  ON CONFLICT (jti) DO NOTHING\n  RETURNING jti\n)\nSELECT EXISTS (SELECT 1 FROM consumed) AS capability_consumed;",
+          "options": {
+            "queryBatching": "single",
+            "queryReplacement": "={{ [$json.JTI, $json.REPO, $json.PR_NUMBER, $json.HEAD_SHA, $json.EXPIRES_AT] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "036ec3b3-4cf8-4860-bc67-c8dd9b650aba",
+        "name": "Capability Was Consumed",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          560,
+          1088
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.capability_consumed }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "83e3e6f0-7574-4da0-b783-394c266dc9db",
+        "name": "Reject Replayed Capability",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          672,
+          1184
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { error: 'review capability has already been consumed' } }}",
+          "options": {
+            "responseCode": 409
+          }
+        }
       }
     ],
     "connections": {
@@ -2101,7 +2173,7 @@
         "main": [
           [
             {
-              "node": "Get Current Renovate PR",
+              "node": "Consume Review Capability",
               "type": "main",
               "index": 0
             }
@@ -2304,6 +2376,35 @@
           [
             {
               "node": "Merge Human-Approved PR",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Consume Review Capability": {
+        "main": [
+          [
+            {
+              "node": "Capability Was Consumed",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Capability Was Consumed": {
+        "main": [
+          [
+            {
+              "node": "Get Current Renovate PR",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Reject Replayed Capability",
               "type": "main",
               "index": 0
             }

@@ -80,10 +80,18 @@ head SHA, issue time, expiry, and a random identifier. The Multica task receives
 that capability, not the signing secret. The callback derives its scope only
 from verified claims; caller-supplied repository and SHA fields are not trusted.
 
-The capability is valid for at most 24 hours. Reuse cannot authorize another
-PR or another commit. Repeated delivery for the same SHA is idempotent; a merge
-of a closed PR or a request for a changed head is rejected by the fresh PR
-lookup and `head_commit_id` constraint.
+The capability is valid for at most 24 hours and is single-use. After signature
+and field validation, n8n atomically inserts its random `jti` into a dedicated
+PostgreSQL table whose primary key is `jti`. `INSERT ... ON CONFLICT DO NOTHING`
+allows exactly one execution to continue; a concurrent or later replay returns
+HTTP 409 before any Forgejo status or merge request is written.
+
+Consumption is deliberately fail-closed and happens before the fresh PR lookup.
+If a later Forgejo request fails, the same capability cannot be retried; a new
+PR event must issue a new capability. Consumed rows are retained through expiry
+and removed after a seven-day grace period. Reuse cannot authorize another PR
+or commit, and a merge of a closed PR or request for a changed head is also
+rejected by the fresh PR lookup and `head_commit_id` constraint.
 
 ### Separate judgment from enforcement
 
@@ -143,6 +151,16 @@ attached only to the fixed merge request node. It must not be exposed as a Pod
 environment variable, embedded in workflow JSON, sent to Multica, or reused by
 Renovate. n8n administrators remain trusted; this isolation prevents webhook
 data and agent tasks from reading the credential directly.
+
+The separate `Review Capability PostgreSQL` n8n credential is generated during
+Pod initialization from the existing CNPG application Secret and imported into
+n8n's encrypted credential store. Its password is never embedded in workflow
+JSON. The workflow accesses only its own
+`multica_review_capability_consumptions` table and its query is parameterized.
+This credential currently reuses the n8n application database role, so it does
+not form an independent boundary from n8n administrators. A dedicated database
+role may be added when database administration is separated from the n8n
+control plane.
 
 ## Failure behavior
 
