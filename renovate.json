@@ -3,6 +3,7 @@
   "extends": ["config:recommended"],
   "dependencyDashboard": true,
   "prConcurrentLimit": 5,
+  "prHourlyLimit": 5,
   "automerge": false,
   "customManagers": [
     {
@@ -17,7 +18,8 @@
     {
       "matchPackageNames": ["code.forgejo.org/forgejo/forgejo"],
       "allowedVersions": "/^15\\.0\\.\\d+-rootless$/",
-      "automerge": false
+      "automerge": false,
+      "prPriority": 100
     }
   ]
 }
