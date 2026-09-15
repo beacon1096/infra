@@ -58,6 +58,7 @@ spec:
                     key: n8n-encryption-key
               N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
               N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+              NODE_FUNCTION_ALLOW_BUILTIN: crypto
               N8N_HOST: automaton.${SECRET_DOMAIN}
               N8N_PORT: "5678"
               N8N_PROTOCOL: https
@@ -67,11 +68,16 @@ spec:
                   secretKeyRef:
                     name: n8n-secret
                     key: multica-renovate-webhook-url
-              REVIEW_CALLBACK_CREDENTIAL:
+              FORGEJO_WEBHOOK_CREDENTIAL:
                 valueFrom:
                   secretKeyRef:
                     name: n8n-secret
-                    key: review-callback-credential
+                    key: forgejo-webhook-credential
+              REVIEW_CAPABILITY_SECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: n8n-secret
+                    key: review-capability-secret
               FORGEJO_GATE_TOKEN:
                 valueFrom:
                   secretKeyRef:

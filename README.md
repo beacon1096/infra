@@ -58,40 +58,10 @@ this repository. Public host baselines may be exported as NixOS modules for a
 private overlay, but private behavior and its production output are assembled
 and released only from the private repository.
 
-## Release boundary
+## CI/CD and production delivery
 
-- `main` is the canonical public integration branch; its CI validates the
-  reusable modules and public architecture.
-- `infra-private` pins an exact `infra` revision and assembles the complete
-  production fleet on top of it.
-- Production approval, release tags, `prod` promotion, and Comin rollout are
-  owned by `infra-private`.
-- Tags in this repository, if used, publish public module or showcase versions;
-  they do not authorize a production fleet rollout.
-
-## Production release flow
-
-1. Make reusable or public-facing changes on `infra/main` and wait for its CI
-   validation. Skip this step for private-only changes.
-2. In `infra-private`, update the locked `infra` input to the reviewed public
-   commit, then add any required private overlays or service configuration.
-3. Push `infra-private/main` and wait for the complete fleet build to pass.
-   A normal `main` push validates only; it does not deploy.
-4. Manually run `build-and-push.yaml` for `infra-private`. A successful manual
-   run produces the n8n release approval link.
-5. Approving the release creates an `infra-private` tag. The tag workflow
-   rebuilds the fleet, verifies publication, and advances `infra-private/prod`
-   only after every release gate passes.
-6. Comin observes `infra-private/prod` and rolls the approved revision out to
-   the production fleet. Monitor host health and roll back to a reviewed,
-   known-good private revision if necessary.
-
-Never push `prod` directly, and never use an `infra` tag as production
-authorization.
-
-## CI runner maintenance
-
-The three Harvester Nix builders use staggered drain, garbage-collection, and
-resume windows so two runners remain available while one store is maintained.
-See [docs/ci-runner-maintenance.md](docs/ci-runner-maintenance.md) for the
-rotation, timeout contract, and failure behavior.
+`infra/main` is the public integration branch. `infra-private` pins reviewed
+public revisions and owns production approval, release tags, `prod` promotion,
+and Comin rollout. Start with the [CI/CD documentation](docs/ci-cd/README.md)
+for the complete release flow, dependency-review gate, service accounts, and
+runner maintenance.

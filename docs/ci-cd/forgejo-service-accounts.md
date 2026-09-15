@@ -14,10 +14,10 @@ the `write:repository` scope and is stored encrypted in the n8n SOPS Secret.
 The Multica agent only receives a credential for submitting its review result
 to n8n and never receives a Forgejo PAT.
 
-`multica-merger` currently has no PAT. Create and deploy one only when the
-separate merge executor and protected-branch merge whitelist are enabled. Do
-not expose that credential to Renovate, Multica agents, or general n8n review
-nodes.
+`multica-merger` has a `write:repository` PAT stored as the dedicated
+`Forgejo Multica Merger Token` n8n credential. It is attached only to the fixed
+Forgejo merge request node; it is not exposed as an environment variable or to
+Renovate, Multica agents, or general review nodes.
 
 ## Protected branches
 
@@ -31,10 +31,11 @@ policy:
 - rejected reviews and outdated branches block merging;
 - only `multica-merger` is allowed to merge.
 
-The whitelist is active, but `multica-merger` has no PAT, so automated merging
-is intentionally disabled until a separate merge executor is deployed. The
-rules are currently managed through the Forgejo API and recorded here; they
-are not yet declaratively managed by the repository.
+The whitelist and merger credential are active. n8n may only schedule a merge
+after validating a SHA-bound review capability; Forgejo still enforces every
+protected-branch requirement. The rules are currently managed through the
+Forgejo API and recorded here; they are not yet declaratively managed by the
+repository.
 
 Passwords, PATs, webhook URLs, and callback credentials must not be added to
 this document. Their source of truth is the corresponding SOPS Secret or the
