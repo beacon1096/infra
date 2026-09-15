@@ -221,3 +221,23 @@ Notices contain repository, PR, exact SHA, evidence URL when available, and the
 n8n execution URL, but never a capability or credential. Callback responses
 run in parallel with notification delivery, so a Matrix outage cannot turn an
 accepted decision into a retry that would collide with single-use consumption.
+
+## Deferred: webhook-triggered Renovate runs
+
+The current Renovate OSS process is a one-shot systemd service scheduled by a
+timer. Dependency Dashboard checkbox changes are therefore consumed by the next
+scheduled run rather than immediately. Keep the timer as the reliable fallback.
+
+If lower latency becomes useful, Forgejo may send the relevant Issue webhook to
+n8n, which can start `renovate.service` on its host through a dedicated,
+restricted SSH identity. This path must not provide n8n with a general-purpose
+shell. The proposed identity should be limited by an OpenSSH forced command and
+`restrict`, with authorization for exactly `systemctl start renovate.service`.
+n8n must additionally accept only the expected repository, Dependency Dashboard
+issue, event action, and actor. systemd remains responsible for suppressing
+concurrent duplicate runs, and the existing timer remains enabled for missed
+webhooks.
+
+Do not expose a general systemd HTTP endpoint or reuse an administrator SSH
+credential for this convenience trigger. This integration is intentionally not
+enabled yet.
