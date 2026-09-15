@@ -55,17 +55,38 @@ assert.throws(() =>
   }),
 );
 
+const normalized = execute("Normalize Forgejo Event", {
+  $json: {
+    headers: { "x-forgejo-event": "pull_request" },
+    body: {
+      action: "synchronize",
+      repository: { full_name: "infrastructure/infra" },
+      sender: { login: "human-reviewer" },
+      pull_request: {
+        number: 7,
+        user: { login: "renovate" },
+        head: { sha: event.PR_HEAD_SHA },
+        base: { ref: "main" },
+      },
+    },
+  },
+  $execution: { id: "test-execution" },
+}).json;
+assert.equal(normalized.ACTOR, "human-reviewer");
+assert.equal(normalized.PR_AUTHOR, "renovate");
+assert.equal(normalized.IS_RENOVATE_PR, true);
+
 const capability = execute("Create Review Capability", {
   $: () => ({ first: () => ({ json: event }) }),
   $env: { REVIEW_CAPABILITY_SECRET: secret },
 }).json.REVIEW_CAPABILITY;
 
-const validate = (candidate) =>
+const validate = (candidate, verdict = "approve") =>
   execute("Validate Multica Review", {
     $json: {
       body: {
         capability: candidate,
-        verdict: "approve",
+        verdict,
         summary: "reviewed",
         evidence_url: "https://multica.beaco.works/issues/BEACO-1",
       },
@@ -78,6 +99,8 @@ assert.equal(valid.REVIEW_VALID, true);
 assert.equal(valid.REPO, event.REPO);
 assert.equal(valid.PR_NUMBER, Number(event.PR_NUMBER));
 assert.equal(valid.HEAD_SHA, event.PR_HEAD_SHA);
+assert.equal(validate(capability, "human_required").REVIEW_VALID, true);
+assert.equal(validate(capability, "unknown").REVIEW_VALID, false);
 
 const [encoded, signature] = capability.split(".");
 const tamperedSignature = `${signature[0] === "A" ? "B" : "A"}${signature.slice(1)}`;
@@ -101,5 +124,15 @@ const mergeFields = Object.fromEntries(
 assert.equal(mergeFields.force_merge, undefined);
 assert.equal(mergeFields.merge_when_checks_succeed, true);
 assert.match(mergeFields.head_commit_id, /HEAD_SHA/);
+
+const reviewStatus = nodes.get("Set Multica Review Status");
+const reviewStatusFields = Object.fromEntries(
+  reviewStatus.parameters.bodyParameters.parameters.map((field) => [field.name, field.value]),
+);
+assert.match(reviewStatusFields.state, /human_required|pending/);
+
+const approvalCondition = nodes.get("Multica Review Approved")
+  .parameters.conditions.conditions[0];
+assert.equal(approvalCondition.rightValue, "approve");
 
 console.log("n8n infra CI workflow checks passed");
