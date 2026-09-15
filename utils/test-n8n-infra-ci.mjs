@@ -172,6 +172,8 @@ assert.equal(valid.REVIEW_VALID, true);
 assert.equal(valid.REPO, event.REPO);
 assert.equal(valid.PR_NUMBER, Number(event.PR_NUMBER));
 assert.equal(valid.HEAD_SHA, event.PR_HEAD_SHA);
+assert.equal(valid.JTI.length > 0, true);
+assert.equal(Number.isInteger(valid.EXPIRES_AT), true);
 assert.equal(validate(capability, "human_required").REVIEW_VALID, true);
 assert.equal(validate(capability, "unknown").REVIEW_VALID, false);
 
@@ -216,5 +218,22 @@ const humanMergeFields = Object.fromEntries(
 assert.equal(humanMergeFields.force_merge, undefined);
 assert.equal(humanMergeFields.merge_when_checks_succeed, true);
 assert.match(humanMergeFields.head_commit_id, /Verify Human Approval/);
+
+const consumeCapability = nodes.get("Consume Review Capability");
+assert.equal(consumeCapability.credentials.postgres.id, "reviewCapabilityPg");
+assert.match(consumeCapability.parameters.query, /jti uuid PRIMARY KEY/);
+assert.match(consumeCapability.parameters.query, /ON CONFLICT \(jti\) DO NOTHING/);
+assert.match(consumeCapability.parameters.query, /SELECT EXISTS/);
+assert.doesNotMatch(consumeCapability.parameters.query, /\$json|\$\(/);
+assert.match(consumeCapability.parameters.options.queryReplacement, /JTI/);
+assert.deepEqual(
+  workflow.connections["Multica Review Is Valid"].main[0].map(({ node }) => node),
+  ["Consume Review Capability"],
+);
+assert.deepEqual(
+  workflow.connections["Capability Was Consumed"].main.map((branch) =>
+    branch.map(({ node }) => node)),
+  [["Get Current Renovate PR"], ["Reject Replayed Capability"]],
+);
 
 console.log("n8n infra CI workflow checks passed");

@@ -121,7 +121,12 @@ spec:
               - /bin/sh
               - -c
             args:
-              - n8n import:workflow --input=/workflows/infra-ci.json && n8n publish:workflow --id=GzhPPYlazQObUguC
+              - |
+                node -e 'require("fs").writeFileSync("/tmp/review-capability-postgres.json", JSON.stringify([{ id: "reviewCapabilityPg", name: "Review Capability PostgreSQL", type: "postgres", data: { host: process.env.DB_POSTGRESDB_HOST, database: process.env.DB_POSTGRESDB_DATABASE, user: process.env.DB_POSTGRESDB_USER, password: process.env.DB_POSTGRESDB_PASSWORD, port: Number(process.env.DB_POSTGRESDB_PORT), ssl: "disable", maxConnections: 2 } }]), { mode: 0o600 })'
+                n8n import:credentials --input=/tmp/review-capability-postgres.json
+                rm /tmp/review-capability-postgres.json
+                n8n import:workflow --input=/workflows/infra-ci.json
+                n8n publish:workflow --id=GzhPPYlazQObUguC
     defaultPodOptions:
       annotations:
         reloader.stakater.com/auto: "true"
