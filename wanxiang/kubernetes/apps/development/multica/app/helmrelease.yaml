@@ -30,7 +30,7 @@ spec:
         cookieDomain: ".${SECRET_DOMAIN}"
         allowSignup: false
         disableWorkspaceCreation: true
-        vcsIntegrationEnabled: false
+        vcsIntegrationEnabled: true
         localUploadBaseUrl: "https://multica.${SECRET_DOMAIN}"
       resources:
         requests:
