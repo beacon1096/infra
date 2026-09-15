@@ -61,6 +61,11 @@ spec:
               N8N_PORT: "5678"
               N8N_PROTOCOL: https
               N8N_PROXY_HOPS: "1"
+              MULTICA_RENOVATE_WEBHOOK_URL:
+                valueFrom:
+                  secretKeyRef:
+                    name: n8n-secret
+                    key: multica-renovate-webhook-url
               NODE_ENV: production
               TZ: Asia/Shanghai
               WEBHOOK_URL: https://automaton.${SECRET_DOMAIN}/
