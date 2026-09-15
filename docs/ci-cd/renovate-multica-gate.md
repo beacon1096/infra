@@ -222,6 +222,19 @@ n8n execution URL, but never a capability or credential. Callback responses
 run in parallel with notification delivery, so a Matrix outage cannot turn an
 accepted decision into a retry that would collide with single-use consumption.
 
+For an immediately completed Renovate merge, n8n resolves the originating
+Multica autopilot run through a dispatch record bound to the signed capability
+JTI, repository, PR number, and head SHA. It then marks that run's Issue as
+`done` with the dedicated `multica-closer.no-reply@beacoworks.xyz` member
+identity. Agent-supplied Issue URLs are not trusted for this lookup. A queued
+merge remains `in_review`; closing it after the later Forgejo merge event is a
+separate follow-up.
+
+Multica currently does not expose scopes on personal access tokens. The closer
+therefore has ordinary workspace-member permissions, and n8n isolates its token
+in a credential attached only to the fixed run-read and Issue-status nodes. The
+credential must not be exposed to the agent, callback payload, or workflow JSON.
+
 ## Deferred: webhook-triggered Renovate runs
 
 The current Renovate OSS process is a one-shot systemd service scheduled by a
