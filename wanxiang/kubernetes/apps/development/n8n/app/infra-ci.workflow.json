@@ -1,0 +1,1248 @@
+[
+  {
+    "id": "GzhPPYlazQObUguC",
+    "name": "Infra CI",
+    "description": "Normalize Forgejo events and notify Matrix; gate production fleet releases exclusively through infra-private approval.",
+    "active": true,
+    "nodes": [
+      {
+        "id": "bd3d1c52-321e-415e-a5cc-de7873221e2b",
+        "name": "Forgejo Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          0,
+          192
+        ],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "62dea6af-c08b-4292-b811-b67b0efa7fab",
+          "authentication": "basicAuth",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "webhookId": "62dea6af-c08b-4292-b811-b67b0efa7fab",
+        "credentials": {
+          "httpBasicAuth": {
+            "id": "mYLj8OZC8O7Qnl4V",
+            "name": "ForgejoCI-NixFleet"
+          }
+        }
+      },
+      {
+        "id": "52a40366-97bb-4744-8d18-809eb71647ed",
+        "name": "Acknowledge Webhook",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          224,
+          192
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": {
+            "result": "accepted"
+          },
+          "options": {
+            "responseCode": 200
+          }
+        }
+      },
+      {
+        "id": "ffb1dbb7-ebbe-48ab-87c2-cbcf9af70a2f",
+        "name": "Normalize Forgejo Event",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          448,
+          192
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const incoming = $json;\nconst body = incoming.body ?? {};\nconst headers = Object.fromEntries(Object.entries(incoming.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]));\nconst eventHeader = String(headers['x-forgejo-event'] ?? headers['x-gitea-event'] ?? '').toLowerCase();\nconst deliveryId = String(headers['x-forgejo-delivery'] ?? headers['x-gitea-delivery'] ?? body.delivery_id ?? $execution.id);\nconst actionRaw = String(body.action ?? '').toLowerCase();\nconst run = body.run ?? {};\nconst parseObject = (value) => {\n  if (value && typeof value === 'object') return value;\n  if (typeof value !== 'string' || value.length === 0) return {};\n  try {\n    const parsed = JSON.parse(value);\n    return parsed && typeof parsed === 'object' ? parsed : {};\n  } catch {\n    return {};\n  }\n};\nconst eventPayload = parseObject(run.event_payload);\nconst repository = body.repository ?? run.repository ?? eventPayload.repository ?? {};\nconst repo = String(repository.full_name ?? repository.name ?? 'unknown/unknown');\nconst actor = String(body.pusher?.username ?? body.pusher?.login ?? body.sender?.login ?? body.sender?.username ?? eventPayload.pusher?.username ?? eventPayload.pusher?.login ?? eventPayload.sender?.login ?? eventPayload.sender?.username ?? run.trigger_user?.login ?? run.trigger_user?.username ?? 'unknown');\nconst pullRequest = body.pull_request ?? {};\nlet eventType = 'unsupported';\nif (body.executionMode === 'test' || incoming.executionMode === 'test') eventType = 'test';\nelse if (eventHeader.includes('pull_request') || body.pull_request) eventType = 'pull_request';\nelse if (eventHeader === 'push' || body.head_commit || Array.isArray(body.commits)) eventType = 'push';\nelse if (eventHeader.includes('package') || body.package) eventType = 'package';\nelse if (eventHeader.includes('release') || body.release) eventType = 'release';\nelse if (eventHeader.includes('workflow') || eventHeader.includes('action') || body.run) eventType = 'action';\nconst ref = String(eventPayload.ref ?? run.ref ?? body.ref ?? '');\nconst workflowId = String(run.workflow_id ?? run.workflow_name ?? 'Forgejo Actions');\nconst workflowName = String(run.workflow_name ?? run.workflow_id ?? 'Forgejo Actions');\nconst runTitle = String(run.title ?? '');\nconst runId = String(run.id ?? run.run_number ?? run.commit_sha ?? body.after ?? body.head_commit?.id ?? body.package?.id ?? body.release?.id ?? deliveryId);\nconst statusCandidate = String(run.conclusion ?? run.status ?? actionRaw).toLowerCase();\nlet actionStatus = 'unknown';\nif (['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(actionRaw) || ['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(statusCandidate)) actionStatus = 'failure';\nelse if (['recovered', 'recovery'].includes(actionRaw) || ['recovered', 'recovery'].includes(statusCandidate)) actionStatus = 'recovery';\nelse if (['success', 'successful'].includes(actionRaw) || ['success', 'successful'].includes(statusCandidate)) actionStatus = 'success';\nconst packageInfo = body.package ?? {};\nconst releaseInfo = body.release ?? {};\nconst prNumber = String(pullRequest.number ?? pullRequest.index ?? body.number ?? '');\nconst prHeadSha = String(pullRequest.head?.sha ?? pullRequest.head?.id ?? '');\nconst objectId = eventType === 'pull_request'\n  ? [prNumber || deliveryId, prHeadSha || deliveryId].join(':')\n  : eventType === 'push'\n    ? String(body.after ?? body.head_commit?.id ?? body.compare_url ?? deliveryId)\n    : eventType === 'package'\n      ? String(packageInfo.id ?? ((packageInfo.name ?? 'package') + '@' + (packageInfo.version ?? 'unknown')))\n      : eventType === 'release'\n        ? String(releaseInfo.id ?? releaseInfo.tag_name ?? releaseInfo.name ?? deliveryId)\n        : runId;\nconst eventKey = [repo, eventType, objectId, eventType === 'package' || eventType === 'release' ? actionRaw : ''].join('::');\nconst stateKey = eventType === 'action'\n  ? [repo, 'action', workflowId, ref].join('::')\n  : eventKey;\nconst prActionSupported = ['opened', 'synchronize', 'synchronized', 'reopened'].includes(actionRaw);\nconst supported = ['test', 'push', 'package', 'release'].includes(eventType) || (eventType === 'pull_request' && prActionSupported) || (eventType === 'action' && actionStatus !== 'unknown');\nconst commits = Array.isArray(body.commits) ? body.commits.slice(0, 10).map((commit) => ({\n  id: String(commit.id ?? '').slice(0, 7),\n  message: String(commit.message ?? '').split('\\n')[0],\n  url: String(commit.url ?? ''),\n})) : [];\nreturn { json: {\n  SUPPORTED: supported,\n  EVENT_TYPE: eventType,\n  EVENT_HEADER: eventHeader,\n  EVENT_KEY: eventKey,\n  STATE_KEY: stateKey,\n  DELIVERY_ID: deliveryId,\n  ACTION_RAW: actionRaw,\n  ACTION_STATUS: actionStatus,\n  REPO: repo,\n  REPO_URL: String(repository.html_url ?? repository.url ?? ''),\n  ACTOR: actor,\n  REF: ref,\n  SHA: String(run.commit_sha ?? body.after ?? body.head_commit?.id ?? prHeadSha),\n  RUN_ID: runId,\n  RUN_URL: String(run.html_url ?? run.url ?? ''),\n  RUN_TITLE: runTitle,\n  WORKFLOW_ID: workflowId,\n  WORKFLOW_NAME: workflowName,\n  TRIGGER_EVENT: String(run.trigger_event ?? run.event ?? ''),\n  PUSH_COMPARE_URL: String(body.compare_url ?? ''),\n  PUSH_COMMITS: commits,\n  PUSH_COMMIT_COUNT: Array.isArray(body.commits) ? body.commits.length : 0,\n  PACKAGE_NAME: String(packageInfo.name ?? ''),\n  PACKAGE_VERSION: String(packageInfo.version ?? ''),\n  PACKAGE_URL: String(packageInfo.html_url ?? packageInfo.url ?? ''),\n  RELEASE_NAME: String(releaseInfo.name ?? ''),\n  RELEASE_TAG: String(releaseInfo.tag_name ?? ''),\n  RELEASE_URL: String(releaseInfo.html_url ?? releaseInfo.url ?? ''),\n  PR_NUMBER: prNumber,\n  PR_TITLE: String(pullRequest.title ?? ''),\n  PR_BODY: String(pullRequest.body ?? ''),\n  PR_URL: String(pullRequest.html_url ?? pullRequest.url ?? ''),\n  PR_HEAD_REF: String(pullRequest.head?.ref ?? pullRequest.head?.label ?? ''),\n  PR_HEAD_SHA: prHeadSha,\n  PR_BASE_REF: String(pullRequest.base?.ref ?? pullRequest.base?.label ?? ''),\n  IS_RENOVATE_PR: eventType === 'pull_request' && prActionSupported && repo === 'infrastructure/infra-private' && actor === 'renovate',\n} };\n"
+        }
+      },
+      {
+        "id": "9420bd9f-1ef3-47c8-b99b-c53f3a2256a0",
+        "name": "Supported Event",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          672,
+          192
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.SUPPORTED }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "f27956d1-bd2e-48d0-9ecc-205586da21d2",
+        "name": "Ensure Forgejo Event State",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          896,
+          192
+        ],
+        "parameters": {
+          "resource": "table",
+          "operation": "create",
+          "tableName": "Forgejo Event State",
+          "columns": {
+            "column": [
+              {
+                "name": "STATE_KEY"
+              },
+              {
+                "name": "LAST_EVENT_KEY"
+              },
+              {
+                "name": "LAST_DELIVERY_ID"
+              },
+              {
+                "name": "LAST_STATUS"
+              },
+              {
+                "name": "LAST_RUN_ID"
+              },
+              {
+                "name": "UPDATED_AT",
+                "type": "date"
+              }
+            ]
+          },
+          "options": {
+            "createIfNotExists": true
+          }
+        }
+      },
+      {
+        "id": "015d5348-ae5d-4fdd-b389-87ad8f86bf38",
+        "name": "Get Previous Event State",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1120,
+          192
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "={{ $(\"Ensure Forgejo Event State\").item.json.id }}"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "STATE_KEY",
+                "condition": "eq",
+                "keyValue": "={{ $(\"Normalize Forgejo Event\").item.json.STATE_KEY }}"
+              }
+            ]
+          },
+          "returnAll": false,
+          "limit": 1
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "da87465b-defb-4ad1-8902-550020a3e939",
+        "name": "Decide Event Transition",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1344,
+          192
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const current = $('Normalize Forgejo Event').first().json;\nconst previous = $json ?? {};\nconst duplicateDelivery = Boolean(previous.LAST_DELIVERY_ID) && String(previous.LAST_DELIVERY_ID) === String(current.DELIVERY_ID);\nconst duplicateObject = current.EVENT_TYPE !== 'action' && current.EVENT_TYPE !== 'test' && Boolean(previous.STATE_KEY);\nlet notifyStatus = current.ACTION_STATUS;\nif (current.EVENT_TYPE === 'action' && current.ACTION_STATUS === 'success' && previous.LAST_STATUS === 'failure') notifyStatus = 'recovery';\nif (current.ACTION_STATUS === 'recovery') notifyStatus = 'recovery';\nconst shouldNotify = current.EVENT_TYPE === 'test' ? true : !(duplicateDelivery || duplicateObject);\nconst storedStatus = current.EVENT_TYPE === 'action' ? (notifyStatus === 'recovery' ? 'success' : current.ACTION_STATUS) : current.EVENT_TYPE;\nconst icon = notifyStatus === 'failure' ? '❌' : notifyStatus === 'recovery' ? '♻️' : '✅';\nconst actor = current.ACTOR === 'unknown' ? 'unknown' : '@' + current.ACTOR + ':beaco.works';\nlet message = '';\nif (current.EVENT_TYPE === 'test') {\n  message = '## ✅ Forgejo webhook 测试成功\\n\\n事件标准化、状态表与 Matrix 通知链路可用。';\n} else if (current.EVENT_TYPE === 'pull_request') {\n  message = '## 🤖 ' + current.REPO + ' Renovate PR #' + current.PR_NUMBER + '\\n\\n| 项目 | 内容 |\\n| :--- | :--- |\\n| 动作 | ' + current.ACTION_RAW + ' |\\n| 标题 | ' + current.PR_TITLE + ' |\\n| 分支 | ' + current.PR_HEAD_REF + ' → ' + current.PR_BASE_REF + ' |\\n| SHA | ' + current.PR_HEAD_SHA + ' |\\n| 发起人 | ' + actor + ' |\\n| 链接 | [查看 PR](' + current.PR_URL + ') |';\n} else if (current.EVENT_TYPE === 'push') {\n  const commitLines = current.PUSH_COMMITS.map((commit) => '| ' + commit.id + ' | [' + commit.message + '](' + commit.url + ') |').join('\\n');\n  const remainder = current.PUSH_COMMIT_COUNT > current.PUSH_COMMITS.length ? '\\n\\n另有 ' + (current.PUSH_COMMIT_COUNT - current.PUSH_COMMITS.length) + ' 个提交未展开。' : '';\n  message = '## 🚀 ' + current.REPO + ' 检测到推送\\n\\n| 项目 | 内容 |\\n| :--- | :--- |\\n| 推送人 | ' + actor + ' |\\n| 分支 | ' + current.REF + ' |\\n| Diff | [查看差异](' + current.PUSH_COMPARE_URL + ') |\\n\\n| SHA | 提交 |\\n| :--- | :--- |\\n' + commitLines + remainder;\n} else if (current.EVENT_TYPE === 'package') {\n  message = '## 📦 ' + current.REPO + ' 软件包事件\\n\\n| 项目 | 内容 |\\n| :--- | :--- |\\n| 动作 | ' + current.ACTION_RAW + ' |\\n| 软件包 | ' + current.PACKAGE_NAME + ' |\\n| 版本 | ' + current.PACKAGE_VERSION + ' |\\n| 操作人 | ' + actor + ' |\\n| 链接 | [查看软件包](' + current.PACKAGE_URL + ') |';\n} else if (current.EVENT_TYPE === 'release') {\n  message = '## 🏷️ ' + current.REPO + ' 版本发布事件\\n\\n| 项目 | 内容 |\\n| :--- | :--- |\\n| 动作 | ' + current.ACTION_RAW + ' |\\n| 版本 | ' + (current.RELEASE_TAG || current.RELEASE_NAME) + ' |\\n| 操作人 | ' + actor + ' |\\n| 链接 | [查看版本](' + current.RELEASE_URL + ') |';\n} else {\n  const label = notifyStatus === 'failure' ? '失败' : notifyStatus === 'recovery' ? '恢复' : '成功';\n  const rows = [\n    '| 工作流 | ' + current.WORKFLOW_NAME + ' |',\n    current.RUN_TITLE ? '| 运行标题 | ' + current.RUN_TITLE + ' |' : '',\n    '| 状态 | ' + label + ' |',\n    '| 触发类型 | ' + current.TRIGGER_EVENT + ' |',\n    '| 来源 | ' + current.REF + ' |',\n    '| SHA | ' + current.SHA + ' |',\n    current.RUN_URL ? '| 执行 | [查看运行](' + current.RUN_URL + ') |' : '',\n    '| 发起人 | ' + actor + ' |',\n  ].filter(Boolean).join('\\n');\n  message = '## ' + icon + ' ' + current.REPO + ' Action ' + label + '\\n\\n| 项目 | 内容 |\\n| :--- | :--- |\\n' + rows;\n}\nconst successfulAction = current.EVENT_TYPE === 'action' && ['success', 'recovery'].includes(notifyStatus);\nconst releaseWorkflow = current.WORKFLOW_ID === 'build-and-push.yaml';\nconst releaseTagRun = releaseWorkflow && current.REPO === 'infrastructure/infra-private' && current.REF.startsWith('refs/tags/');\nreturn { json: {\n  ...current,\n  SHOULD_NOTIFY: shouldNotify,\n  NOTIFY_STATUS: notifyStatus,\n  STORED_STATUS: storedStatus,\n  NEEDS_APPROVAL: successfulAction && releaseWorkflow && current.REPO === 'infrastructure/infra-private' && current.TRIGGER_EVENT === 'workflow_dispatch',\n  COMPLETES_RELEASE: successfulAction && releaseTagRun,\n  MESSAGE_MARKDOWN: message,\n  UPDATED_AT: $now.toISO(),\n  RELEASE_UUID: $execution.id + '-' + current.SHA,\n  RELEASE_TAG_SUGGESTION: $now.setZone('Asia/Shanghai').toFormat('yyyyMMdd-HHmm'),\n} };\n"
+        }
+      },
+      {
+        "id": "d658c703-406b-41c8-a309-bcdb91f50cdf",
+        "name": "Upsert Forgejo Event State",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1568,
+          192
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "upsert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "={{ $(\"Ensure Forgejo Event State\").item.json.id }}"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "STATE_KEY",
+                "condition": "eq",
+                "keyValue": "={{ $json.STATE_KEY }}"
+              }
+            ]
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": "={{ { \"STATE_KEY\": $json.STATE_KEY, \"LAST_EVENT_KEY\": $json.EVENT_KEY, \"LAST_DELIVERY_ID\": $json.DELIVERY_ID, \"LAST_STATUS\": $json.STORED_STATUS, \"LAST_RUN_ID\": $json.RUN_ID, \"UPDATED_AT\": $json.UPDATED_AT } }}"
+          },
+          "options": {}
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "d764d8d5-5bc7-4d5f-8207-c1bda5809f9f",
+        "name": "Should Notify",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1792,
+          192
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $(\"Decide Event Transition\").item.json.SHOULD_NOTIFY }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "d6614181-9222-43c9-b520-e2eee127067f",
+        "name": "Needs Release Approval",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2016,
+          192
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $(\"Decide Event Transition\").item.json.NEEDS_APPROVAL }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "94beffaa-48e8-4fff-a876-988743ab950c",
+        "name": "Ensure Release Record",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          2240,
+          0
+        ],
+        "parameters": {
+          "resource": "table",
+          "operation": "create",
+          "tableName": "Release Record",
+          "columns": {
+            "column": [
+              {
+                "name": "RELEASE_RECORD_UUID"
+              },
+              {
+                "name": "RELEASE_RECORD_SHA"
+              },
+              {
+                "name": "RELEASE_RECORD_FINISHED",
+                "type": "boolean"
+              },
+              {
+                "name": "RELEASE_RECORD_IN_PROGRESS",
+                "type": "boolean"
+              }
+            ]
+          },
+          "options": {
+            "createIfNotExists": true
+          }
+        }
+      },
+      {
+        "id": "4396f619-6f13-4bc7-9ab1-9f2635316f6d",
+        "name": "Create Release Approval Record",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          2464,
+          0
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "upsert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "={{ $(\"Ensure Release Record\").item.json.id }}"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "RELEASE_RECORD_UUID",
+                "condition": "eq",
+                "keyValue": "={{ $(\"Decide Event Transition\").item.json.RELEASE_UUID }}"
+              }
+            ]
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": "={{ { \"RELEASE_RECORD_UUID\": $(\"Decide Event Transition\").item.json.RELEASE_UUID, \"RELEASE_RECORD_SHA\": $(\"Decide Event Transition\").item.json.SHA, \"RELEASE_RECORD_FINISHED\": false, \"RELEASE_RECORD_IN_PROGRESS\": false } }}"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "fba8aa37-6a3a-4e37-968c-68ba0e274ade",
+        "name": "Add Release Approval Link",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2688,
+          0
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const event = $('Decide Event Transition').first().json;\nconst url = 'https://automaton.beaco.works/form/1490962f-d8d5-449a-a6d8-3f16ce29ffe2?uuid=' + encodeURIComponent(event.RELEASE_UUID) + '&tag=' + encodeURIComponent(event.RELEASE_TAG_SUGGESTION);\nreturn { json: { ...event, MESSAGE_MARKDOWN: event.MESSAGE_MARKDOWN + '\\n\\ninfra-private 手动构建成功，可以发版：[进入审批](' + url + ')' } };"
+        }
+      },
+      {
+        "id": "1d932151-e33f-4755-9474-db4b540eae34",
+        "name": "Render Matrix Message",
+        "type": "n8n-nodes-base.markdown",
+        "typeVersion": 1,
+        "position": [
+          2912,
+          192
+        ],
+        "parameters": {
+          "mode": "markdownToHtml",
+          "markdown": "={{ $json.MESSAGE_MARKDOWN }}",
+          "destinationKey": "MESSAGE_HTML",
+          "options": {
+            "tables": true,
+            "openLinksInNewWindow": true
+          }
+        }
+      },
+      {
+        "id": "1d4b5792-ea37-48aa-a060-7a6304b3a180",
+        "name": "Notify Matrix",
+        "type": "n8n-nodes-base.matrix",
+        "typeVersion": 1,
+        "position": [
+          3136,
+          192
+        ],
+        "parameters": {
+          "resource": "message",
+          "operation": "create",
+          "roomId": "!GfJXfhwgQXrmCRRjlf:beaco.works",
+          "text": "={{ $json.MESSAGE_HTML }}",
+          "messageType": "m.notice",
+          "messageFormat": "org.matrix.custom.html",
+          "fallbackText": "={{ $json.MESSAGE_MARKDOWN }}"
+        },
+        "credentials": {
+          "matrixApi": {
+            "id": "AZWDGpuXbudg1KfU",
+            "name": "Forgejo CI Matrix Account"
+          }
+        }
+      },
+      {
+        "id": "a111aa16-f1cb-4b95-a50b-8873d3829085",
+        "name": "Completes Release",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2240,
+          288
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $(\"Decide Event Transition\").item.json.COMPLETES_RELEASE }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "7a537ff0-a634-4ecc-9d6f-2e392c45041f",
+        "name": "Mark Release Complete",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          2464,
+          192
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "update",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "n2S2VUCdm4JwnOaS",
+            "cachedResultName": "Release Record"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "RELEASE_RECORD_SHA",
+                "condition": "eq",
+                "keyValue": "={{ $(\"Decide Event Transition\").item.json.SHA }}"
+              }
+            ]
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": "={{ { \"RELEASE_RECORD_FINISHED\": true, \"RELEASE_RECORD_IN_PROGRESS\": false } }}"
+          },
+          "options": {}
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "abc8c939-1456-4ed1-a922-f5aa94a2daf0",
+        "name": "Add Release Complete Note",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2688,
+          192
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const event = $('Decide Event Transition').first().json;\nreturn { json: { ...event, MESSAGE_MARKDOWN: event.MESSAGE_MARKDOWN + '\\n\\ninfra-private Tag 构建成功，infra-private/prod 已推进；NixOS fleet 将开始更新，请观测在线设备。' } };"
+        }
+      },
+      {
+        "id": "be3a2d0f-0ddc-4393-96aa-903c90232a12",
+        "name": "Use Event Message",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2688,
+          384
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "return { json: $('Decide Event Transition').first().json };"
+        }
+      },
+      {
+        "id": "a73d7d4f-1258-4ddb-83a0-1358bcfb59f6",
+        "name": "Release Approval Form",
+        "type": "n8n-nodes-base.formTrigger",
+        "typeVersion": 2.5,
+        "position": [
+          0,
+          800
+        ],
+        "parameters": {
+          "formTitle": "Infra Private Release",
+          "formDescription": "完整 fleet 构建已通过；可以准备进行 infra-private 发版。",
+          "formFields": {
+            "values": [
+              {
+                "fieldLabel": "CI 构建成功记录",
+                "fieldName": "uuid",
+                "requiredField": true
+              },
+              {
+                "fieldLabel": "Release 版本标签",
+                "fieldName": "tag",
+                "requiredField": true
+              }
+            ]
+          },
+          "responseMode": "lastNode",
+          "options": {
+            "appendAttribution": true,
+            "path": "1490962f-d8d5-449a-a6d8-3f16ce29ffe2"
+          }
+        },
+        "webhookId": "1490962f-d8d5-449a-a6d8-3f16ce29ffe2"
+      },
+      {
+        "id": "23c80dea-69d6-4249-8046-2f6cd91aaafb",
+        "name": "Get Release Approval Record",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          224,
+          800
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "n2S2VUCdm4JwnOaS",
+            "cachedResultName": "Release Record"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "RELEASE_RECORD_UUID",
+                "condition": "eq",
+                "keyValue": "={{ $json.uuid }}"
+              }
+            ]
+          },
+          "returnAll": false,
+          "limit": 1
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "1cf49752-2a32-493b-883f-b505538f9cb5",
+        "name": "Check Release Approval",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          448,
+          800
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const record = $json ?? {};\nreturn { json: { ...record, APPROVAL_ALLOWED: Boolean(record.RELEASE_RECORD_UUID) && record.RELEASE_RECORD_IN_PROGRESS !== true && record.RELEASE_RECORD_FINISHED !== true } };"
+        }
+      },
+      {
+        "id": "e84222b9-f09a-4a45-a00a-d7cfb2028bf3",
+        "name": "Approval Is Clean",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          672,
+          800
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.APPROVAL_ALLOWED }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "c6194e3b-d750-4647-a8c4-cf5663596918",
+        "name": "Mark Approval In Progress",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          896,
+          704
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "update",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "n2S2VUCdm4JwnOaS",
+            "cachedResultName": "Release Record"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "RELEASE_RECORD_UUID",
+                "condition": "eq",
+                "keyValue": "={{ $json.RELEASE_RECORD_UUID }}"
+              }
+            ]
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": "={{ { \"RELEASE_RECORD_IN_PROGRESS\": true } }}"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "43871939-6944-4336-945e-79cee3288d04",
+        "name": "Create Infra Release Tag",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1120,
+          704
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://forgejo.beaco.works/api/v1/repos/infrastructure/infra-private/tags",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "keypair",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "tag_name",
+                "value": "={{ $(\"Release Approval Form\").item.json.tag }}"
+              },
+              {
+                "name": "target",
+                "value": "={{ $(\"Check Release Approval\").item.json.RELEASE_RECORD_SHA.trim() }}"
+              },
+              {
+                "name": "message",
+                "value": "n8n: 完整 fleet 构建通过，触发 infra-private 发版构建"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          }
+        },
+        "onError": "continueRegularOutput",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "UWyo4vPWCPGUBG1N",
+            "name": "Forgejo Automaton Token"
+          }
+        }
+      },
+      {
+        "id": "7f66b84b-0afd-4c38-80a8-89d96ed0062d",
+        "name": "Tag Created",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1344,
+          704
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.statusCode }}",
+                "rightValue": 201,
+                "operator": {
+                  "type": "number",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "e570f1a0-c9eb-4fe3-9374-d53ab1bdc04a",
+        "name": "Release Triggered",
+        "type": "n8n-nodes-base.form",
+        "typeVersion": 2.5,
+        "position": [
+          1568,
+          608
+        ],
+        "parameters": {
+          "operation": "completion",
+          "completionTitle": "✅ 发版流程触发",
+          "completionMessage": "=请求成功：已触发 {{ $(\"Release Approval Form\").item.json.tag }} 版本自动化构建。",
+          "options": {}
+        },
+        "webhookId": "9ef44679-940b-4bea-ab46-dda48d9c9fe5"
+      },
+      {
+        "id": "f35eae58-6eeb-4718-8ca2-14706ad239b0",
+        "name": "Reset Failed Approval",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1568,
+          800
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "update",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "n2S2VUCdm4JwnOaS",
+            "cachedResultName": "Release Record"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "RELEASE_RECORD_UUID",
+                "condition": "eq",
+                "keyValue": "={{ $(\"Check Release Approval\").item.json.RELEASE_RECORD_UUID }}"
+              }
+            ]
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": "={{ { \"RELEASE_RECORD_IN_PROGRESS\": false } }}"
+          },
+          "options": {}
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "29608fc6-2190-4c28-a19d-7085a228b199",
+        "name": "Release Failed",
+        "type": "n8n-nodes-base.form",
+        "typeVersion": 2.5,
+        "position": [
+          1792,
+          800
+        ],
+        "parameters": {
+          "operation": "completion",
+          "completionTitle": "🚧 发版触发失败",
+          "completionMessage": "=Forgejo 返回状态码：{{ $(\"Create Infra Release Tag\").item.json.statusCode ?? \"unknown\" }}\n提示：{{ $(\"Create Infra Release Tag\").item.json.statusMessage ?? $(\"Create Infra Release Tag\").item.json.message ?? \"unknown\" }}",
+          "options": {}
+        },
+        "webhookId": "dedc383a-d873-4f91-9a4b-a04ad475bb74"
+      },
+      {
+        "id": "6a84f1e4-51ea-4fdb-bb29-88acc952ca2d",
+        "name": "Release Already Handled",
+        "type": "n8n-nodes-base.form",
+        "typeVersion": 2.5,
+        "position": [
+          896,
+          896
+        ],
+        "parameters": {
+          "operation": "completion",
+          "completionTitle": "❌ 版本提交不可用",
+          "completionMessage": "审批记录不存在、正在处理中，或已经完成。",
+          "options": {}
+        },
+        "webhookId": "e7e8c455-cb39-4301-9fbe-b9d766b60f47"
+      },
+      {
+        "id": "17b53840-3efb-4ec1-a423-280068cb0948",
+        "name": "Is Renovate PR",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2016,
+          32
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $(\"Decide Event Transition\").item.json.IS_RENOVATE_PR }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "c895f492-477d-4f47-9ff1-43191f0e2a54",
+        "name": "Trigger Multica Renovate Autopilot",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2240,
+          32
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.MULTICA_RENOVATE_WEBHOOK_URL }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Idempotency-Key",
+                "value": "={{ 'forgejo:' + $(\"Decide Event Transition\").item.json.REPO + ':pull_request:' + $(\"Decide Event Transition\").item.json.PR_NUMBER + ':' + $(\"Decide Event Transition\").item.json.PR_HEAD_SHA }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "raw",
+          "rawContentType": "application/json",
+          "body": "={{ JSON.stringify({ event: 'renovate.pull_request', action: $(\"Decide Event Transition\").item.json.ACTION_RAW, eventPayload: { action: $(\"Decide Event Transition\").item.json.ACTION_RAW, repository: { full_name: $(\"Decide Event Transition\").item.json.REPO, html_url: $(\"Decide Event Transition\").item.json.REPO_URL }, pull_request: { number: $(\"Decide Event Transition\").item.json.PR_NUMBER, title: $(\"Decide Event Transition\").item.json.PR_TITLE, body: $(\"Decide Event Transition\").item.json.PR_BODY, html_url: $(\"Decide Event Transition\").item.json.PR_URL, base: { ref: $(\"Decide Event Transition\").item.json.PR_BASE_REF }, head: { ref: $(\"Decide Event Transition\").item.json.PR_HEAD_REF, sha: $(\"Decide Event Transition\").item.json.PR_HEAD_SHA } }, sender: { login: $(\"Decide Event Transition\").item.json.ACTOR } } }) }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          }
+        },
+        "onError": "continueRegularOutput"
+      }
+    ],
+    "connections": {
+      "Forgejo Webhook": {
+        "main": [
+          [
+            {
+              "node": "Acknowledge Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Acknowledge Webhook": {
+        "main": [
+          [
+            {
+              "node": "Normalize Forgejo Event",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Forgejo Event": {
+        "main": [
+          [
+            {
+              "node": "Supported Event",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Supported Event": {
+        "main": [
+          [
+            {
+              "node": "Ensure Forgejo Event State",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Ensure Forgejo Event State": {
+        "main": [
+          [
+            {
+              "node": "Get Previous Event State",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Previous Event State": {
+        "main": [
+          [
+            {
+              "node": "Decide Event Transition",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Decide Event Transition": {
+        "main": [
+          [
+            {
+              "node": "Upsert Forgejo Event State",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Upsert Forgejo Event State": {
+        "main": [
+          [
+            {
+              "node": "Should Notify",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Should Notify": {
+        "main": [
+          [
+            {
+              "node": "Needs Release Approval",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Is Renovate PR",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Needs Release Approval": {
+        "main": [
+          [
+            {
+              "node": "Ensure Release Record",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Completes Release",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Ensure Release Record": {
+        "main": [
+          [
+            {
+              "node": "Create Release Approval Record",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Create Release Approval Record": {
+        "main": [
+          [
+            {
+              "node": "Add Release Approval Link",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Add Release Approval Link": {
+        "main": [
+          [
+            {
+              "node": "Render Matrix Message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Render Matrix Message": {
+        "main": [
+          [
+            {
+              "node": "Notify Matrix",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Completes Release": {
+        "main": [
+          [
+            {
+              "node": "Mark Release Complete",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Use Event Message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Mark Release Complete": {
+        "main": [
+          [
+            {
+              "node": "Add Release Complete Note",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Add Release Complete Note": {
+        "main": [
+          [
+            {
+              "node": "Render Matrix Message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Use Event Message": {
+        "main": [
+          [
+            {
+              "node": "Render Matrix Message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Release Approval Form": {
+        "main": [
+          [
+            {
+              "node": "Get Release Approval Record",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Release Approval Record": {
+        "main": [
+          [
+            {
+              "node": "Check Release Approval",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Check Release Approval": {
+        "main": [
+          [
+            {
+              "node": "Approval Is Clean",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Approval Is Clean": {
+        "main": [
+          [
+            {
+              "node": "Mark Approval In Progress",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Release Already Handled",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Mark Approval In Progress": {
+        "main": [
+          [
+            {
+              "node": "Create Infra Release Tag",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Create Infra Release Tag": {
+        "main": [
+          [
+            {
+              "node": "Tag Created",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tag Created": {
+        "main": [
+          [
+            {
+              "node": "Release Triggered",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Reset Failed Approval",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Reset Failed Approval": {
+        "main": [
+          [
+            {
+              "node": "Release Failed",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Renovate PR": {
+        "main": [
+          [
+            {
+              "node": "Trigger Multica Renovate Autopilot",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate",
+      "availableInMCP": true,
+      "timeSavedMode": "fixed",
+      "saveExecutionProgress": true,
+      "callerPolicy": "workflowsFromSameOwner"
+    },
+    "staticData": null,
+    "meta": {
+      "aiBuilderAssisted": true,
+      "builderVariant": "mcp"
+    },
+    "tags": []
+  }
+]

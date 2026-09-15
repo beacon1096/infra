@@ -8,3 +8,9 @@ resources:
   - ./ocirepository.yaml
   - ./helmrelease.yaml
   - ./secret.sops.yaml
+configMapGenerator:
+  - name: n8n-workflows
+    files:
+      - infra-ci.json=infra-ci.workflow.json
+generatorOptions:
+  disableNameSuffixHash: true
