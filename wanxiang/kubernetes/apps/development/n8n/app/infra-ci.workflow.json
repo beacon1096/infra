@@ -855,6 +855,54 @@
         }
       },
       {
+        "id": "5e20f837-e80b-4e30-99cd-b41795904598",
+        "name": "Set Renovate Review Pending",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2240,
+          32
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Decide Event Transition\").item.json.REPO + '/statuses/' + $(\"Decide Event Transition\").item.json.PR_HEAD_SHA }}",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "keypair",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "state",
+                "value": "pending"
+              },
+              {
+                "name": "context",
+                "value": "policy/merge-gate"
+              },
+              {
+                "name": "description",
+                "value": "Waiting for Multica dependency update review"
+              },
+              {
+                "name": "target_url",
+                "value": "={{ $(\"Decide Event Transition\").item.json.PR_URL }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "UWyo4vPWCPGUBG1N",
+            "name": "Forgejo Automaton Token"
+          }
+        }
+      },
+      {
         "id": "c895f492-477d-4f47-9ff1-43191f0e2a54",
         "name": "Trigger Multica Renovate Autopilot",
         "type": "n8n-nodes-base.httpRequest",
@@ -882,7 +930,7 @@
           "sendBody": true,
           "contentType": "raw",
           "rawContentType": "application/json",
-          "body": "={{ JSON.stringify({ event: 'renovate.pull_request', action: $(\"Decide Event Transition\").item.json.ACTION_RAW, eventPayload: { action: $(\"Decide Event Transition\").item.json.ACTION_RAW, repository: { full_name: $(\"Decide Event Transition\").item.json.REPO, html_url: $(\"Decide Event Transition\").item.json.REPO_URL }, pull_request: { number: $(\"Decide Event Transition\").item.json.PR_NUMBER, title: $(\"Decide Event Transition\").item.json.PR_TITLE, body: $(\"Decide Event Transition\").item.json.PR_BODY, html_url: $(\"Decide Event Transition\").item.json.PR_URL, base: { ref: $(\"Decide Event Transition\").item.json.PR_BASE_REF }, head: { ref: $(\"Decide Event Transition\").item.json.PR_HEAD_REF, sha: $(\"Decide Event Transition\").item.json.PR_HEAD_SHA } }, sender: { login: $(\"Decide Event Transition\").item.json.ACTOR } } }) }}",
+          "body": "={{ JSON.stringify({ event: 'renovate.pull_request', action: $(\"Decide Event Transition\").item.json.ACTION_RAW, callback: { url: 'https://automaton.beaco.works/webhook/multica-renovate-review', instructions: 'At the end of the task, read credential from the private environment variable REVIEW_CALLBACK_CREDENTIAL and POST JSON {credential,repo,pr_number,head_sha,verdict,summary,evidence_url} to this URL. verdict must be approve or reject. Never include or reveal the credential anywhere else.' }, eventPayload: { action: $(\"Decide Event Transition\").item.json.ACTION_RAW, repository: { full_name: $(\"Decide Event Transition\").item.json.REPO, html_url: $(\"Decide Event Transition\").item.json.REPO_URL }, pull_request: { number: $(\"Decide Event Transition\").item.json.PR_NUMBER, title: $(\"Decide Event Transition\").item.json.PR_TITLE, body: $(\"Decide Event Transition\").item.json.PR_BODY, html_url: $(\"Decide Event Transition\").item.json.PR_URL, base: { ref: $(\"Decide Event Transition\").item.json.PR_BASE_REF }, head: { ref: $(\"Decide Event Transition\").item.json.PR_HEAD_REF, sha: $(\"Decide Event Transition\").item.json.PR_HEAD_SHA } }, sender: { login: $(\"Decide Event Transition\").item.json.ACTOR } } }) }}",
           "options": {
             "response": {
               "response": {
@@ -895,6 +943,246 @@
           }
         },
         "onError": "continueRegularOutput"
+      },
+      {
+        "id": "a55265fb-26b3-450c-a26a-df467d488e22",
+        "name": "Multica Renovate Review Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          0,
+          1184
+        ],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "multica-renovate-review",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "webhookId": "a55265fb-26b3-450c-a26a-df467d488e22"
+      },
+      {
+        "id": "f1d7c822-4e45-47c8-9c7c-e57a76e9401c",
+        "name": "Validate Multica Review",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          224,
+          1184
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const body = $json.body ?? {};\nconst credential = String(body.credential ?? '');\nconst repo = String(body.repo ?? '');\nconst prNumber = Number(body.pr_number);\nconst headSha = String(body.head_sha ?? '').toLowerCase();\nconst verdict = String(body.verdict ?? '').toLowerCase();\nconst summary = String(body.summary ?? '').trim();\nconst evidenceUrl = String(body.evidence_url ?? '').trim();\nconst credentialValid = credential.length > 0 && credential === String($env.REVIEW_CALLBACK_CREDENTIAL ?? '');\nconst fieldsValid = ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo)\n  && Number.isInteger(prNumber) && prNumber > 0\n  && /^[0-9a-f]{40}$/.test(headSha)\n  && ['approve', 'reject'].includes(verdict)\n  && summary.length > 0 && summary.length <= 10000\n  && (evidenceUrl === '' || /^https:\\/\\/[^\\s]+$/.test(evidenceUrl));\nreturn { json: { REVIEW_VALID: credentialValid && fieldsValid, REPO: repo, PR_NUMBER: prNumber, HEAD_SHA: headSha, VERDICT: verdict, SUMMARY: summary, EVIDENCE_URL: evidenceUrl } };"
+        }
+      },
+      {
+        "id": "2519b084-260a-43df-af46-d28e26669cc3",
+        "name": "Multica Review Is Valid",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          448,
+          1184
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.REVIEW_VALID }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "88cc459d-c28a-4744-9e9c-771768e2483d",
+        "name": "Reject Invalid Multica Review",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          672,
+          1312
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { error: 'forbidden' } }}",
+          "options": {
+            "responseCode": 403
+          }
+        }
+      },
+      {
+        "id": "ccbe5f1c-0bc6-4169-a4e4-c4431d5dde6b",
+        "name": "Get Current Renovate PR",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          672,
+          1088
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $json.REPO + '/pulls/' + $json.PR_NUMBER }}",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "UWyo4vPWCPGUBG1N",
+            "name": "Forgejo Automaton Token"
+          }
+        }
+      },
+      {
+        "id": "6790b7a5-19ef-493f-a1db-6819eaaf4053",
+        "name": "Verify Current Renovate PR",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          896,
+          1088
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const review = $('Validate Multica Review').first().json;\nconst response = $json ?? {};\nconst pr = response.body ?? {};\nconst matches = response.statusCode === 200\n  && pr.state === 'open'\n  && pr.base?.ref === 'main'\n  && String(pr.head?.sha ?? '').toLowerCase() === review.HEAD_SHA\n  && String(pr.user?.login ?? pr.user?.username ?? '') === 'renovate';\nreturn { json: { ...review, PR_MATCHES: matches } };"
+        }
+      },
+      {
+        "id": "ddff82a7-a5ad-4a74-9a4f-3bb323f6db18",
+        "name": "Current Renovate PR Matches",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1120,
+          1088
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.PR_MATCHES }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "da8d5d8f-9461-480e-b311-e0dac2b772ad",
+        "name": "Reject Stale Multica Review",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          1344,
+          1216
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { error: 'PR or head SHA no longer matches' } }}",
+          "options": {
+            "responseCode": 409
+          }
+        }
+      },
+      {
+        "id": "ec3d73f4-6fd8-492e-9efb-559a345d5f86",
+        "name": "Set Multica Review Status",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1344,
+          1024
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $json.REPO + '/statuses/' + $json.HEAD_SHA }}",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "keypair",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "state",
+                "value": "={{ $json.VERDICT === 'approve' ? 'success' : 'failure' }}"
+              },
+              {
+                "name": "context",
+                "value": "policy/merge-gate"
+              },
+              {
+                "name": "description",
+                "value": "={{ $json.SUMMARY.slice(0, 140) }}"
+              },
+              {
+                "name": "target_url",
+                "value": "={{ $json.EVIDENCE_URL }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "UWyo4vPWCPGUBG1N",
+            "name": "Forgejo Automaton Token"
+          }
+        }
+      },
+      {
+        "id": "8991e131-b41b-4103-83b9-64ec2b99cfaa",
+        "name": "Accept Multica Review",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          1568,
+          1024
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { result: 'accepted', state: $(\"Verify Current Renovate PR\").item.json.VERDICT === 'approve' ? 'success' : 'failure' } }}",
+          "options": {
+            "responseCode": 200
+          }
+        }
       }
     ],
     "connections": {
@@ -1221,12 +1509,114 @@
         "main": [
           [
             {
-              "node": "Trigger Multica Renovate Autopilot",
+              "node": "Set Renovate Review Pending",
               "type": "main",
               "index": 0
             }
           ],
           []
+        ]
+      },
+      "Set Renovate Review Pending": {
+        "main": [
+          [
+            {
+              "node": "Trigger Multica Renovate Autopilot",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Multica Renovate Review Webhook": {
+        "main": [
+          [
+            {
+              "node": "Validate Multica Review",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Validate Multica Review": {
+        "main": [
+          [
+            {
+              "node": "Multica Review Is Valid",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Multica Review Is Valid": {
+        "main": [
+          [
+            {
+              "node": "Get Current Renovate PR",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Reject Invalid Multica Review",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Current Renovate PR": {
+        "main": [
+          [
+            {
+              "node": "Verify Current Renovate PR",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verify Current Renovate PR": {
+        "main": [
+          [
+            {
+              "node": "Current Renovate PR Matches",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Current Renovate PR Matches": {
+        "main": [
+          [
+            {
+              "node": "Set Multica Review Status",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Reject Stale Multica Review",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Set Multica Review Status": {
+        "main": [
+          [
+            {
+              "node": "Accept Multica Review",
+              "type": "main",
+              "index": 0
+            }
+          ]
         ]
       }
     },

@@ -67,6 +67,11 @@ spec:
                   secretKeyRef:
                     name: n8n-secret
                     key: multica-renovate-webhook-url
+              REVIEW_CALLBACK_CREDENTIAL:
+                valueFrom:
+                  secretKeyRef:
+                    name: n8n-secret
+                    key: review-callback-credential
               NODE_ENV: production
               TZ: Asia/Shanghai
               WEBHOOK_URL: https://automaton.${SECRET_DOMAIN}/
