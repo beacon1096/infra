@@ -57,6 +57,7 @@ spec:
                     name: n8n-secret
                     key: n8n-encryption-key
               N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+              N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
               N8N_HOST: automaton.${SECRET_DOMAIN}
               N8N_PORT: "5678"
               N8N_PROTOCOL: https
