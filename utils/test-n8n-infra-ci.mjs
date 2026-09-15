@@ -254,6 +254,16 @@ for (const name of [
   assert.equal(branches[1][0], "Build Policy Notice");
 }
 
+for (const name of [
+  "Get Current Renovate PR",
+  "Get Current Human PR",
+  "Get Human PR Reviews",
+  "Get Renovate Merge Status",
+  "Get Human Merge Status",
+]) {
+  assert.equal(nodes.get(name).alwaysOutputData, true);
+}
+
 assert.deepEqual(
   workflow.connections["Build Policy Notice"].main[0].map(({ node }) => node).sort(),
   ["Notify Matrix Policy Event", "Respond Policy Event"].sort(),
