@@ -1,0 +1,16 @@
+name: Nix Validation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  nix-evaluation:
+    runs-on: nix-builder
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Evaluate flake outputs
+        run: nix flake show --all-systems --no-write-lock-file
+      - name: Test n8n CI policy
+        run: nix shell nixpkgs#nodejs_24 --command node utils/test-n8n-infra-ci.mjs

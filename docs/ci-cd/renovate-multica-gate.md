@@ -21,7 +21,7 @@ policy/merge-gate = pending
         │ SHA-bound review task
         ▼
 Multica / human analysis and required changes
-        │ signed decision for the exact SHA
+        │ signed approve / reject / human_required
         ▼
 n8n re-reads the current Forgejo PR
         ├─ mismatch/reject → policy/merge-gate = failure
@@ -84,6 +84,28 @@ PR or another commit. Repeated delivery for the same SHA is idempotent; a merge
 of a closed PR or a request for a changed head is rejected by the fresh PR
 lookup and `head_commit_id` constraint.
 
+### Separate judgment from enforcement
+
+Multica classifies the operational risk and gathers evidence. The callback has
+three outcomes:
+
+- `approve` means the reviewed SHA contains the necessary upgrade work and has
+  sufficient validation evidence;
+- `reject` means a known incompatibility or required step is unresolved;
+- `human_required` means the decision needs environmental, business, or human
+  judgment and leaves the gate pending.
+
+Major-version changes are not rejected mechanically, but schema or data
+migrations, storage formats, authentication or authorization, network ingress
+or routing, control-plane software such as Talos, Kubernetes, and Forgejo,
+destructive operations, and insufficient evidence default to
+`human_required`. Uncertainty must never be converted into approval merely to
+finish a task.
+
+The agent makes the contextual judgment; n8n and Forgejo enforce deterministic
+facts such as identity, repository scope, current SHA, required checks, branch
+freshness, and merge permission.
+
 ### Treat repository content as untrusted
 
 PR titles, descriptions, diffs, release notes, and linked pages can contain
@@ -128,3 +150,20 @@ review writes or retains a failing gate. Forgejo API errors return an explicit
 failure to the callback and remain visible in n8n execution history. Updating a
 PR produces a new SHA and a new pending gate; approval of the previous SHA has
 no effect on it.
+
+## Pull request validation
+
+The credential-free `Nix Validation` Forgejo workflow evaluates all flake
+outputs and runs the n8n policy regression test for every pull request. It does
+not receive Attic, registry, SOPS, gate, or merger credentials. Full fleet
+builds remain in the post-merge and release workflows; Multica may require an
+additional targeted build as evidence when a dependency update affects a
+specific host or deployment artifact.
+
+## Non-Renovate pull requests
+
+The protected `policy/merge-gate` context applies to every pull request, while
+the automated merge path intentionally accepts only Renovate-authored PRs.
+Ordinary PRs therefore remain fail-closed until a separate SHA-bound human
+approval path is implemented in n8n. Do not weaken the merge whitelist or mark
+ordinary PRs successful merely to bypass this boundary.
