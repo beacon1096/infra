@@ -331,6 +331,8 @@
 
       gh-proxy = pkgs.callPackage ./packages/gh-proxy { };
 
+      multica-backend-oci = pkgs.callPackage ./packages/multica-backend { };
+
       paseo-desktop = paseoDesktop;
 
       # Coder workspace base image for interactive coding and autonomous agents.

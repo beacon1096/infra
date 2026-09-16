@@ -212,10 +212,24 @@ also checked against the existing test that verifies recent-title suppression
 for ordinary dispatch. Both tests passed after applying all upstream database
 migrations in a disposable PostgreSQL instance.
 
-This is a recorded downstream patch, not evidence that the running Multica
-instance is already fixed. Preparing an upstream contribution and deciding
-whether to carry a temporary patched image are tracked in the repository
-[`TODO.md`](../../TODO.md).
+The fix was also smoke-tested against the production database on 2026-09-16.
+Two deliveries with the same rendered Issue title and distinct idempotency keys
+created separate runs and Issues; retrying the first key returned `duplicate`
+and reused its delivery. The official `v0.4.24` image was restored immediately
+after the test.
+
+The temporary downstream image is built reproducibly by the
+`multica-backend-oci` flake output. It fetches the pinned upstream `v0.4.24`
+source, applies the patch above, builds the static Go binaries, and produces an
+OCI archive tagged `0.4.24-beacon.1`. The Forgejo build workflow publishes that
+immutable version tag to
+`forgejo.beaco.works/infrastructure/nix-fleet/multica-backend`. Deployment is a
+separate change to the Multica HelmRelease, made only after the registry tag is
+available anonymously. This ordering prevents Flux from reconciling a manifest
+whose image has not been published yet.
+
+Upstream contribution and eventual removal of the downstream image remain
+tracked in [`TODO.md`](../../TODO.md).
 
 ## Pull request validation
 
