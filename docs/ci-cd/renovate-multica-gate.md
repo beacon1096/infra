@@ -44,7 +44,7 @@ and outdated branches.
 | --- | --- |
 | `renovate` | Create and update dependency PRs; cannot merge `main` |
 | Multica agent | Analyze one supplied PR revision and return a scoped decision; receives no Forgejo PAT |
-| Authorized human reviewer | Approve an ordinary PR in Forgejo; initial allowlist is `beacon1096` |
+| Authorized operator | Approve another author's PR with a Forgejo review, or confirm an own-author PR with a SHA-bound command; initial allowlist is `beacon1096` |
 | `multica-gate` | Read the two infrastructure repositories and write `policy/merge-gate`; cannot merge |
 | n8n | Validate review capabilities, write the policy result, and request a protected merge |
 | `multica-merger` | Merge only through its isolated n8n credential and Forgejo's merge whitelist |
@@ -244,24 +244,40 @@ specific host or deployment artifact.
 
 The protected `policy/merge-gate` context applies to every pull request.
 Opening, reopening, or updating an ordinary PR sets the gate on its current SHA
-to pending. To approve it, an authorized human uses Forgejo's normal PR review
-UI and submits an `Approve` review.
+to pending. When the operator is not the PR author, approval uses Forgejo's
+normal review UI. Forgejo intentionally prevents authors from approving their
+own PRs, so an allowlisted author instead comments exactly
+`/approve <full-40-character-head-SHA>` on the PR.
 
-The review webhook is only a wake-up signal. n8n does not trust its claimed
-reviewer or verdict. It re-reads the open PR and its reviews through the fixed
-Forgejo API origin, then requires all of the following:
+The review or comment webhook is only a wake-up signal. n8n does not trust its
+claimed reviewer, command, or verdict. It re-reads the open PR and either its
+reviews or the specific comment through the fixed Forgejo API origin, then
+requires all of the following:
 
 - repository is one of the two infrastructure repositories and base is `main`;
 - PR author is not `renovate`;
-- webhook PR head, current PR head, and approved review `commit_id` are equal;
-- review is neither stale nor dismissed;
-- reviewer is in the explicit human allowlist, initially `beacon1096`.
+- webhook PR head and current PR head are equal;
+- for a review, its `commit_id` is the current head and it is neither stale nor
+  dismissed;
+- for an author confirmation, the re-read comment ID matches the webhook, the
+  body contains only `/approve` plus the complete current head SHA, and no
+  abbreviated SHA is accepted;
+- reviewer or confirming author is in the explicit operator allowlist,
+  initially `beacon1096`.
 
 Only then does `multica-gate` mark that SHA successful and the isolated
 `multica-merger` credential request a protected merge with the same
 `head_commit_id`. A replay for an older review cannot approve a changed head.
 Multica decisions continue to use their separate signed-capability path; an
-agent cannot impersonate a Forgejo human review.
+agent cannot manufacture either event from PR-controlled content.
+
+An author confirmation is a second action bound to the post-validation
+revision, not independent four-eyes review. This is an explicit single-operator
+exception: an agent currently authorized to operate as `beacon1096` is the same
+Forgejo principal and cannot be distinguished from the human by this gate.
+Agent-specific Forgejo identities remain the long-term way to recover that
+separation; until then, the audit record proves which exact revision the shared
+principal confirmed, not whether a human or delegated agent clicked it.
 
 ## Merge readiness and observability
 
