@@ -161,6 +161,9 @@ spec:
               - path: /workflows/infra-ci.json
                 subPath: infra-ci.json
                 readOnly: true
+              - path: /workflows/renovate-merge-queue.json
+                subPath: renovate-merge-queue.json
+                readOnly: true
       data:
         # Pre-created PVC (data-pvc.yaml) so the swarm-01 state
         # tarball can be loaded before n8n starts.
