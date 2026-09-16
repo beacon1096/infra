@@ -1,0 +1,1188 @@
+[
+  {
+    "id": "renovateMergeQueue01",
+    "name": "Renovate Merge Queue",
+    "description": "Serially update and merge Multica-approved Renovate pull requests when their exact tree delta remains unchanged.",
+    "active": true,
+    "nodes": [
+      {
+        "id": "7ea02806-acde-47ff-9307-72c45e578f40",
+        "name": "Merge Queue Schedule",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          0,
+          0
+        ],
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "minutes",
+                "minutesInterval": 1
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "ea52b290-a3e6-45e7-807b-294f70f159f7",
+        "name": "Claim Renovate Queue Item",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          224,
+          0
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "CREATE TABLE IF NOT EXISTS renovate_merge_queue (\n  repo text NOT NULL,\n  pr_number bigint NOT NULL,\n  approved_head_sha char(40) NOT NULL,\n  approved_base_sha char(40) NOT NULL,\n  delta_digest char(64) NOT NULL,\n  delta_count integer NOT NULL,\n  approval_jti uuid NOT NULL UNIQUE,\n  multica_summary text NOT NULL,\n  evidence_url text NOT NULL DEFAULT '',\n  state text NOT NULL CHECK (state IN ('queued', 'updating', 'waiting_ci', 'merging', 'merged', 'blocked', 'expired')),\n  attempt_count integer NOT NULL DEFAULT 0,\n  lease_until timestamptz,\n  approved_at timestamptz NOT NULL DEFAULT now(),\n  updated_at timestamptz NOT NULL DEFAULT now(),\n  expires_at timestamptz NOT NULL,\n  last_error text NOT NULL DEFAULT '',\n  PRIMARY KEY (repo, pr_number)\n);\nWITH expired AS (\n  UPDATE renovate_merge_queue SET state = 'expired', updated_at = now(), last_error = 'approval expired'\n  WHERE state IN ('queued', 'updating', 'waiting_ci', 'merging') AND expires_at <= now()\n), candidate AS (\n  SELECT repo, pr_number FROM renovate_merge_queue\n  WHERE state IN ('queued', 'updating', 'waiting_ci', 'merging')\n    AND expires_at > now() AND (lease_until IS NULL OR lease_until < now())\n  ORDER BY approved_at, repo, pr_number\n  FOR UPDATE SKIP LOCKED LIMIT 1\n)\nUPDATE renovate_merge_queue q SET lease_until = now() + interval '45 seconds', attempt_count = attempt_count + 1, updated_at = now()\nFROM candidate c WHERE q.repo = c.repo AND q.pr_number = c.pr_number\nRETURNING q.*;",
+          "options": {}
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "55e7d40e-981c-46cc-abcf-44b68a83a8d2",
+        "name": "Queue Item Claimed",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          448,
+          0
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ Boolean($json.repo) }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "dd8476b1-53f9-4484-b543-d8d5ac900d96",
+        "name": "Get Queued Renovate PR",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          672,
+          0
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $('Claim Renovate Queue Item').item.json.repo + '/pulls/' + $('Claim Renovate Queue Item').item.json.pr_number }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "2baf1670-7064-4b9f-92f5-6494601b9b07",
+        "name": "Decide Queue Action",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          896,
+          0
+        ],
+        "parameters": {
+          "jsCode": "const item = $('Claim Renovate Queue Item').first().json;\nconst response = $json;\nconst pr = response.body ?? {};\nconst currentHead = String(pr.head?.sha ?? '').toLowerCase();\nconst currentBase = String(pr.base?.sha ?? '').toLowerCase();\nconst mergeBase = String(pr.merge_base ?? '').toLowerCase();\nlet action = 'block';\nlet error = '';\nif (response.statusCode !== 200) error = 'failed to read queued PR';\nelse if (pr.merged === true) action = 'merged';\nelse if (pr.state !== 'open') error = 'queued PR is closed without merge';\nelse if (String(pr.user?.login ?? pr.user?.username ?? '') !== 'renovate') error = 'queued PR author is not renovate';\nelse if (pr.base?.ref !== 'main') error = 'queued PR base is not main';\nelse if (!/^[0-9a-f]{40}$/.test(currentHead) || !/^[0-9a-f]{40}$/.test(currentBase) || !/^[0-9a-f]{40}$/.test(mergeBase)) error = 'queued PR returned invalid commit ids';\nelse if (mergeBase !== currentBase) action = 'update';\nelse action = 'snapshot';\nreturn { json: { ...item, ACTION: action, CURRENT_HEAD_SHA: currentHead, CURRENT_BASE_SHA: currentBase, MERGE_BASE_SHA: mergeBase, ERROR_MESSAGE: error } };"
+        }
+      },
+      {
+        "id": "72121bfa-20d7-4190-8604-e520ac4dfca6",
+        "name": "Queued PR Already Merged",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1120,
+          0
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.ACTION }}",
+                "rightValue": "merged",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "ddfc37f5-23c9-4897-a881-b25867192256",
+        "name": "Record Queue Merged",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1344,
+          -160
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE renovate_merge_queue SET state = 'merged', lease_until = NULL, updated_at = now(), last_error = '' WHERE repo = $1 AND pr_number = $2::bigint RETURNING repo, pr_number, state, approval_jti::text;",
+          "options": {
+            "queryReplacement": "={{ [$json.repo, $json.pr_number] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "0e6ca059-3225-4bd8-86d9-d0746ef3c60b",
+        "name": "Queued PR Needs Update",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1344,
+          32
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.ACTION }}",
+                "rightValue": "update",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "7c23a3df-b85b-4b80-9aa6-c04f5bda17f4",
+        "name": "Update Queued Renovate PR",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1568,
+          -32
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $('Decide Queue Action').item.json.repo + '/pulls/' + $('Decide Queue Action').item.json.pr_number + '/update' }}",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaMerger01",
+            "name": "Forgejo Multica Merger Token"
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "4182d7c4-4b84-421f-94a0-1e4ee3ed8963",
+        "name": "Record Queue Update",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1792,
+          -32
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE renovate_merge_queue SET\n  state = CASE WHEN $3::integer BETWEEN 200 AND 299 THEN 'updating' ELSE 'blocked' END,\n  lease_until = NULL, updated_at = now(),\n  last_error = CASE WHEN $3::integer BETWEEN 200 AND 299 THEN '' ELSE left($4, 500) END\nWHERE repo = $1 AND pr_number = $2::bigint RETURNING repo, pr_number, state, last_error;",
+          "options": {
+            "queryReplacement": "={{ [$(\"Decide Queue Action\").item.json.repo, $(\"Decide Queue Action\").item.json.pr_number, $json.statusCode || 0, $json.body?.message || $json.statusMessage || 'PR update failed'] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "827dd4b0-277c-43f8-8eb1-4f9589fd9139",
+        "name": "Queued PR Can Snapshot",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1568,
+          96
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.ACTION }}",
+                "rightValue": "snapshot",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "5aa8dfb1-eef1-49e5-aa50-a778ca7333cc",
+        "name": "Block Invalid Queue Item",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1792,
+          192
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE renovate_merge_queue SET state = 'blocked', lease_until = NULL, updated_at = now(), last_error = left($3, 500) WHERE repo = $1 AND pr_number = $2::bigint RETURNING repo, pr_number, state, last_error;",
+          "options": {
+            "queryReplacement": "={{ [$json.repo, $json.pr_number, $json.ERROR_MESSAGE || 'queue item is not eligible'] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "53fd57e2-b7e2-4d78-8777-d37dbd04c657",
+        "name": "Get Current Queue Base Tree",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1792,
+          64
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $('Decide Queue Action').item.json.repo + '/git/trees/' + $('Decide Queue Action').item.json.CURRENT_BASE_SHA + '?recursive=true&per_page=2000' }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "4086e226-20fe-4024-bbcf-c18216c09bf5",
+        "name": "Get Current Queue Head Tree",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2016,
+          64
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $('Decide Queue Action').item.json.repo + '/git/trees/' + $('Decide Queue Action').item.json.CURRENT_HEAD_SHA + '?recursive=true&per_page=2000' }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "ec95a52d-6305-4584-8355-695f1a73ad73",
+        "name": "Verify Queued Tree Delta",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2240,
+          64
+        ],
+        "parameters": {
+          "jsCode": "const crypto = require('crypto');\nconst item = $('Decide Queue Action').first().json;\nconst baseResponse = $('Get Current Queue Base Tree').first().json;\nconst headResponse = $('Get Current Queue Head Tree').first().json;\nconst base = baseResponse.body ?? {};\nconst head = headResponse.body ?? {};\nconst valid = (response, tree) => response.statusCode === 200 && tree.truncated !== true && Array.isArray(tree.tree) && tree.tree.length <= 5000;\nif (!valid(baseResponse, base) || !valid(headResponse, head)) return { json: { ...item, DELTA_MATCHES: false, ERROR_MESSAGE: 'current Forgejo tree was missing, invalid, or truncated' } };\nconst leaves = (tree) => new Map(tree.tree.filter((entry) => entry?.type !== 'tree' && typeof entry?.path === 'string').map((entry) => [entry.path, { mode: String(entry.mode ?? ''), type: String(entry.type ?? ''), sha: String(entry.sha ?? '') }]));\nconst baseLeaves = leaves(base);\nconst headLeaves = leaves(head);\nconst paths = [...new Set([...baseLeaves.keys(), ...headLeaves.keys()])].sort();\nconst delta = paths.map((path) => ({ path, base: baseLeaves.get(path) ?? null, head: headLeaves.get(path) ?? null })).filter((entry) => JSON.stringify(entry.base) !== JSON.stringify(entry.head));\nconst digest = crypto.createHash('sha256').update(JSON.stringify(delta)).digest('hex');\nreturn { json: { ...item, CURRENT_DELTA_DIGEST: digest, CURRENT_DELTA_COUNT: delta.length, DELTA_MATCHES: digest === item.delta_digest && delta.length === Number(item.delta_count), ERROR_MESSAGE: digest === item.delta_digest ? '' : 'tree delta changed after base update' } };"
+        }
+      },
+      {
+        "id": "327a0f26-a251-41cc-a44a-a6bbb3ea7c4c",
+        "name": "Queued Tree Delta Matches",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2464,
+          64
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.DELTA_MATCHES }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "299911d9-1bb1-4bd4-aed2-5e056c9df108",
+        "name": "Set Queued Review Success",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2688,
+          0
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $json.repo + '/statuses/' + $json.CURRENT_HEAD_SHA }}",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "keypair",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "state",
+                "value": "success"
+              },
+              {
+                "name": "context",
+                "value": "policy/merge-gate"
+              },
+              {
+                "name": "description",
+                "value": "={{ 'Tree delta matches Multica approval for ' + $json.approved_head_sha.slice(0, 12) }}"
+              },
+              {
+                "name": "target_url",
+                "value": "={{ $json.evidence_url }}"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "onError": "continueErrorOutput"
+      },
+      {
+        "id": "a7a11593-5bb0-4648-bd9e-4edda8de54b5",
+        "name": "Get Queued Merge Status",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2912,
+          0
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $('Verify Queued Tree Delta').item.json.repo + '/commits/' + $('Verify Queued Tree Delta').item.json.CURRENT_HEAD_SHA + '/status' }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "bc8e2198-15fe-4ecf-ae93-c333294b43e6",
+        "name": "Queued CI Can Proceed",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          3136,
+          0
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ String($json.body?.state || '') }}",
+                "rightValue": "success",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "c987e037-f81b-46ee-ae61-0fb5fbb809f3",
+        "name": "Merge Queued Renovate PR",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          3360,
+          -64
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $('Verify Queued Tree Delta').item.json.repo + '/pulls/' + $('Verify Queued Tree Delta').item.json.pr_number + '/merge' }}",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "keypair",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "Do",
+                "value": "merge"
+              },
+              {
+                "name": "delete_branch_after_merge",
+                "value": false
+              },
+              {
+                "name": "head_commit_id",
+                "value": "={{ $('Verify Queued Tree Delta').item.json.CURRENT_HEAD_SHA }}"
+              },
+              {
+                "name": "merge_when_checks_succeed",
+                "value": false
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaMerger01",
+            "name": "Forgejo Multica Merger Token"
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "cba69f1f-5bb6-488e-81fd-aa257f6b7cbf",
+        "name": "Record Queued Merge Result",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          3584,
+          -64
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE renovate_merge_queue SET\n  state = CASE WHEN $3::integer = 200 THEN 'merged' WHEN $3::integer IN (201, 405, 409) THEN 'queued' ELSE 'blocked' END,\n  lease_until = NULL, updated_at = now(),\n  last_error = CASE WHEN $3::integer IN (200, 201) THEN '' ELSE left($4, 500) END\nWHERE repo = $1 AND pr_number = $2::bigint RETURNING repo, pr_number, state, last_error, approval_jti::text;",
+          "options": {
+            "queryReplacement": "={{ [$(\"Verify Queued Tree Delta\").item.json.repo, $(\"Verify Queued Tree Delta\").item.json.pr_number, $json.statusCode || 0, $json.body?.message || $json.statusMessage || 'merge failed'] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "be6e7834-6991-48ba-87e1-a2c5dd568afb",
+        "name": "Release Queue Waiting For CI",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          3360,
+          64
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE renovate_merge_queue SET\n  state = CASE WHEN $3 = 'failure' THEN 'blocked' ELSE 'waiting_ci' END,\n  lease_until = NULL, updated_at = now(), last_error = CASE WHEN $3 = 'failure' THEN 'required CI status failed' ELSE '' END\nWHERE repo = $1 AND pr_number = $2::bigint RETURNING repo, pr_number, state, last_error;",
+          "options": {
+            "queryReplacement": "={{ [$(\"Verify Queued Tree Delta\").item.json.repo, $(\"Verify Queued Tree Delta\").item.json.pr_number, String($json.body?.state || 'pending')] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "98b9a79a-509a-4d10-955b-b35abb494c84",
+        "name": "Block Changed Queue Delta",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          2688,
+          128
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE renovate_merge_queue SET state = 'blocked', lease_until = NULL, updated_at = now(), last_error = left($3, 500) WHERE repo = $1 AND pr_number = $2::bigint RETURNING repo, pr_number, state, last_error;",
+          "options": {
+            "queryReplacement": "={{ [$(\"Verify Queued Tree Delta\").item.json.repo, $(\"Verify Queued Tree Delta\").item.json.pr_number, $json.ERROR_MESSAGE || $json.error?.message || $json.message || 'tree-delta verification or gate write failed'] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "02d8226e-74c5-40ea-ad71-775d2244a49f",
+        "name": "Queue Merge Completed",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          3808,
+          -128
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.state }}",
+                "rightValue": "merged",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "0bdcf74d-f0fd-4ce5-9477-d14a24fe4d15",
+        "name": "Get Queued Multica Dispatch",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          4032,
+          -128
+        ],
+        "alwaysOutputData": true,
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT repo, pr_number, head_sha, autopilot_id::text, run_id::text FROM multica_review_dispatches WHERE jti = $1::uuid AND expires_at > now();",
+          "options": {
+            "queryBatching": "single",
+            "queryReplacement": "={{ [$json.approval_jti] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "44f9b3c1-6c8c-4bfd-a1ad-734125486127",
+        "name": "Queued Multica Dispatch Found",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          4256,
+          -128
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.run_id }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "b9659762-37b9-42a5-a0db-041b401353cf",
+        "name": "Get Queued Multica Run",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          4480,
+          -128
+        ],
+        "parameters": {
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "url": "={{ 'https://multica.beaco.works/api/autopilots/' + $(\"Get Queued Multica Dispatch\").first().json.autopilot_id + '/runs/' + $(\"Get Queued Multica Dispatch\").first().json.run_id }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Workspace-Slug",
+                "value": "beacoworks"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaCloser01",
+            "name": "Multica Issue Closer"
+          }
+        }
+      },
+      {
+        "id": "1129039b-51e3-4a92-939b-18ed06dc77bd",
+        "name": "Verify Queued Multica Run",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          4704,
+          -128
+        ],
+        "parameters": {
+          "jsCode": "const run = $json ?? {};\nconst dispatch = $('Get Queued Multica Dispatch').first().json;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (String(run.id) !== String(dispatch.run_id)\n  || String(run.autopilot_id) !== String(dispatch.autopilot_id)\n  || run.status !== 'completed'\n  || !uuid.test(String(run.issue_id ?? ''))) throw new Error('queued Multica run binding mismatch');\nreturn { json: { ISSUE_ID: run.issue_id } };"
+        }
+      },
+      {
+        "id": "7470d85b-7014-41cf-92be-3a3ecb55ed66",
+        "name": "Complete Queued Multica Issue",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          4928,
+          -128
+        ],
+        "parameters": {
+          "method": "PUT",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "url": "={{ 'https://multica.beaco.works/api/issues/' + $json.ISSUE_ID }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Workspace-Slug",
+                "value": "beacoworks"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ { status: 'done' } }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaCloser01",
+            "name": "Multica Issue Closer"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Merge Queue Schedule": {
+        "main": [
+          [
+            {
+              "node": "Claim Renovate Queue Item",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Claim Renovate Queue Item": {
+        "main": [
+          [
+            {
+              "node": "Queue Item Claimed",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Queue Item Claimed": {
+        "main": [
+          [
+            {
+              "node": "Get Queued Renovate PR",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Get Queued Renovate PR": {
+        "main": [
+          [
+            {
+              "node": "Decide Queue Action",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Decide Queue Action": {
+        "main": [
+          [
+            {
+              "node": "Queued PR Already Merged",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Queued PR Already Merged": {
+        "main": [
+          [
+            {
+              "node": "Record Queue Merged",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Queued PR Needs Update",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Queued PR Needs Update": {
+        "main": [
+          [
+            {
+              "node": "Update Queued Renovate PR",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Queued PR Can Snapshot",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update Queued Renovate PR": {
+        "main": [
+          [
+            {
+              "node": "Record Queue Update",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Queued PR Can Snapshot": {
+        "main": [
+          [
+            {
+              "node": "Get Current Queue Base Tree",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Block Invalid Queue Item",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Current Queue Base Tree": {
+        "main": [
+          [
+            {
+              "node": "Get Current Queue Head Tree",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Current Queue Head Tree": {
+        "main": [
+          [
+            {
+              "node": "Verify Queued Tree Delta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verify Queued Tree Delta": {
+        "main": [
+          [
+            {
+              "node": "Queued Tree Delta Matches",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Queued Tree Delta Matches": {
+        "main": [
+          [
+            {
+              "node": "Set Queued Review Success",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Block Changed Queue Delta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Set Queued Review Success": {
+        "main": [
+          [
+            {
+              "node": "Get Queued Merge Status",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Block Changed Queue Delta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Queued Merge Status": {
+        "main": [
+          [
+            {
+              "node": "Queued CI Can Proceed",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Queued CI Can Proceed": {
+        "main": [
+          [
+            {
+              "node": "Merge Queued Renovate PR",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Release Queue Waiting For CI",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge Queued Renovate PR": {
+        "main": [
+          [
+            {
+              "node": "Record Queued Merge Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Record Queue Merged": {
+        "main": [
+          [
+            {
+              "node": "Queue Merge Completed",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Record Queued Merge Result": {
+        "main": [
+          [
+            {
+              "node": "Queue Merge Completed",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Queue Merge Completed": {
+        "main": [
+          [
+            {
+              "node": "Get Queued Multica Dispatch",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Get Queued Multica Dispatch": {
+        "main": [
+          [
+            {
+              "node": "Queued Multica Dispatch Found",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Queued Multica Dispatch Found": {
+        "main": [
+          [
+            {
+              "node": "Get Queued Multica Run",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Get Queued Multica Run": {
+        "main": [
+          [
+            {
+              "node": "Verify Queued Multica Run",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verify Queued Multica Run": {
+        "main": [
+          [
+            {
+              "node": "Complete Queued Multica Issue",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "saveManualExecutions": true,
+      "callerPolicy": "workflowsFromSameOwner",
+      "availableInMCP": false
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "versionId": "160c38e4-696b-46b0-8ca1-57addd204701",
+    "triggerCount": 1,
+    "shared": [
+      {
+        "role": "workflow:owner",
+        "projectId": "eZ0csJWgAdG1lZ8E",
+        "projectType": "personal",
+        "projectName": "beacon1096 <beacon1096@beacoworks.xyz>"
+      }
+    ],
+    "tags": []
+  }
+]

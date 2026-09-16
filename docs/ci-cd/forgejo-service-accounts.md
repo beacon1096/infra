@@ -10,7 +10,9 @@ policy decisions, and merging do not share credentials.
 | `multica-merger` | `multica-merger.no-reply@beacoworks.xyz` | Merge a pull request after all protected-branch requirements pass | Write collaborator on `infrastructure/infra` and `infrastructure/infra-private` |
 
 `multica-gate` cannot merge through the automation workflow. Its PAT has only
-the `write:repository` scope and is stored encrypted in the n8n SOPS Secret.
+the `write:repository` and `read:issue` scopes and is stored encrypted in the
+n8n SOPS Secret. `read:issue` is required to re-read a SHA-bound author
+confirmation comment; webhook content alone is not trusted.
 The Multica agent only receives a credential for submitting its review result
 to n8n and never receives a Forgejo PAT.
 
@@ -63,3 +65,11 @@ chosen. Tokens and private signing material remain in the appropriate secret
 store. An agent identity must not reuse `renovate`, `multica-gate`, or
 `multica-merger`: those accounts have distinct discovery, policy, and merge
 responsibilities.
+
+Until those identities exist, an explicitly authorized agent may operate as
+`beacon1096`. Forgejo and the merge gate necessarily treat that as the same
+principal as the human operator. For a PR authored by that shared principal,
+Forgejo self-review is unavailable; the operator confirmation is instead an
+exact `/approve <full-head-SHA>` PR comment that n8n re-reads through the API.
+This preserves revision binding and an auditable second action, but it is not
+independent review and must not be described as one.

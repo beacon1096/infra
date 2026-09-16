@@ -1,0 +1,72 @@
+diff --git a/server/internal/handler/autopilot_webhook_handler_test.go b/server/internal/handler/autopilot_webhook_handler_test.go
+index ce6c3ee..e469775 100644
+--- a/server/internal/handler/autopilot_webhook_handler_test.go
++++ b/server/internal/handler/autopilot_webhook_handler_test.go
+@@ -783,6 +783,39 @@ func TestWebhookHandler_GitHubHeaderInferredEvent(t *testing.T) {
+ 	}
+ }
+ 
++func TestWebhookHandler_DistinctDeliveriesWithSameIssueTitleCreateDistinctIssues(t *testing.T) {
++	agentID := createWebhookTestAgent(t, "Webhook issue dedupe Agent")
++	apID := createWebhookTestAutopilot(t, agentID, "active", "create_issue")
++	trig := createWebhookTriggerViaHandler(t, apID)
++
++	deliveryIDs := make([]string, 0, 2)
++	for _, key := range []string{"forgejo-pr-101", "forgejo-pr-102"} {
++		w := postWebhook(t, *trig.WebhookToken, map[string]any{"pull_request": key}, map[string]string{
++			"Idempotency-Key": key,
++		})
++		deliveryIDs = append(deliveryIDs, requireAcceptedWebhookResponse(t, w))
++	}
++
++	issueIDs := make(map[string]struct{}, 2)
++	for _, deliveryID := range deliveryIDs {
++		delivery := processQueuedWebhookDelivery(t, deliveryID)
++		if delivery.Status != deliveryStatusDispatched {
++			t.Fatalf("delivery %s status = %q, want dispatched", deliveryID, delivery.Status)
++		}
++		run, err := testHandler.Queries.GetAutopilotRun(context.Background(), delivery.AutopilotRunID)
++		if err != nil {
++			t.Fatalf("load run for delivery %s: %v", deliveryID, err)
++		}
++		if run.Status != "issue_created" || !run.IssueID.Valid {
++			t.Fatalf("run for delivery %s = status %q issue_id %v, want issue_created with issue", deliveryID, run.Status, run.IssueID.Valid)
++		}
++		issueIDs[uuidToString(run.IssueID)] = struct{}{}
++	}
++	if len(issueIDs) != 2 {
++		t.Fatalf("distinct webhook deliveries created %d distinct issues, want 2", len(issueIDs))
++	}
++}
++
+ func TestWebhookHandler_ValidBurstPersistsWithoutHTTP429(t *testing.T) {
+ 	agentID := createWebhookTestAgent(t, "WebhookRate Agent")
+ 	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+diff --git a/server/internal/service/autopilot.go b/server/internal/service/autopilot.go
+index 28e4b1a..65db3de 100644
+--- a/server/internal/service/autopilot.go
++++ b/server/internal/service/autopilot.go
+@@ -707,12 +707,17 @@ func (s *AutopilotService) dispatchCreateIssue(ctx context.Context, ap db.Autopi
+ 	}
+ 	projectID := currentAutopilot.ProjectID
+ 
+-	if duplicate, found, err := issueguard.LockAndFindRecentAutopilotDuplicate(
+-		ctx, qtx, ap.WorkspaceID, ap.ID, projectID, title, autopilotRecentDuplicateWindow,
+-	); err != nil {
+-		return fmt.Errorf("recent duplicate guard: %w", err)
+-	} else if found {
+-		return &errDispatchSkipped{reason: "recent duplicate autopilot issue: " + util.UUIDToString(duplicate.ID), code: dispatch.ReasonAlreadyActive}
++	// Durable webhook deliveries already have an exact idempotency boundary:
++	// webhook_delivery_id is unique on autopilot_run. A title-based guard here
++	// would collapse distinct events whenever a template renders the same title.
++	if !run.WebhookDeliveryID.Valid {
++		if duplicate, found, err := issueguard.LockAndFindRecentAutopilotDuplicate(
++			ctx, qtx, ap.WorkspaceID, ap.ID, projectID, title, autopilotRecentDuplicateWindow,
++		); err != nil {
++			return fmt.Errorf("recent duplicate guard: %w", err)
++		} else if found {
++			return &errDispatchSkipped{reason: "recent duplicate autopilot issue: " + util.UUIDToString(duplicate.ID), code: dispatch.ReasonAlreadyActive}
++		}
+ 	}
+ 
+ 	issueNumber, err := AllocateIssueNumber(ctx, qtx, ap.WorkspaceID, issueCountPolicy)

@@ -68,7 +68,7 @@
         "parameters": {
           "mode": "runOnceForEachItem",
           "language": "javaScript",
-          "jsCode": "const incoming = $json;\nconst body = incoming.body ?? {};\nconst headers = Object.fromEntries(Object.entries(incoming.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]));\nconst eventHeader = String(headers['x-forgejo-event-type'] ?? headers['x-gitea-event-type'] ?? headers['x-forgejo-event'] ?? headers['x-gitea-event'] ?? '').toLowerCase();\nconst deliveryId = String(headers['x-forgejo-delivery'] ?? headers['x-gitea-delivery'] ?? body.delivery_id ?? $execution.id);\nconst actionRaw = String(body.action ?? '').toLowerCase();\nconst run = body.run ?? {};\nconst parseObject = (value) => {\n  if (value && typeof value === 'object') return value;\n  if (typeof value !== 'string' || value.length === 0) return {};\n  try {\n    const parsed = JSON.parse(value);\n    return parsed && typeof parsed === 'object' ? parsed : {};\n  } catch {\n    return {};\n  }\n};\nconst eventPayload = parseObject(run.event_payload);\nconst repository = body.repository ?? run.repository ?? eventPayload.repository ?? {};\nconst repo = String(repository.full_name ?? repository.name ?? 'unknown/unknown');\nconst actor = String(body.pusher?.username ?? body.pusher?.login ?? body.sender?.login ?? body.sender?.username ?? eventPayload.pusher?.username ?? eventPayload.pusher?.login ?? eventPayload.sender?.login ?? eventPayload.sender?.username ?? run.trigger_user?.login ?? run.trigger_user?.username ?? 'unknown');\nconst pullRequest = body.pull_request ?? {};\nconst prAuthor = String(pullRequest.user?.login ?? pullRequest.user?.username ?? 'unknown');\nlet eventType = 'unsupported';\nif (body.executionMode === 'test' || incoming.executionMode === 'test') eventType = 'test';\nelse if (eventHeader.includes('pull_request') || body.pull_request) eventType = 'pull_request';\nelse if (eventHeader === 'push' || body.head_commit || Array.isArray(body.commits)) eventType = 'push';\nelse if (eventHeader.includes('package') || body.package) eventType = 'package';\nelse if (eventHeader.includes('release') || body.release) eventType = 'release';\nelse if (eventHeader.includes('workflow') || eventHeader.includes('action') || body.run) eventType = 'action';\nconst ref = String(eventPayload.ref ?? run.ref ?? body.ref ?? '');\nconst workflowId = String(run.workflow_id ?? run.workflow_name ?? 'Forgejo Actions');\nconst workflowName = String(run.workflow_name ?? run.workflow_id ?? 'Forgejo Actions');\nconst runTitle = String(run.title ?? '');\nconst runId = String(run.id ?? run.run_number ?? run.commit_sha ?? body.after ?? body.head_commit?.id ?? body.package?.id ?? body.release?.id ?? deliveryId);\nconst statusCandidate = String(run.conclusion ?? run.status ?? actionRaw).toLowerCase();\nlet actionStatus = 'unknown';\nif (['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(actionRaw) || ['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(statusCandidate)) actionStatus = 'failure';\nelse if (['recovered', 'recovery'].includes(actionRaw) || ['recovered', 'recovery'].includes(statusCandidate)) actionStatus = 'recovery';\nelse if (['success', 'successful'].includes(actionRaw) || ['success', 'successful'].includes(statusCandidate)) actionStatus = 'success';\nconst packageInfo = body.package ?? {};\nconst releaseInfo = body.release ?? {};\nconst prNumber = String(pullRequest.number ?? pullRequest.index ?? body.number ?? '');\nconst prHeadSha = String(pullRequest.head?.sha ?? pullRequest.head?.id ?? '');\nconst objectId = eventType === 'pull_request'\n  ? [prNumber || deliveryId, prHeadSha || deliveryId].join(':')\n  : eventType === 'push'\n    ? String(body.after ?? body.head_commit?.id ?? body.compare_url ?? deliveryId)\n    : eventType === 'package'\n      ? String(packageInfo.id ?? ((packageInfo.name ?? 'package') + '@' + (packageInfo.version ?? 'unknown')))\n      : eventType === 'release'\n        ? String(releaseInfo.id ?? releaseInfo.tag_name ?? releaseInfo.name ?? deliveryId)\n        : runId;\nconst eventVariant = eventType === 'package' || eventType === 'release' ? actionRaw : (eventHeader.startsWith('pull_request_review_') ? eventHeader + ':' + String(body.review?.id ?? body.commit_id ?? deliveryId) : '');\nconst eventKey = [repo, eventType, objectId, eventVariant].join('::');\nconst stateKey = eventType === 'action'\n  ? [repo, 'action', workflowId, ref].join('::')\n  : eventKey;\nconst humanApprovalSignal = eventType === 'pull_request' && eventHeader === 'pull_request_review_approved' && actionRaw === 'reviewed';\nconst prActionSupported = ['opened', 'synchronize', 'synchronized', 'reopened'].includes(actionRaw);\nconst supported = ['test', 'push', 'package', 'release'].includes(eventType) || (eventType === 'pull_request' && (prActionSupported || humanApprovalSignal)) || (eventType === 'action' && actionStatus !== 'unknown');\nconst commits = Array.isArray(body.commits) ? body.commits.slice(0, 10).map((commit) => ({\n  id: String(commit.id ?? '').slice(0, 7),\n  message: String(commit.message ?? '').split('\\n')[0],\n  url: String(commit.url ?? ''),\n})) : [];\nreturn { json: {\n  SUPPORTED: supported,\n  EVENT_TYPE: eventType,\n  EVENT_HEADER: eventHeader,\n  EVENT_KEY: eventKey,\n  STATE_KEY: stateKey,\n  DELIVERY_ID: deliveryId,\n  ACTION_RAW: actionRaw,\n  ACTION_STATUS: actionStatus,\n  REPO: repo,\n  REPO_URL: String(repository.html_url ?? repository.url ?? ''),\n  ACTOR: actor,\n  PR_AUTHOR: prAuthor,\n  REF: ref,\n  SHA: String(run.commit_sha ?? body.after ?? body.head_commit?.id ?? prHeadSha),\n  RUN_ID: runId,\n  RUN_URL: String(run.html_url ?? run.url ?? ''),\n  RUN_TITLE: runTitle,\n  WORKFLOW_ID: workflowId,\n  WORKFLOW_NAME: workflowName,\n  TRIGGER_EVENT: String(run.trigger_event ?? run.event ?? ''),\n  PUSH_COMPARE_URL: String(body.compare_url ?? ''),\n  PUSH_COMMITS: commits,\n  PUSH_COMMIT_COUNT: Array.isArray(body.commits) ? body.commits.length : 0,\n  PACKAGE_NAME: String(packageInfo.name ?? ''),\n  PACKAGE_VERSION: String(packageInfo.version ?? ''),\n  PACKAGE_URL: String(packageInfo.html_url ?? packageInfo.url ?? ''),\n  RELEASE_NAME: String(releaseInfo.name ?? ''),\n  RELEASE_TAG: String(releaseInfo.tag_name ?? ''),\n  RELEASE_URL: String(releaseInfo.html_url ?? releaseInfo.url ?? ''),\n  PR_NUMBER: prNumber,\n  PR_TITLE: String(pullRequest.title ?? ''),\n  PR_BODY: String(pullRequest.body ?? ''),\n  PR_URL: String(pullRequest.html_url ?? pullRequest.url ?? ''),\n  PR_HEAD_REF: String(pullRequest.head?.ref ?? pullRequest.head?.label ?? ''),\n  PR_HEAD_SHA: prHeadSha,\n  PR_BASE_REF: String(pullRequest.base?.ref ?? pullRequest.base?.label ?? ''),\n  IS_ORDINARY_PR_UPDATE: eventType === 'pull_request' && prActionSupported && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) && pullRequest.base?.ref === 'main' && prAuthor !== 'renovate',\n  IS_HUMAN_APPROVAL_SIGNAL: humanApprovalSignal && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) && pullRequest.base?.ref === 'main' && prAuthor !== 'renovate',\n  IS_RENOVATE_PR: eventType === 'pull_request' && prActionSupported && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) && pullRequest.base?.ref === 'main' && prAuthor === 'renovate',\n} };\n"
+          "jsCode": "const incoming = $json;\nconst body = incoming.body ?? {};\nconst headers = Object.fromEntries(Object.entries(incoming.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]));\nconst eventHeader = String(headers['x-forgejo-event-type'] ?? headers['x-gitea-event-type'] ?? headers['x-forgejo-event'] ?? headers['x-gitea-event'] ?? '').toLowerCase();\nconst deliveryId = String(headers['x-forgejo-delivery'] ?? headers['x-gitea-delivery'] ?? body.delivery_id ?? $execution.id);\nconst actionRaw = String(body.action ?? '').toLowerCase();\nconst run = body.run ?? {};\nconst parseObject = (value) => {\n  if (value && typeof value === 'object') return value;\n  if (typeof value !== 'string' || value.length === 0) return {};\n  try {\n    const parsed = JSON.parse(value);\n    return parsed && typeof parsed === 'object' ? parsed : {};\n  } catch {\n    return {};\n  }\n};\nconst eventPayload = parseObject(run.event_payload);\nconst repository = body.repository ?? run.repository ?? eventPayload.repository ?? {};\nconst repo = String(repository.full_name ?? repository.name ?? 'unknown/unknown');\nconst actor = String(body.pusher?.username ?? body.pusher?.login ?? body.sender?.login ?? body.sender?.username ?? eventPayload.pusher?.username ?? eventPayload.pusher?.login ?? eventPayload.sender?.login ?? eventPayload.sender?.username ?? run.trigger_user?.login ?? run.trigger_user?.username ?? 'unknown');\nconst pullRequest = body.pull_request ?? {};\nconst issue = body.issue ?? {};\nconst comment = body.comment ?? {};\nconst commentBody = String(comment.body ?? '').trim();\nconst approvalCommand = commentBody.match(/^\\/approve\\s+([0-9a-f]{40})$/i);\nconst prAuthor = String(pullRequest.user?.login ?? pullRequest.user?.username ?? 'unknown');\nlet eventType = 'unsupported';\nif (body.executionMode === 'test' || incoming.executionMode === 'test') eventType = 'test';\nelse if ((eventHeader.includes('issue') || eventHeader.includes('comment')) && comment.id && issue.pull_request) eventType = 'pull_request_comment';\nelse if (eventHeader.includes('pull_request') || body.pull_request) eventType = 'pull_request';\nelse if (eventHeader === 'push' || body.head_commit || Array.isArray(body.commits)) eventType = 'push';\nelse if (eventHeader.includes('package') || body.package) eventType = 'package';\nelse if (eventHeader.includes('release') || body.release) eventType = 'release';\nelse if (eventHeader.includes('workflow') || eventHeader.includes('action') || body.run) eventType = 'action';\nconst ref = String(eventPayload.ref ?? run.ref ?? body.ref ?? '');\nconst workflowId = String(run.workflow_id ?? run.workflow_name ?? 'Forgejo Actions');\nconst workflowName = String(run.workflow_name ?? run.workflow_id ?? 'Forgejo Actions');\nconst runTitle = String(run.title ?? '');\nconst runId = String(run.id ?? run.run_number ?? run.commit_sha ?? body.after ?? body.head_commit?.id ?? body.package?.id ?? body.release?.id ?? deliveryId);\nconst statusCandidate = String(run.conclusion ?? run.status ?? actionRaw).toLowerCase();\nlet actionStatus = 'unknown';\nif (['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(actionRaw) || ['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(statusCandidate)) actionStatus = 'failure';\nelse if (['recovered', 'recovery'].includes(actionRaw) || ['recovered', 'recovery'].includes(statusCandidate)) actionStatus = 'recovery';\nelse if (['success', 'successful'].includes(actionRaw) || ['success', 'successful'].includes(statusCandidate)) actionStatus = 'success';\nconst packageInfo = body.package ?? {};\nconst releaseInfo = body.release ?? {};\nconst prNumber = String(pullRequest.number ?? pullRequest.index ?? issue.number ?? issue.index ?? body.number ?? '');\nconst prHeadSha = String(pullRequest.head?.sha ?? pullRequest.head?.id ?? '');\nconst objectId = eventType === 'pull_request'\n  ? [prNumber || deliveryId, prHeadSha || deliveryId].join(':')\n  : eventType === 'pull_request_comment'\n    ? [prNumber || deliveryId, String(comment.id ?? deliveryId)].join(':')\n  : eventType === 'push'\n    ? String(body.after ?? body.head_commit?.id ?? body.compare_url ?? deliveryId)\n    : eventType === 'package'\n      ? String(packageInfo.id ?? ((packageInfo.name ?? 'package') + '@' + (packageInfo.version ?? 'unknown')))\n      : eventType === 'release'\n        ? String(releaseInfo.id ?? releaseInfo.tag_name ?? releaseInfo.name ?? deliveryId)\n        : runId;\nconst eventVariant = eventType === 'package' || eventType === 'release' ? actionRaw : (eventHeader.startsWith('pull_request_review_') ? eventHeader + ':' + String(body.review?.id ?? body.commit_id ?? deliveryId) : '');\nconst eventKey = [repo, eventType, objectId, eventVariant].join('::');\nconst stateKey = eventType === 'action'\n  ? [repo, 'action', workflowId, ref].join('::')\n  : eventKey;\nconst reviewApprovalSignal = eventType === 'pull_request' && eventHeader === 'pull_request_review_approved' && actionRaw === 'reviewed';\nconst commentApprovalSignal = eventType === 'pull_request_comment' && actionRaw === 'created' && Boolean(approvalCommand);\nconst humanApprovalSignal = reviewApprovalSignal || commentApprovalSignal;\nconst prActionSupported = ['opened', 'synchronize', 'synchronized', 'reopened'].includes(actionRaw);\nconst supported = ['test', 'push', 'package', 'release'].includes(eventType) || (eventType === 'pull_request' && (prActionSupported || reviewApprovalSignal)) || commentApprovalSignal || (eventType === 'action' && actionStatus !== 'unknown');\nconst commits = Array.isArray(body.commits) ? body.commits.slice(0, 10).map((commit) => ({\n  id: String(commit.id ?? '').slice(0, 7),\n  message: String(commit.message ?? '').split('\\n')[0],\n  url: String(commit.url ?? ''),\n})) : [];\nreturn { json: {\n  SUPPORTED: supported,\n  EVENT_TYPE: eventType,\n  EVENT_HEADER: eventHeader,\n  EVENT_KEY: eventKey,\n  STATE_KEY: stateKey,\n  DELIVERY_ID: deliveryId,\n  ACTION_RAW: actionRaw,\n  ACTION_STATUS: actionStatus,\n  REPO: repo,\n  REPO_URL: String(repository.html_url ?? repository.url ?? ''),\n  ACTOR: actor,\n  PR_AUTHOR: prAuthor,\n  REF: ref,\n  SHA: String(run.commit_sha ?? body.after ?? body.head_commit?.id ?? prHeadSha),\n  RUN_ID: runId,\n  RUN_URL: String(run.html_url ?? run.url ?? ''),\n  RUN_TITLE: runTitle,\n  WORKFLOW_ID: workflowId,\n  WORKFLOW_NAME: workflowName,\n  TRIGGER_EVENT: String(run.trigger_event ?? run.event ?? ''),\n  PUSH_COMPARE_URL: String(body.compare_url ?? ''),\n  PUSH_COMMITS: commits,\n  PUSH_COMMIT_COUNT: Array.isArray(body.commits) ? body.commits.length : 0,\n  PACKAGE_NAME: String(packageInfo.name ?? ''),\n  PACKAGE_VERSION: String(packageInfo.version ?? ''),\n  PACKAGE_URL: String(packageInfo.html_url ?? packageInfo.url ?? ''),\n  RELEASE_NAME: String(releaseInfo.name ?? ''),\n  RELEASE_TAG: String(releaseInfo.tag_name ?? ''),\n  RELEASE_URL: String(releaseInfo.html_url ?? releaseInfo.url ?? ''),\n  PR_NUMBER: prNumber,\n  PR_TITLE: String(pullRequest.title ?? ''),\n  PR_BODY: String(pullRequest.body ?? ''),\n  PR_URL: String(pullRequest.html_url ?? pullRequest.url ?? ''),\n  PR_HEAD_REF: String(pullRequest.head?.ref ?? pullRequest.head?.label ?? ''),\n  PR_HEAD_SHA: prHeadSha || String(approvalCommand?.[1] ?? '').toLowerCase(),\n  APPROVAL_KIND: commentApprovalSignal ? 'comment' : (reviewApprovalSignal ? 'review' : ''),\n  APPROVAL_COMMENT_ID: commentApprovalSignal ? Number(comment.id) : 0,\n  PR_BASE_REF: String(pullRequest.base?.ref ?? pullRequest.base?.label ?? ''),\n  IS_ORDINARY_PR_UPDATE: eventType === 'pull_request' && prActionSupported && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) && pullRequest.base?.ref === 'main' && prAuthor !== 'renovate',\n  IS_HUMAN_APPROVAL_SIGNAL: humanApprovalSignal && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) && (commentApprovalSignal || pullRequest.base?.ref === 'main') && prAuthor !== 'renovate',\n  IS_RENOVATE_PR: eventType === 'pull_request' && prActionSupported && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) && pullRequest.base?.ref === 'main' && prAuthor === 'renovate',\n} };\n"
         }
       },
       {
@@ -923,7 +923,7 @@
         "parameters": {
           "mode": "runOnceForEachItem",
           "language": "javaScript",
-          "jsCode": "const crypto = require('crypto');\nconst event = $('Decide Event Transition').first().json;\nconst repo = String(event.REPO);\nconst prNumber = Number(event.PR_NUMBER);\nconst headSha = String(event.PR_HEAD_SHA).toLowerCase();\nconst secret = String($env.REVIEW_CAPABILITY_SECRET ?? '');\nif (!secret || !['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) || !Number.isInteger(prNumber) || prNumber <= 0 || !/^[0-9a-f]{40}$/.test(headSha)) throw new Error('Cannot create review capability');\nconst iat = Math.floor(Date.now() / 1000);\nconst claims = { v: 1, repo, pr_number: prNumber, head_sha: headSha, iat, exp: iat + 86400, jti: crypto.randomUUID() };\nconst encoded = Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url');\nconst signature = crypto.createHmac('sha256', secret).update(encoded).digest('base64url');\nreturn { json: { ...event, REVIEW_CAPABILITY: encoded + '.' + signature } };"
+          "jsCode": "const crypto = require('crypto');\nconst event = $('Decide Event Transition').first().json;\nconst repo = String(event.REPO);\nconst prNumber = Number(event.PR_NUMBER);\nconst headSha = String(event.PR_HEAD_SHA).toLowerCase();\nconst secret = String($env.REVIEW_CAPABILITY_SECRET ?? '');\nif (!secret || !['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) || !Number.isInteger(prNumber) || prNumber <= 0 || !/^[0-9a-f]{40}$/.test(headSha)) throw new Error('Cannot create review capability');\nconst iat = Math.floor(Date.now() / 1000);\nconst claims = { v: 1, repo, pr_number: prNumber, head_sha: headSha, iat, exp: iat + 86400, jti: crypto.randomUUID() };\nconst encoded = Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url');\nconst signature = crypto.createHmac('sha256', secret).update(encoded).digest('base64url');\nreturn { json: { ...event, REVIEW_CAPABILITY: encoded + '.' + signature, REVIEW_JTI: claims.jti } };"
         }
       },
       {
@@ -947,22 +947,15 @@
               },
               {
                 "name": "Idempotency-Key",
-                "value": "={{ 'forgejo:' + $(\"Decide Event Transition\").item.json.REPO + ':pull_request:' + $(\"Decide Event Transition\").item.json.PR_NUMBER + ':' + $(\"Decide Event Transition\").item.json.PR_HEAD_SHA }}"
+                "value": "={{ 'forgejo:' + $(\"Decide Event Transition\").first().json.REPO + ':pull_request:' + $(\"Decide Event Transition\").first().json.PR_NUMBER + ':' + $(\"Decide Event Transition\").first().json.PR_HEAD_SHA }}"
               }
             ]
           },
           "sendBody": true,
           "contentType": "raw",
           "rawContentType": "application/json",
-          "body": "={{ JSON.stringify({ event: 'renovate.pull_request', action: $(\"Decide Event Transition\").item.json.ACTION_RAW, eventPayload: { callback: { url: 'https://automaton.beaco.works/webhook/multica-renovate-review', capability: $(\"Create Review Capability\").item.json.REVIEW_CAPABILITY, instructions: 'At the end of the task, POST JSON {capability,verdict,summary,evidence_url} to this URL. Use the provided scoped capability unchanged. verdict must be approve, reject, or human_required. Approve only when concrete evidence supports safe handling. Use human_required for any major-version update, data or schema migration, storage change, authentication or authorization change, network ingress or routing change, Talos, Kubernetes, Forgejo, or other platform upgrade, destructive step, or uncertainty. Never guess approval. Do not expose the capability elsewhere.' }, action: $(\"Decide Event Transition\").item.json.ACTION_RAW, repository: { full_name: $(\"Decide Event Transition\").item.json.REPO, html_url: $(\"Decide Event Transition\").item.json.REPO_URL }, pull_request: { number: $(\"Decide Event Transition\").item.json.PR_NUMBER, title: $(\"Decide Event Transition\").item.json.PR_TITLE, body: $(\"Decide Event Transition\").item.json.PR_BODY, html_url: $(\"Decide Event Transition\").item.json.PR_URL, base: { ref: $(\"Decide Event Transition\").item.json.PR_BASE_REF }, head: { ref: $(\"Decide Event Transition\").item.json.PR_HEAD_REF, sha: $(\"Decide Event Transition\").item.json.PR_HEAD_SHA } }, sender: { login: $(\"Decide Event Transition\").item.json.ACTOR } } }) }}",
+          "body": "={{ JSON.stringify({ event: 'renovate.pull_request', action: $(\"Decide Event Transition\").first().json.ACTION_RAW, eventPayload: { callback: { url: 'https://automaton.beaco.works/webhook/multica-renovate-review', capability: $(\"Create Review Capability\").item.json.REVIEW_CAPABILITY, instructions: 'At the end of the task, POST JSON {capability,verdict,summary,evidence_url} to this URL. Use the provided scoped capability unchanged. verdict must be approve, reject, or human_required. Approve only when concrete evidence supports safe handling. Use human_required for any major-version update, data or schema migration, storage change, authentication or authorization change, network ingress or routing change, Talos, Kubernetes, Forgejo, or other platform upgrade, destructive step, or uncertainty. Never guess approval. Do not expose the capability elsewhere.' }, action: $(\"Decide Event Transition\").first().json.ACTION_RAW, repository: { full_name: $(\"Decide Event Transition\").first().json.REPO, html_url: $(\"Decide Event Transition\").first().json.REPO_URL }, pull_request: { number: $(\"Decide Event Transition\").first().json.PR_NUMBER, title: $(\"Decide Event Transition\").first().json.PR_TITLE, body: $(\"Decide Event Transition\").first().json.PR_BODY, html_url: $(\"Decide Event Transition\").first().json.PR_URL, base: { ref: $(\"Decide Event Transition\").first().json.PR_BASE_REF }, head: { ref: $(\"Decide Event Transition\").first().json.PR_HEAD_REF, sha: $(\"Decide Event Transition\").first().json.PR_HEAD_SHA } }, sender: { login: $(\"Decide Event Transition\").first().json.ACTOR } } }) }}",
           "options": {
-            "response": {
-              "response": {
-                "fullResponse": true,
-                "neverError": true,
-                "responseFormat": "json"
-              }
-            },
             "timeout": 15000
           }
         },
@@ -1164,7 +1157,7 @@
             "parameters": [
               {
                 "name": "state",
-                "value": "={{ $json.VERDICT === 'approve' ? 'success' : ($json.VERDICT === 'reject' ? 'failure' : 'pending') }}"
+                "value": "={{ $json.VERDICT === 'reject' ? 'failure' : 'pending' }}"
               },
               {
                 "name": "context",
@@ -1534,7 +1527,7 @@
         ],
         "parameters": {
           "method": "GET",
-          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Decide Event Transition\").item.json.REPO + '/pulls/' + $(\"Decide Event Transition\").item.json.PR_NUMBER + '/reviews?limit=50' }}",
+          "url": "={{ $(\"Decide Event Transition\").item.json.APPROVAL_KIND === 'comment' ? 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Decide Event Transition\").item.json.REPO + '/issues/comments/' + $(\"Decide Event Transition\").item.json.APPROVAL_COMMENT_ID : 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Decide Event Transition\").item.json.REPO + '/pulls/' + $(\"Decide Event Transition\").item.json.PR_NUMBER + '/reviews?limit=50' }}",
           "options": {
             "response": {
               "response": {
@@ -1569,7 +1562,7 @@
         "parameters": {
           "mode": "runOnceForEachItem",
           "language": "javaScript",
-          "jsCode": "const source = $(\"Decide Event Transition\").item.json;\nconst prResponse = $(\"Get Current Human PR\").item.json;\nconst reviewsResponse = $json;\nconst pr = prResponse.body ?? {};\nconst reviews = Array.isArray(reviewsResponse.body) ? reviewsResponse.body : [];\nconst allowedReviewers = ['beacon1096'];\nconst currentHead = String(pr.head?.sha ?? pr.head?.id ?? '').toLowerCase();\nconst approval = reviews\n  .filter((review) => allowedReviewers.includes(String(review.user?.login ?? review.user?.username ?? ''))\n    && String(review.state ?? review.type ?? '').toLowerCase() === 'approved'\n    && review.dismissed !== true\n    && review.stale !== true\n    && String(review.commit_id ?? '').toLowerCase() === currentHead)\n  .sort((a, b) => Number(b.id ?? 0) - Number(a.id ?? 0))[0];\nconst valid = prResponse.statusCode === 200\n  && reviewsResponse.statusCode === 200\n  && pr.state === 'open'\n  && pr.base?.ref === 'main'\n  && String(pr.user?.login ?? pr.user?.username ?? '') !== 'renovate'\n  && ['infrastructure/infra', 'infrastructure/infra-private'].includes(source.REPO)\n  && currentHead === String(source.PR_HEAD_SHA ?? '').toLowerCase()\n  && Boolean(approval);\nreturn { json: { HUMAN_APPROVAL_VALID: valid, REPO: source.REPO, PR_NUMBER: Number(source.PR_NUMBER), HEAD_SHA: currentHead, PR_URL: String(pr.html_url ?? source.PR_URL ?? ''), REVIEWER: valid ? String(approval.user?.login ?? approval.user?.username) : '', REVIEW_ID: valid ? Number(approval.id) : 0 } };"
+          "jsCode": "const source = $(\"Decide Event Transition\").item.json;\nconst prResponse = $(\"Get Current Human PR\").item.json;\nconst evidenceResponse = $json;\nconst pr = prResponse.body ?? {};\nconst allowedReviewers = ['beacon1096'];\nconst currentHead = String(pr.head?.sha ?? pr.head?.id ?? '').toLowerCase();\nlet approval;\nif (source.APPROVAL_KIND === 'comment') {\n  const comment = evidenceResponse.body ?? {};\n  const match = String(comment.body ?? '').trim().match(/^\\/approve\\s+([0-9a-f]{40})$/i);\n  const reviewer = String(comment.user?.login ?? comment.user?.username ?? '');\n  if (evidenceResponse.statusCode === 200\n    && Number(comment.id) === Number(source.APPROVAL_COMMENT_ID)\n    && allowedReviewers.includes(reviewer)\n    && match && match[1].toLowerCase() === currentHead) {\n    approval = { id: comment.id, user: comment.user, method: 'comment' };\n  }\n} else {\n  const reviews = Array.isArray(evidenceResponse.body) ? evidenceResponse.body : [];\n  approval = reviews\n    .filter((review) => allowedReviewers.includes(String(review.user?.login ?? review.user?.username ?? ''))\n      && String(review.state ?? review.type ?? '').toLowerCase() === 'approved'\n      && review.dismissed !== true\n      && review.stale !== true\n      && String(review.commit_id ?? '').toLowerCase() === currentHead)\n    .sort((a, b) => Number(b.id ?? 0) - Number(a.id ?? 0))[0];\n  if (approval) approval.method = 'review';\n}\nconst valid = prResponse.statusCode === 200\n  && evidenceResponse.statusCode === 200\n  && pr.state === 'open'\n  && pr.base?.ref === 'main'\n  && String(pr.user?.login ?? pr.user?.username ?? '') !== 'renovate'\n  && ['infrastructure/infra', 'infrastructure/infra-private'].includes(source.REPO)\n  && currentHead === String(source.PR_HEAD_SHA ?? '').toLowerCase()\n  && Boolean(approval);\nreturn { json: { HUMAN_APPROVAL_VALID: valid, REPO: source.REPO, PR_NUMBER: Number(source.PR_NUMBER), HEAD_SHA: currentHead, PR_URL: String(pr.html_url ?? source.PR_URL ?? ''), REVIEWER: valid ? String(approval.user?.login ?? approval.user?.username) : '', REVIEW_ID: valid ? Number(approval.id) : 0, APPROVAL_METHOD: valid ? approval.method : '' } };"
         }
       },
       {
@@ -1630,7 +1623,7 @@
               },
               {
                 "name": "description",
-                "value": "={{ 'Approved by Forgejo reviewer ' + $json.REVIEWER + ' for this exact commit' }}"
+                "value": "={{ $json.APPROVAL_METHOD === 'comment' ? 'Confirmed by PR author ' + $json.REVIEWER + ' for this exact commit' : 'Approved by Forgejo reviewer ' + $json.REVIEWER + ' for this exact commit' }}"
               },
               {
                 "name": "target_url",
@@ -1979,6 +1972,446 @@
             "combinator": "and"
           },
           "options": {}
+        }
+      },
+      {
+        "id": "9d00aac6-c860-4483-b7b3-88ec7d50fdb8",
+        "name": "Validate Multica Dispatch",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2496,
+          32
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const response = $json ?? {};\nconst body = response.body && typeof response.body === 'object' ? response.body : response;\nconst review = $('Create Review Capability').first().json;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (body.status !== 'accepted' || !uuid.test(String(body.autopilot_id ?? '')) || !uuid.test(String(body.run_id ?? ''))) throw new Error('Multica did not accept review dispatch');\nreturn { json: { JTI: review.REVIEW_JTI, REPO: review.REPO, PR_NUMBER: review.PR_NUMBER, HEAD_SHA: review.PR_HEAD_SHA, AUTOPILOT_ID: body.autopilot_id, RUN_ID: body.run_id, EXPIRES_AT: Math.floor(Date.now() / 1000) + 604800 } };"
+        }
+      },
+      {
+        "id": "76e414e4-f2ed-49f5-98fe-c3bc9afb0878",
+        "name": "Store Multica Review Dispatch",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          2752,
+          32
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "CREATE TABLE IF NOT EXISTS multica_review_dispatches (\n  jti uuid PRIMARY KEY,\n  repo text NOT NULL,\n  pr_number bigint NOT NULL,\n  head_sha char(40) NOT NULL,\n  autopilot_id uuid NOT NULL,\n  run_id uuid NOT NULL UNIQUE,\n  created_at timestamptz NOT NULL DEFAULT now(),\n  expires_at timestamptz NOT NULL\n);\nDELETE FROM multica_review_dispatches WHERE expires_at < now() - interval '7 days';\nINSERT INTO multica_review_dispatches (jti, repo, pr_number, head_sha, autopilot_id, run_id, expires_at)\nVALUES ($1::uuid, $2, $3::bigint, $4, $5::uuid, $6::uuid, to_timestamp($7::bigint))\nON CONFLICT (jti) DO UPDATE SET autopilot_id = EXCLUDED.autopilot_id, run_id = EXCLUDED.run_id, expires_at = EXCLUDED.expires_at;",
+          "options": {
+            "queryBatching": "single",
+            "queryReplacement": "={{ [$json.JTI, $json.REPO, $json.PR_NUMBER, $json.HEAD_SHA, $json.AUTOPILOT_ID, $json.RUN_ID, $json.EXPIRES_AT] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "27fade1f-54c9-4520-b702-d2757f03849e",
+        "name": "Renovate Merge Completed",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          4448,
+          672
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "bc5f3549-137b-4e91-99b7-e5eb1c091a6a",
+                "leftValue": "={{ $json.MERGE_RESULT }}",
+                "rightValue": "merged",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "46cd5386-b556-426b-be69-b362053259ec",
+        "name": "Get Multica Review Dispatch",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          4704,
+          672
+        ],
+        "alwaysOutputData": true,
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT repo, pr_number, head_sha, autopilot_id::text, run_id::text FROM multica_review_dispatches WHERE jti = $1::uuid AND expires_at > now();",
+          "options": {
+            "queryBatching": "single",
+            "queryReplacement": "={{ [$(\"Validate Multica Review\").first().json.JTI] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "0109f299-2f49-45e6-865f-5a83d3e2a377",
+        "name": "Multica Dispatch Found",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          4960,
+          672
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "3e0e6926-00c5-45d2-a039-375bd12c51c3",
+                "leftValue": "={{ $json.run_id }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "e6818fd9-073f-405a-aff1-fc142563fce6",
+        "name": "Get Multica Autopilot Run",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          5216,
+          672
+        ],
+        "parameters": {
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "url": "={{ 'https://multica.beaco.works/api/autopilots/' + $(\"Get Multica Review Dispatch\").first().json.autopilot_id + '/runs/' + $(\"Get Multica Review Dispatch\").first().json.run_id }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Workspace-Slug",
+                "value": "beacoworks"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaCloser01",
+            "name": "Multica Issue Closer"
+          }
+        }
+      },
+      {
+        "id": "a2580c6c-3e69-4c89-bd28-129f26947857",
+        "name": "Verify Multica Autopilot Run",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          5472,
+          672
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const run = $json ?? {};\nconst dispatch = $('Get Multica Review Dispatch').first().json;\nconst review = $('Validate Multica Review').first().json;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (String(run.id) !== String(dispatch.run_id) || String(run.autopilot_id) !== String(dispatch.autopilot_id) || run.status !== 'completed' || !uuid.test(String(run.issue_id ?? '')) || dispatch.repo !== review.REPO || Number(dispatch.pr_number) !== Number(review.PR_NUMBER) || String(dispatch.head_sha) !== review.HEAD_SHA) throw new Error('Multica run binding mismatch');\nreturn { json: { ISSUE_ID: run.issue_id } };"
+        }
+      },
+      {
+        "id": "458079ce-95cb-492e-998d-12930091f046",
+        "name": "Complete Multica Review Issue",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          5728,
+          672
+        ],
+        "parameters": {
+          "method": "PUT",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "url": "={{ 'https://multica.beaco.works/api/issues/' + $json.ISSUE_ID }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Workspace-Slug",
+                "value": "beacoworks"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ { status: 'done' } }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaCloser01",
+            "name": "Multica Issue Closer"
+          }
+        }
+      },
+      {
+        "id": "1dd4360c-3af3-4875-aac1-54f10cc8dbea",
+        "name": "Get Active Renovate Queue",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          2352,
+          32
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "CREATE TABLE IF NOT EXISTS renovate_merge_queue (\n  repo text NOT NULL,\n  pr_number bigint NOT NULL,\n  approved_head_sha char(40) NOT NULL,\n  approved_base_sha char(40) NOT NULL,\n  delta_digest char(64) NOT NULL,\n  delta_count integer NOT NULL,\n  approval_jti uuid NOT NULL UNIQUE,\n  multica_summary text NOT NULL,\n  evidence_url text NOT NULL DEFAULT '',\n  state text NOT NULL CHECK (state IN ('queued', 'updating', 'waiting_ci', 'merging', 'merged', 'blocked', 'expired')),\n  attempt_count integer NOT NULL DEFAULT 0,\n  lease_until timestamptz,\n  approved_at timestamptz NOT NULL DEFAULT now(),\n  updated_at timestamptz NOT NULL DEFAULT now(),\n  expires_at timestamptz NOT NULL,\n  last_error text NOT NULL DEFAULT '',\n  PRIMARY KEY (repo, pr_number)\n);\nSELECT EXISTS (\n  SELECT 1 FROM renovate_merge_queue\n  WHERE repo = $1 AND pr_number = $2::bigint\n    AND state IN ('queued', 'updating', 'waiting_ci', 'merging')\n    AND expires_at > now()\n) AS review_queued;",
+          "options": {
+            "queryReplacement": "={{ [$(\"Decide Event Transition\").item.json.REPO, $(\"Decide Event Transition\").item.json.PR_NUMBER] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "9a749abc-1cf7-4688-b047-8244ea9496e1",
+        "name": "Renovate Review Already Queued",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2464,
+          32
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.review_queued }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "926d3408-5242-4799-98e9-1742fcb94c4f",
+        "name": "Get Approved Base Tree",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1792,
+          1024
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Verify Current Renovate PR\").item.json.REPO + '/git/trees/' + $(\"Get Current Renovate PR\").item.json.body.merge_base + '?recursive=true&per_page=2000' }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "19bfc0ef-095d-40b8-a2e5-e7d930c53410",
+        "name": "Get Approved Head Tree",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2016,
+          1024
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Verify Current Renovate PR\").item.json.REPO + '/git/trees/' + $(\"Verify Current Renovate PR\").item.json.HEAD_SHA + '?recursive=true&per_page=2000' }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "acdc21af-2b48-43b4-82a1-167f6be6e641",
+        "name": "Build Approved Tree Delta",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2240,
+          1024
+        ],
+        "parameters": {
+          "jsCode": "const crypto = require('crypto');\nconst review = $('Verify Current Renovate PR').first().json;\nconst pr = $('Get Current Renovate PR').first().json.body ?? {};\nconst baseResponse = $('Get Approved Base Tree').first().json;\nconst headResponse = $('Get Approved Head Tree').first().json;\nconst base = baseResponse.body ?? {};\nconst head = headResponse.body ?? {};\nconst sha = /^[0-9a-f]{40}$/;\nconst validTree = (response, tree) => response.statusCode === 200\n  && tree.truncated !== true\n  && Array.isArray(tree.tree)\n  && tree.tree.length <= 5000;\nconst baseSha = String(pr.merge_base ?? '').toLowerCase();\nconst headSha = String(review.HEAD_SHA ?? '').toLowerCase();\nif (!sha.test(baseSha) || !sha.test(headSha) || !validTree(baseResponse, base) || !validTree(headResponse, head)) {\n  return { json: { ...review, DELTA_VALID: false, DELTA_ERROR: 'Forgejo tree snapshot was missing, invalid, or truncated' } };\n}\nconst leaves = (tree) => new Map(tree.tree\n  .filter((entry) => entry?.type !== 'tree' && typeof entry?.path === 'string')\n  .map((entry) => [entry.path, { mode: String(entry.mode ?? ''), type: String(entry.type ?? ''), sha: String(entry.sha ?? '') }]));\nconst baseLeaves = leaves(base);\nconst headLeaves = leaves(head);\nconst paths = [...new Set([...baseLeaves.keys(), ...headLeaves.keys()])].sort();\nconst delta = paths\n  .map((path) => ({ path, base: baseLeaves.get(path) ?? null, head: headLeaves.get(path) ?? null }))\n  .filter((entry) => JSON.stringify(entry.base) !== JSON.stringify(entry.head));\nconst canonical = JSON.stringify(delta);\nreturn { json: {\n  ...review,\n  DELTA_VALID: true,\n  APPROVED_BASE_SHA: baseSha,\n  APPROVED_HEAD_SHA: headSha,\n  DELTA_DIGEST: crypto.createHash('sha256').update(canonical).digest('hex'),\n  DELTA_COUNT: delta.length,\n} };"
+        }
+      },
+      {
+        "id": "71f122ba-3170-4d3a-a991-3884d86cd4d9",
+        "name": "Approved Tree Delta Is Valid",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2464,
+          1024
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.DELTA_VALID }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "f05a4458-ac11-4e06-97ee-d37c8be8b377",
+        "name": "Store Renovate Merge Queue",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          2688,
+          960
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO renovate_merge_queue (\n  repo, pr_number, approved_head_sha, approved_base_sha, delta_digest,\n  delta_count, approval_jti, multica_summary, evidence_url, state, expires_at\n) VALUES ($1, $2::bigint, $3, $4, $5, $6::integer, $7::uuid, $8, $9, 'queued', to_timestamp($10::bigint))\nON CONFLICT (repo, pr_number) DO UPDATE SET\n  approved_head_sha = EXCLUDED.approved_head_sha,\n  approved_base_sha = EXCLUDED.approved_base_sha,\n  delta_digest = EXCLUDED.delta_digest,\n  delta_count = EXCLUDED.delta_count,\n  approval_jti = EXCLUDED.approval_jti,\n  multica_summary = EXCLUDED.multica_summary,\n  evidence_url = EXCLUDED.evidence_url,\n  state = 'queued',\n  attempt_count = 0,\n  lease_until = NULL,\n  approved_at = now(),\n  updated_at = now(),\n  expires_at = EXCLUDED.expires_at,\n  last_error = ''\nRETURNING repo, pr_number, approved_head_sha, approved_base_sha, delta_digest, delta_count, state;",
+          "options": {
+            "queryReplacement": "={{ [$json.REPO, $json.PR_NUMBER, $json.APPROVED_HEAD_SHA, $json.APPROVED_BASE_SHA, $json.DELTA_DIGEST, $json.DELTA_COUNT, $json.JTI, $json.SUMMARY, $json.EVIDENCE_URL, $json.EXPIRES_AT] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "4b61c87e-24ab-4eb5-a1f1-b141156db416",
+        "name": "Accept Queued Renovate Review",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.4,
+        "position": [
+          2912,
+          960
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { result: 'queued', state: 'pending', head_sha: $json.approved_head_sha, delta_digest: $json.delta_digest } }}",
+          "options": {
+            "responseCode": 200
+          }
+        }
+      },
+      {
+        "id": "2a37cd4b-5922-4fd4-b1ad-843a64fdc97f",
+        "name": "Reject Invalid Approval Snapshot",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.4,
+        "position": [
+          2688,
+          1088
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { error: $json.DELTA_ERROR || 'failed to snapshot approved tree delta' } }}",
+          "options": {
+            "responseCode": 424
+          }
         }
       }
     ],
@@ -2335,7 +2768,7 @@
         "main": [
           [
             {
-              "node": "Create Review Capability",
+              "node": "Get Active Renovate Queue",
               "type": "main",
               "index": 0
             }
@@ -2455,7 +2888,7 @@
         "main": [
           [
             {
-              "node": "Get Renovate Merge Status",
+              "node": "Get Approved Base Tree",
               "type": "main",
               "index": 0
             }
@@ -2496,6 +2929,11 @@
           [
             {
               "node": "Build Policy Notice",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Renovate Merge Completed",
               "type": "main",
               "index": 0
             }
@@ -2721,6 +3159,180 @@
           [
             {
               "node": "Build Policy Notice",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Trigger Multica Renovate Autopilot": {
+        "main": [
+          [
+            {
+              "node": "Validate Multica Dispatch",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Validate Multica Dispatch": {
+        "main": [
+          [
+            {
+              "node": "Store Multica Review Dispatch",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Store Multica Review Dispatch": {
+        "main": [
+          []
+        ]
+      },
+      "Renovate Merge Completed": {
+        "main": [
+          [
+            {
+              "node": "Get Multica Review Dispatch",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Get Multica Review Dispatch": {
+        "main": [
+          [
+            {
+              "node": "Multica Dispatch Found",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Multica Dispatch Found": {
+        "main": [
+          [
+            {
+              "node": "Get Multica Autopilot Run",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Get Multica Autopilot Run": {
+        "main": [
+          [
+            {
+              "node": "Verify Multica Autopilot Run",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verify Multica Autopilot Run": {
+        "main": [
+          [
+            {
+              "node": "Complete Multica Review Issue",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Complete Multica Review Issue": {
+        "main": [
+          []
+        ]
+      },
+      "Get Active Renovate Queue": {
+        "main": [
+          [
+            {
+              "node": "Renovate Review Already Queued",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Renovate Review Already Queued": {
+        "main": [
+          [],
+          [
+            {
+              "node": "Create Review Capability",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Approved Base Tree": {
+        "main": [
+          [
+            {
+              "node": "Get Approved Head Tree",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Approved Head Tree": {
+        "main": [
+          [
+            {
+              "node": "Build Approved Tree Delta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Approved Tree Delta": {
+        "main": [
+          [
+            {
+              "node": "Approved Tree Delta Is Valid",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Approved Tree Delta Is Valid": {
+        "main": [
+          [
+            {
+              "node": "Store Renovate Merge Queue",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Reject Invalid Approval Snapshot",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Store Renovate Merge Queue": {
+        "main": [
+          [
+            {
+              "node": "Accept Queued Renovate Review",
               "type": "main",
               "index": 0
             }

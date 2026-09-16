@@ -44,7 +44,7 @@ and outdated branches.
 | --- | --- |
 | `renovate` | Create and update dependency PRs; cannot merge `main` |
 | Multica agent | Analyze one supplied PR revision and return a scoped decision; receives no Forgejo PAT |
-| Authorized human reviewer | Approve an ordinary PR in Forgejo; initial allowlist is `beacon1096` |
+| Authorized operator | Approve another author's PR with a Forgejo review, or confirm an own-author PR with a SHA-bound command; initial allowlist is `beacon1096` |
 | `multica-gate` | Read the two infrastructure repositories and write `policy/merge-gate`; cannot merge |
 | n8n | Validate review capabilities, write the policy result, and request a protected merge |
 | `multica-merger` | Merge only through its isolated n8n credential and Forgejo's merge whitelist |
@@ -173,6 +173,70 @@ machine-readable result and remains a non-success, fail-closed outcome. Updating
 a PR produces a new SHA and a new pending gate; approval of the previous SHA has
 no effect on it.
 
+## Multica webhook Issue deduplication
+
+The create-Issue autopilot currently applies two independent duplicate checks:
+
+1. webhook ingress deduplicates retries using the delivery identity derived
+   from `Idempotency-Key`; and
+2. Issue creation suppresses a recent active Issue with the same autopilot,
+   project, and normalized title.
+
+The second check is useful as a coarse safety guard for manual and scheduled
+runs, but it is not a valid identity for webhook events. This integration uses
+a stable generic Issue title, so several distinct Forgejo pull-request events
+can arrive with different idempotency keys while rendering the same title. The
+title check then creates the first Issue and incorrectly marks the remaining
+runs as `skipped` with `recent duplicate autopilot issue`.
+
+The downstream patch in
+[`patches/multica-webhook-issue-dedup.patch`](patches/multica-webhook-issue-dedup.patch)
+makes the durable webhook delivery the authoritative boundary:
+
+- a retry with the same delivery identity still reuses its existing run;
+- distinct deliveries create distinct Issues even when their titles match;
+- replay remains a new delivery and therefore performs the requested work;
+- manual, scheduled, and legacy non-durable runs retain the recent-title
+  safety guard.
+
+The implementation checks `run.WebhookDeliveryID.Valid`, not the textual
+`source` field. This ties the exception to a persisted delivery protected by
+the database uniqueness constraint and avoids turning a mislabeled internal
+call into a deduplication bypass. It requires no schema migration and no n8n
+workflow change.
+
+The patch includes a PostgreSQL-backed regression test that sends two webhook
+requests with different `Idempotency-Key` values through one create-Issue
+autopilot and verifies that their runs reference two different Issues. It was
+also checked against the existing test that verifies recent-title suppression
+for ordinary dispatch. Both tests passed after applying all upstream database
+migrations in a disposable PostgreSQL instance.
+
+The fix was also smoke-tested against the production database on 2026-09-16.
+Two deliveries with the same rendered Issue title and distinct idempotency keys
+created separate runs and Issues; retrying the first key returned `duplicate`
+and reused its delivery. The official `v0.4.24` image was restored immediately
+after the test.
+
+The temporary downstream image is built reproducibly by the
+`multica-backend-oci` flake output. It fetches the pinned upstream `v0.4.24`
+source, applies the patch above, builds the static Go binaries, and produces an
+OCI archive tagged `0.4.24-beacon.1`. The Forgejo build workflow publishes that
+immutable version tag to
+`forgejo.beaco.works/infrastructure/nix-fleet/multica-backend`. Deployment is a
+separate change to the Multica HelmRelease, made only after the registry tag is
+available anonymously. This ordering prevents Flux from reconciling a manifest
+whose image has not been published yet.
+
+The publish job logs in through a temporary `skopeo` auth file populated from
+standard input. Registry credentials must not be passed with `--dest-creds`:
+command arguments are visible in the runner's process table. The auth file is
+removed by an exit trap, and the registry PAT is rotated if process-table
+exposure is observed.
+
+Upstream contribution and eventual removal of the downstream image remain
+tracked in [`TODO.md`](../../TODO.md).
+
 ## Pull request validation
 
 The credential-free `Nix Validation` Forgejo workflow evaluates all flake
@@ -186,33 +250,90 @@ specific host or deployment artifact.
 
 The protected `policy/merge-gate` context applies to every pull request.
 Opening, reopening, or updating an ordinary PR sets the gate on its current SHA
-to pending. To approve it, an authorized human uses Forgejo's normal PR review
-UI and submits an `Approve` review.
+to pending. When the operator is not the PR author, approval uses Forgejo's
+normal review UI. Forgejo intentionally prevents authors from approving their
+own PRs, so an allowlisted author instead comments exactly
+`/approve <full-40-character-head-SHA>` on the PR.
 
-The review webhook is only a wake-up signal. n8n does not trust its claimed
-reviewer or verdict. It re-reads the open PR and its reviews through the fixed
-Forgejo API origin, then requires all of the following:
+The review or comment webhook is only a wake-up signal. n8n does not trust its
+claimed reviewer, command, or verdict. It re-reads the open PR and either its
+reviews or the specific comment through the fixed Forgejo API origin, then
+requires all of the following:
 
 - repository is one of the two infrastructure repositories and base is `main`;
 - PR author is not `renovate`;
-- webhook PR head, current PR head, and approved review `commit_id` are equal;
-- review is neither stale nor dismissed;
-- reviewer is in the explicit human allowlist, initially `beacon1096`.
+- webhook PR head and current PR head are equal;
+- for a review, its `commit_id` is the current head and it is neither stale nor
+  dismissed;
+- for an author confirmation, the re-read comment ID matches the webhook, the
+  body contains only `/approve` plus the complete current head SHA, and no
+  abbreviated SHA is accepted;
+- reviewer or confirming author is in the explicit operator allowlist,
+  initially `beacon1096`.
 
 Only then does `multica-gate` mark that SHA successful and the isolated
 `multica-merger` credential request a protected merge with the same
 `head_commit_id`. A replay for an older review cannot approve a changed head.
 Multica decisions continue to use their separate signed-capability path; an
-agent cannot impersonate a Forgejo human review.
+agent cannot manufacture either event from PR-controlled content.
+
+An author confirmation is a second action bound to the post-validation
+revision, not independent four-eyes review. This is an explicit single-operator
+exception: an agent currently authorized to operate as `beacon1096` is the same
+Forgejo principal and cannot be distinguished from the human by this gate.
+Agent-specific Forgejo identities remain the long-term way to recover that
+separation; until then, the audit record proves which exact revision the shared
+principal confirmed, not whether a human or delegated agent clicked it.
+
+## Renovate merge queue
+
+An approved Renovate PR enters a PostgreSQL-backed FIFO queue instead of
+merging in the callback execution. This prevents every merge into `main` from
+forcing all other approved dependency PRs through another agent review.
+
+At approval time n8n reads the recursive Git trees for the PR's merge base and
+reviewed head. It computes a canonical, path-sorted delta containing each
+changed leaf's path, type, mode, base blob ID, and head blob ID, then stores its
+SHA-256 digest with the repository, PR, exact approved head, Multica capability
+JTI, and a 24-hour expiry. A truncated, unreadable, or oversized tree fails
+closed. `git patch-id` is deliberately not used because its whitespace
+normalization is weaker than the required byte-level tree identity.
+
+The `Renovate Merge Queue` n8n workflow leases one active item at a time. It
+re-reads the PR and requires it to remain open, authored by `renovate`, and
+targeted at `main`. If the PR merge base is behind the current base head, the
+isolated merger credential asks Forgejo to update the PR branch and releases
+the lease. The resulting synchronize webhook leaves `policy/merge-gate`
+pending but suppresses a duplicate Multica dispatch while that queue record is
+active.
+
+Once the PR contains the current base, the worker recomputes the tree delta.
+Only an exact digest and changed-path count match carries approval to the new
+head. Changes elsewhere on `main` therefore do not require another review, but
+any change to the approved path/blob/mode/type set blocks the queue item. A
+blocked item must receive a new Multica review; approval is never inferred from
+the old commit status.
+
+After equivalence is proven, `multica-gate` marks only the current head
+successful. The worker re-reads the combined status and uses
+`multica-merger` only when all required checks report success. Its merge request
+contains the current `head_commit_id`, disables delayed merging, omits force,
+and remains subject to Forgejo branch protection. A concurrent merge that
+makes the item stale returns it to the queue for another deterministic update
+cycle.
+
+Queue states are `queued`, `updating`, `waiting_ci`, `merging`, `merged`,
+`blocked`, and `expired`. Claims use a short database lease and
+`FOR UPDATE SKIP LOCKED`; approval expires after the original capability's
+24-hour lifetime.
 
 ## Merge readiness and observability
 
-Immediately before using the merger credential, n8n re-reads the combined
-Forgejo commit status for the exact reviewed SHA. A successful status requests
-an immediate protected merge with `merge_when_checks_succeed=false`; a pending
-status requests a queued merge with `merge_when_checks_succeed=true`. A failed,
-missing, or unreadable status never reaches the merger node. Both modes retain
-`head_commit_id`, omit force merge, and remain subject to branch protection.
+Human-approved PRs retain the immediate merge path. Immediately before using
+the merger credential, n8n re-reads the combined Forgejo commit status for the
+exact approved SHA. Failed, missing, or unreadable status never reaches the
+merger node. The merge retains `head_commit_id`, omits force merge, and remains
+subject to branch protection.
 
 Policy outcomes are sent to the Forgejo CI Matrix room as plain-text notices.
 They cover invalid callbacks, capability replay, stale SHA, `reject`,
@@ -221,6 +342,18 @@ Notices contain repository, PR, exact SHA, evidence URL when available, and the
 n8n execution URL, but never a capability or credential. Callback responses
 run in parallel with notification delivery, so a Matrix outage cannot turn an
 accepted decision into a retry that would collide with single-use consumption.
+
+For a completed Renovate merge, n8n resolves the originating
+Multica autopilot run through a dispatch record bound to the signed capability
+JTI, repository, PR number, and head SHA. It then marks that run's Issue as
+`done` with the dedicated `multica-closer.no-reply@beacoworks.xyz` member
+identity. Agent-supplied Issue URLs are not trusted for this lookup. A queued
+merge remains `in_review` until Forgejo confirms the merge.
+
+Multica currently does not expose scopes on personal access tokens. The closer
+therefore has ordinary workspace-member permissions, and n8n isolates its token
+in a credential attached only to the fixed run-read and Issue-status nodes. The
+credential must not be exposed to the agent, callback payload, or workflow JSON.
 
 ## Deferred: webhook-triggered Renovate runs
 

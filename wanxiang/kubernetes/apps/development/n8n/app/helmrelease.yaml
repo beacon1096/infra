@@ -78,6 +78,11 @@ spec:
                   secretKeyRef:
                     name: n8n-secret
                     key: review-capability-secret
+              MULTICA_CLOSER_TOKEN:
+                valueFrom:
+                  secretKeyRef:
+                    name: n8n-secret
+                    key: multica-closer-token
               FORGEJO_GATE_TOKEN:
                 valueFrom:
                   secretKeyRef:
@@ -125,8 +130,13 @@ spec:
                 node -e 'require("fs").writeFileSync("/tmp/review-capability-postgres.json", JSON.stringify([{ id: "reviewCapabilityPg", name: "Review Capability PostgreSQL", type: "postgres", data: { host: process.env.DB_POSTGRESDB_HOST, database: process.env.DB_POSTGRESDB_DATABASE, user: process.env.DB_POSTGRESDB_USER, password: process.env.DB_POSTGRESDB_PASSWORD, port: Number(process.env.DB_POSTGRESDB_PORT), ssl: "disable", maxConnections: 2 } }]), { mode: 0o600 })'
                 n8n import:credentials --input=/tmp/review-capability-postgres.json
                 rm /tmp/review-capability-postgres.json
+                node -e 'require("fs").writeFileSync("/tmp/multica-closer.json", JSON.stringify([{ id: "multicaCloser01", name: "Multica Issue Closer", type: "httpHeaderAuth", data: { name: "Authorization", value: "Bearer " + process.env.MULTICA_CLOSER_TOKEN } }]), { mode: 0o600 })'
+                n8n import:credentials --input=/tmp/multica-closer.json
+                rm /tmp/multica-closer.json
                 n8n import:workflow --input=/workflows/infra-ci.json
+                n8n import:workflow --input=/workflows/renovate-merge-queue.json
                 n8n publish:workflow --id=GzhPPYlazQObUguC
+                n8n publish:workflow --id=renovateMergeQueue01
     defaultPodOptions:
       annotations:
         reloader.stakater.com/auto: "true"
@@ -150,6 +160,9 @@ spec:
             import-workflows:
               - path: /workflows/infra-ci.json
                 subPath: infra-ci.json
+                readOnly: true
+              - path: /workflows/renovate-merge-queue.json
+                subPath: renovate-merge-queue.json
                 readOnly: true
       data:
         # Pre-created PVC (data-pvc.yaml) so the swarm-01 state

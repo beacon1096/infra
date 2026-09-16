@@ -102,6 +102,41 @@ assert.equal(humanReviewEvent.IS_HUMAN_APPROVAL_SIGNAL, true);
 assert.equal(humanReviewEvent.IS_RENOVATE_PR, false);
 assert.match(humanReviewEvent.EVENT_KEY, /pull_request_review_approved:10$/);
 
+const selfApprovalEvent = execute("Normalize Forgejo Event", {
+  $json: {
+    headers: { "x-forgejo-event": "issue" },
+    body: {
+      action: "created",
+      repository: { full_name: "infrastructure/infra" },
+      sender: { login: "beacon1096" },
+      issue: { number: 8, pull_request: { merged: false } },
+      comment: { id: 20, body: `/approve ${event.PR_HEAD_SHA}` },
+    },
+  },
+  $execution: { id: "self-approval-execution" },
+}).json;
+assert.equal(selfApprovalEvent.SUPPORTED, true);
+assert.equal(selfApprovalEvent.IS_HUMAN_APPROVAL_SIGNAL, true);
+assert.equal(selfApprovalEvent.APPROVAL_KIND, "comment");
+assert.equal(selfApprovalEvent.APPROVAL_COMMENT_ID, 20);
+assert.equal(selfApprovalEvent.PR_HEAD_SHA, event.PR_HEAD_SHA);
+
+const shortShaApproval = execute("Normalize Forgejo Event", {
+  $json: {
+    headers: { "x-forgejo-event": "issue" },
+    body: {
+      action: "created",
+      repository: { full_name: "infrastructure/infra" },
+      sender: { login: "beacon1096" },
+      issue: { number: 8, pull_request: { merged: false } },
+      comment: { id: 21, body: "/approve 0123456" },
+    },
+  },
+  $execution: { id: "short-sha-approval-execution" },
+}).json;
+assert.equal(shortShaApproval.SUPPORTED, false);
+assert.equal(shortShaApproval.IS_HUMAN_APPROVAL_SIGNAL, false);
+
 const verifyHumanApproval = (reviews, headSha = event.PR_HEAD_SHA) =>
   execute("Verify Human Approval", {
     $json: { statusCode: 200, body: reviews },
@@ -135,6 +170,48 @@ assert.equal(verifyHumanApproval([{
   commit_id: event.PR_HEAD_SHA,
   user: { login: "untrusted-reviewer" },
 }]).HUMAN_APPROVAL_VALID, false);
+
+const verifySelfApproval = (comment, headSha = event.PR_HEAD_SHA) =>
+  execute("Verify Human Approval", {
+    $json: { statusCode: 200, body: comment },
+    $: (name) => ({
+      item: {
+        json: name === "Decide Event Transition"
+          ? selfApprovalEvent
+          : {
+              statusCode: 200,
+              body: {
+                state: "open",
+                html_url: "https://forgejo.beaco.works/infrastructure/infra/pulls/8",
+                user: { login: "beacon1096" },
+                base: { ref: "main" },
+                head: { sha: headSha },
+              },
+            },
+      },
+    }),
+  }).json;
+
+assert.equal(verifySelfApproval({
+  id: 20,
+  body: `/approve ${event.PR_HEAD_SHA}`,
+  user: { login: "beacon1096" },
+}).HUMAN_APPROVAL_VALID, true);
+assert.equal(verifySelfApproval({
+  id: 20,
+  body: "/approve aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  user: { login: "beacon1096" },
+}).HUMAN_APPROVAL_VALID, false);
+assert.equal(verifySelfApproval({
+  id: 20,
+  body: `/approve ${event.PR_HEAD_SHA}`,
+  user: { login: "untrusted-reviewer" },
+}).HUMAN_APPROVAL_VALID, false);
+assert.equal(verifySelfApproval({
+  id: 999,
+  body: `/approve ${event.PR_HEAD_SHA}`,
+  user: { login: "beacon1096" },
+}).HUMAN_APPROVAL_VALID, false);
 assert.equal(verifyHumanApproval([{
   id: 12,
   state: "APPROVED",
@@ -174,6 +251,10 @@ assert.equal(valid.PR_NUMBER, Number(event.PR_NUMBER));
 assert.equal(valid.HEAD_SHA, event.PR_HEAD_SHA);
 assert.equal(valid.JTI.length > 0, true);
 assert.equal(Number.isInteger(valid.EXPIRES_AT), true);
+assert.equal(typeof execute("Create Review Capability", {
+  $: () => ({ first: () => ({ json: event }) }),
+  $env: { REVIEW_CAPABILITY_SECRET: secret },
+}).json.REVIEW_JTI, "string");
 assert.equal(validate(capability, "human_required").REVIEW_VALID, true);
 assert.equal(validate(capability, "unknown").REVIEW_VALID, false);
 
@@ -210,6 +291,78 @@ assert.match(reviewStatusFields.state, /human_required|pending/);
 const approvalCondition = nodes.get("Multica Review Approved")
   .parameters.conditions.conditions[0];
 assert.equal(approvalCondition.rightValue, "approve");
+
+const treeEntry = (path, sha, mode = "100644", type = "blob") => ({
+  path,
+  mode,
+  type,
+  sha,
+});
+const baseBlob = "1".repeat(40);
+const approvedBlob = "2".repeat(40);
+const unrelatedBlob = "3".repeat(40);
+const mergeBase = "4".repeat(40);
+const approvedHead = "5".repeat(40);
+const buildDelta = (baseTree, headTree) => execute("Build Approved Tree Delta", {
+  $: (name) => ({
+    first: () => ({
+      json: name === "Verify Current Renovate PR"
+        ? { ...valid, HEAD_SHA: approvedHead }
+        : name === "Get Current Renovate PR"
+          ? { body: { merge_base: mergeBase } }
+          : name === "Get Approved Base Tree"
+            ? { statusCode: 200, body: { truncated: false, tree: baseTree } }
+            : { statusCode: 200, body: { truncated: false, tree: headTree } },
+    }),
+  }),
+}).json;
+const originalDelta = buildDelta(
+  [treeEntry("flake.lock", baseBlob)],
+  [treeEntry("flake.lock", approvedBlob)],
+);
+const rebasedEquivalentDelta = buildDelta(
+  [treeEntry("flake.lock", baseBlob), treeEntry("README.md", unrelatedBlob)],
+  [treeEntry("flake.lock", approvedBlob), treeEntry("README.md", unrelatedBlob)],
+);
+assert.equal(originalDelta.DELTA_VALID, true);
+assert.equal(originalDelta.DELTA_COUNT, 1);
+assert.equal(originalDelta.DELTA_DIGEST, rebasedEquivalentDelta.DELTA_DIGEST);
+assert.notEqual(
+  originalDelta.DELTA_DIGEST,
+  buildDelta(
+    [treeEntry("flake.lock", baseBlob)],
+    [treeEntry("flake.lock", unrelatedBlob)],
+  ).DELTA_DIGEST,
+);
+assert.equal(
+  execute("Build Approved Tree Delta", {
+    $: (name) => ({
+      first: () => ({
+        json: name === "Verify Current Renovate PR"
+          ? { ...valid, HEAD_SHA: approvedHead }
+          : name === "Get Current Renovate PR"
+            ? { body: { merge_base: mergeBase } }
+            : { statusCode: 200, body: { truncated: true, tree: [] } },
+      }),
+    }),
+  }).json.DELTA_VALID,
+  false,
+);
+
+assert.equal(nodes.get("Get Active Renovate Queue").credentials.postgres.id, "reviewCapabilityPg");
+assert.match(nodes.get("Get Active Renovate Queue").parameters.query, /renovate_merge_queue/);
+assert.match(nodes.get("Store Renovate Merge Queue").parameters.query, /delta_digest/);
+assert.match(nodes.get("Store Renovate Merge Queue").parameters.query, /state = 'queued'/);
+assert.deepEqual(
+  workflow.connections["Renovate Review Already Queued"].main.map((branch) =>
+    branch.map(({ node }) => node)),
+  [[], ["Create Review Capability"]],
+);
+assert.deepEqual(
+  workflow.connections["Multica Review Approved"].main.map((branch) =>
+    branch.map(({ node }) => node)),
+  [["Get Approved Base Tree"], ["Build Policy Notice"]],
+);
 
 const humanMerge = nodes.get("Merge Human-Approved PR");
 assert.equal(humanMerge.credentials.httpHeaderAuth.id, "multicaMerger01");
@@ -282,10 +435,61 @@ for (const name of [
 }
 assert.match(nodes.get("Get Current Renovate PR").parameters.url, /\.first\(\)/);
 assert.match(nodes.get("Respond Policy Event").parameters.responseBody, /\.first\(\)/);
+assert.equal(
+  nodes.get("Create Review Capability").parameters.jsCode
+    .includes('$("Decide Event Transition").item'),
+  false,
+);
+const multicaTrigger = nodes.get("Trigger Multica Renovate Autopilot");
+assert.equal(multicaTrigger.parameters.body.includes('$("Decide Event Transition").item'), false);
+assert.equal(
+  multicaTrigger.parameters.headerParameters.parameters[1].value
+    .includes('$("Decide Event Transition").item'),
+  false,
+);
 
 assert.deepEqual(
   workflow.connections["Build Policy Notice"].main[0].map(({ node }) => node).sort(),
   ["Notify Matrix Policy Event", "Respond Policy Event"].sort(),
+);
+
+const dispatchStore = nodes.get("Store Multica Review Dispatch");
+assert.equal(dispatchStore.credentials.postgres.id, "reviewCapabilityPg");
+assert.match(dispatchStore.parameters.query, /multica_review_dispatches/);
+assert.match(dispatchStore.parameters.query, /run_id uuid NOT NULL UNIQUE/);
+assert.doesNotMatch(dispatchStore.parameters.query, /\$json|\$\(/);
+
+assert.equal(
+  nodes.get("Trigger Multica Renovate Autopilot").parameters.options.response,
+  undefined,
+);
+const validatedDispatch = execute("Validate Multica Dispatch", {
+  $json: {
+    status: "accepted",
+    autopilot_id: "11111111-1111-4111-8111-111111111111",
+    run_id: "22222222-2222-4222-8222-222222222222",
+  },
+  $: () => ({ first: () => ({ json: {
+    REVIEW_JTI: "33333333-3333-4333-8333-333333333333",
+    REPO: event.REPO,
+    PR_NUMBER: Number(event.PR_NUMBER),
+    PR_HEAD_SHA: event.PR_HEAD_SHA,
+  } }) }),
+}).json;
+assert.equal(validatedDispatch.RUN_ID, "22222222-2222-4222-8222-222222222222");
+assert.throws(() => execute("Validate Multica Dispatch", {
+  $json: { status: "rejected" },
+  $: () => ({ first: () => ({ json: {} }) }),
+}));
+
+for (const name of ["Get Multica Autopilot Run", "Complete Multica Review Issue"]) {
+  assert.equal(nodes.get(name).credentials.httpHeaderAuth.id, "multicaCloser01");
+}
+assert.match(nodes.get("Complete Multica Review Issue").parameters.jsonBody, /status: 'done'/);
+assert.deepEqual(
+  workflow.connections["Renovate Merge Completed"].main.map((branch) =>
+    branch.map(({ node }) => node)),
+  [["Get Multica Review Dispatch"], []],
 );
 
 const consumeCapability = nodes.get("Consume Review Capability");
