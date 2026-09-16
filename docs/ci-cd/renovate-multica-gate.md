@@ -322,6 +322,12 @@ and remains subject to Forgejo branch protection. A concurrent merge that
 makes the item stale returns it to the queue for another deterministic update
 cycle.
 
+After a successful merge, issue closure is bound to the exact stored Multica
+run, autopilot, and issue identifiers. It does not require the Multica run to
+report `completed`: webhook-triggered runs currently remain `issue_created`
+after an approved callback, while the callback capability and approved tree
+snapshot are the authorization boundary for the merge.
+
 Queue states are `queued`, `updating`, `waiting_ci`, `merging`, `merged`,
 `blocked`, and `expired`. Claims use a short database lease and
 `FOR UPDATE SKIP LOCKED`; approval expires after the original capability's
