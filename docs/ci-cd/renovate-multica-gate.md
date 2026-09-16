@@ -173,6 +173,50 @@ machine-readable result and remains a non-success, fail-closed outcome. Updating
 a PR produces a new SHA and a new pending gate; approval of the previous SHA has
 no effect on it.
 
+## Multica webhook Issue deduplication
+
+The create-Issue autopilot currently applies two independent duplicate checks:
+
+1. webhook ingress deduplicates retries using the delivery identity derived
+   from `Idempotency-Key`; and
+2. Issue creation suppresses a recent active Issue with the same autopilot,
+   project, and normalized title.
+
+The second check is useful as a coarse safety guard for manual and scheduled
+runs, but it is not a valid identity for webhook events. This integration uses
+a stable generic Issue title, so several distinct Forgejo pull-request events
+can arrive with different idempotency keys while rendering the same title. The
+title check then creates the first Issue and incorrectly marks the remaining
+runs as `skipped` with `recent duplicate autopilot issue`.
+
+The downstream patch in
+[`patches/multica-webhook-issue-dedup.patch`](patches/multica-webhook-issue-dedup.patch)
+makes the durable webhook delivery the authoritative boundary:
+
+- a retry with the same delivery identity still reuses its existing run;
+- distinct deliveries create distinct Issues even when their titles match;
+- replay remains a new delivery and therefore performs the requested work;
+- manual, scheduled, and legacy non-durable runs retain the recent-title
+  safety guard.
+
+The implementation checks `run.WebhookDeliveryID.Valid`, not the textual
+`source` field. This ties the exception to a persisted delivery protected by
+the database uniqueness constraint and avoids turning a mislabeled internal
+call into a deduplication bypass. It requires no schema migration and no n8n
+workflow change.
+
+The patch includes a PostgreSQL-backed regression test that sends two webhook
+requests with different `Idempotency-Key` values through one create-Issue
+autopilot and verifies that their runs reference two different Issues. It was
+also checked against the existing test that verifies recent-title suppression
+for ordinary dispatch. Both tests passed after applying all upstream database
+migrations in a disposable PostgreSQL instance.
+
+This is a recorded downstream patch, not evidence that the running Multica
+instance is already fixed. Preparing an upstream contribution and deciding
+whether to carry a temporary patched image are tracked in the repository
+[`TODO.md`](../../TODO.md).
+
 ## Pull request validation
 
 The credential-free `Nix Validation` Forgejo workflow evaluates all flake
