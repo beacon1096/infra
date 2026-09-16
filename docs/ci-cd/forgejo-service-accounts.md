@@ -10,7 +10,9 @@ policy decisions, and merging do not share credentials.
 | `multica-merger` | `multica-merger.no-reply@beacoworks.xyz` | Merge a pull request after all protected-branch requirements pass | Write collaborator on `infrastructure/infra` and `infrastructure/infra-private` |
 
 `multica-gate` cannot merge through the automation workflow. Its PAT has only
-the `write:repository` scope and is stored encrypted in the n8n SOPS Secret.
+the `write:repository` and `read:issue` scopes and is stored encrypted in the
+n8n SOPS Secret. `read:issue` is required to re-read a SHA-bound author
+confirmation comment; webhook content alone is not trusted.
 The Multica agent only receives a credential for submitting its review result
 to n8n and never receives a Forgejo PAT.
 
