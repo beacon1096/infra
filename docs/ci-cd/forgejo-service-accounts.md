@@ -63,3 +63,11 @@ chosen. Tokens and private signing material remain in the appropriate secret
 store. An agent identity must not reuse `renovate`, `multica-gate`, or
 `multica-merger`: those accounts have distinct discovery, policy, and merge
 responsibilities.
+
+Until those identities exist, an explicitly authorized agent may operate as
+`beacon1096`. Forgejo and the merge gate necessarily treat that as the same
+principal as the human operator. For a PR authored by that shared principal,
+Forgejo self-review is unavailable; the operator confirmation is instead an
+exact `/approve <full-head-SHA>` PR comment that n8n re-reads through the API.
+This preserves revision binding and an auditable second action, but it is not
+independent review and must not be described as one.
