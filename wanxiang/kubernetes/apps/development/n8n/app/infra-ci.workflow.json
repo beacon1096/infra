@@ -1164,7 +1164,7 @@
             "parameters": [
               {
                 "name": "state",
-                "value": "={{ $json.VERDICT === 'approve' ? 'success' : ($json.VERDICT === 'reject' ? 'failure' : 'pending') }}"
+                "value": "={{ $json.VERDICT === 'reject' ? 'failure' : 'pending' }}"
               },
               {
                 "name": "context",
@@ -2197,6 +2197,229 @@
             "name": "Multica Issue Closer"
           }
         }
+      },
+      {
+        "id": "1dd4360c-3af3-4875-aac1-54f10cc8dbea",
+        "name": "Get Active Renovate Queue",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          2352,
+          32
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "CREATE TABLE IF NOT EXISTS renovate_merge_queue (\n  repo text NOT NULL,\n  pr_number bigint NOT NULL,\n  approved_head_sha char(40) NOT NULL,\n  approved_base_sha char(40) NOT NULL,\n  delta_digest char(64) NOT NULL,\n  delta_count integer NOT NULL,\n  approval_jti uuid NOT NULL UNIQUE,\n  multica_summary text NOT NULL,\n  evidence_url text NOT NULL DEFAULT '',\n  state text NOT NULL CHECK (state IN ('queued', 'updating', 'waiting_ci', 'merging', 'merged', 'blocked', 'expired')),\n  attempt_count integer NOT NULL DEFAULT 0,\n  lease_until timestamptz,\n  approved_at timestamptz NOT NULL DEFAULT now(),\n  updated_at timestamptz NOT NULL DEFAULT now(),\n  expires_at timestamptz NOT NULL,\n  last_error text NOT NULL DEFAULT '',\n  PRIMARY KEY (repo, pr_number)\n);\nSELECT EXISTS (\n  SELECT 1 FROM renovate_merge_queue\n  WHERE repo = $1 AND pr_number = $2::bigint\n    AND state IN ('queued', 'updating', 'waiting_ci', 'merging')\n    AND expires_at > now()\n) AS review_queued;",
+          "options": {
+            "queryReplacement": "={{ [$(\"Decide Event Transition\").item.json.REPO, $(\"Decide Event Transition\").item.json.PR_NUMBER] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "9a749abc-1cf7-4688-b047-8244ea9496e1",
+        "name": "Renovate Review Already Queued",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2464,
+          32
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.review_queued }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "926d3408-5242-4799-98e9-1742fcb94c4f",
+        "name": "Get Approved Base Tree",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1792,
+          1024
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Verify Current Renovate PR\").item.json.REPO + '/git/trees/' + $(\"Get Current Renovate PR\").item.json.body.merge_base + '?recursive=true&per_page=2000' }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "19bfc0ef-095d-40b8-a2e5-e7d930c53410",
+        "name": "Get Approved Head Tree",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2016,
+          1024
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Verify Current Renovate PR\").item.json.REPO + '/git/trees/' + $(\"Verify Current Renovate PR\").item.json.HEAD_SHA + '?recursive=true&per_page=2000' }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "acdc21af-2b48-43b4-82a1-167f6be6e641",
+        "name": "Build Approved Tree Delta",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2240,
+          1024
+        ],
+        "parameters": {
+          "jsCode": "const crypto = require('crypto');\nconst review = $('Verify Current Renovate PR').first().json;\nconst pr = $('Get Current Renovate PR').first().json.body ?? {};\nconst baseResponse = $('Get Approved Base Tree').first().json;\nconst headResponse = $('Get Approved Head Tree').first().json;\nconst base = baseResponse.body ?? {};\nconst head = headResponse.body ?? {};\nconst sha = /^[0-9a-f]{40}$/;\nconst validTree = (response, tree) => response.statusCode === 200\n  && tree.truncated !== true\n  && Array.isArray(tree.tree)\n  && tree.tree.length <= 5000;\nconst baseSha = String(pr.merge_base ?? '').toLowerCase();\nconst headSha = String(review.HEAD_SHA ?? '').toLowerCase();\nif (!sha.test(baseSha) || !sha.test(headSha) || !validTree(baseResponse, base) || !validTree(headResponse, head)) {\n  return { json: { ...review, DELTA_VALID: false, DELTA_ERROR: 'Forgejo tree snapshot was missing, invalid, or truncated' } };\n}\nconst leaves = (tree) => new Map(tree.tree\n  .filter((entry) => entry?.type !== 'tree' && typeof entry?.path === 'string')\n  .map((entry) => [entry.path, { mode: String(entry.mode ?? ''), type: String(entry.type ?? ''), sha: String(entry.sha ?? '') }]));\nconst baseLeaves = leaves(base);\nconst headLeaves = leaves(head);\nconst paths = [...new Set([...baseLeaves.keys(), ...headLeaves.keys()])].sort();\nconst delta = paths\n  .map((path) => ({ path, base: baseLeaves.get(path) ?? null, head: headLeaves.get(path) ?? null }))\n  .filter((entry) => JSON.stringify(entry.base) !== JSON.stringify(entry.head));\nconst canonical = JSON.stringify(delta);\nreturn { json: {\n  ...review,\n  DELTA_VALID: true,\n  APPROVED_BASE_SHA: baseSha,\n  APPROVED_HEAD_SHA: headSha,\n  DELTA_DIGEST: crypto.createHash('sha256').update(canonical).digest('hex'),\n  DELTA_COUNT: delta.length,\n} };"
+        }
+      },
+      {
+        "id": "71f122ba-3170-4d3a-a991-3884d86cd4d9",
+        "name": "Approved Tree Delta Is Valid",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2464,
+          1024
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.DELTA_VALID }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "f05a4458-ac11-4e06-97ee-d37c8be8b377",
+        "name": "Store Renovate Merge Queue",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          2688,
+          960
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO renovate_merge_queue (\n  repo, pr_number, approved_head_sha, approved_base_sha, delta_digest,\n  delta_count, approval_jti, multica_summary, evidence_url, state, expires_at\n) VALUES ($1, $2::bigint, $3, $4, $5, $6::integer, $7::uuid, $8, $9, 'queued', to_timestamp($10::bigint))\nON CONFLICT (repo, pr_number) DO UPDATE SET\n  approved_head_sha = EXCLUDED.approved_head_sha,\n  approved_base_sha = EXCLUDED.approved_base_sha,\n  delta_digest = EXCLUDED.delta_digest,\n  delta_count = EXCLUDED.delta_count,\n  approval_jti = EXCLUDED.approval_jti,\n  multica_summary = EXCLUDED.multica_summary,\n  evidence_url = EXCLUDED.evidence_url,\n  state = 'queued',\n  attempt_count = 0,\n  lease_until = NULL,\n  approved_at = now(),\n  updated_at = now(),\n  expires_at = EXCLUDED.expires_at,\n  last_error = ''\nRETURNING repo, pr_number, approved_head_sha, approved_base_sha, delta_digest, delta_count, state;",
+          "options": {
+            "queryReplacement": "={{ [$json.REPO, $json.PR_NUMBER, $json.APPROVED_HEAD_SHA, $json.APPROVED_BASE_SHA, $json.DELTA_DIGEST, $json.DELTA_COUNT, $json.JTI, $json.SUMMARY, $json.EVIDENCE_URL, $json.EXPIRES_AT] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "4b61c87e-24ab-4eb5-a1f1-b141156db416",
+        "name": "Accept Queued Renovate Review",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.4,
+        "position": [
+          2912,
+          960
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { result: 'queued', state: 'pending', head_sha: $json.approved_head_sha, delta_digest: $json.delta_digest } }}",
+          "options": {
+            "responseCode": 200
+          }
+        }
+      },
+      {
+        "id": "2a37cd4b-5922-4fd4-b1ad-843a64fdc97f",
+        "name": "Reject Invalid Approval Snapshot",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.4,
+        "position": [
+          2688,
+          1088
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { error: $json.DELTA_ERROR || 'failed to snapshot approved tree delta' } }}",
+          "options": {
+            "responseCode": 424
+          }
+        }
       }
     ],
     "connections": {
@@ -2552,7 +2775,7 @@
         "main": [
           [
             {
-              "node": "Create Review Capability",
+              "node": "Get Active Renovate Queue",
               "type": "main",
               "index": 0
             }
@@ -2672,7 +2895,7 @@
         "main": [
           [
             {
-              "node": "Get Renovate Merge Status",
+              "node": "Get Approved Base Tree",
               "type": "main",
               "index": 0
             }
@@ -3036,6 +3259,91 @@
       "Complete Multica Review Issue": {
         "main": [
           []
+        ]
+      },
+      "Get Active Renovate Queue": {
+        "main": [
+          [
+            {
+              "node": "Renovate Review Already Queued",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Renovate Review Already Queued": {
+        "main": [
+          [],
+          [
+            {
+              "node": "Create Review Capability",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Approved Base Tree": {
+        "main": [
+          [
+            {
+              "node": "Get Approved Head Tree",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Approved Head Tree": {
+        "main": [
+          [
+            {
+              "node": "Build Approved Tree Delta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Approved Tree Delta": {
+        "main": [
+          [
+            {
+              "node": "Approved Tree Delta Is Valid",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Approved Tree Delta Is Valid": {
+        "main": [
+          [
+            {
+              "node": "Store Renovate Merge Queue",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Reject Invalid Approval Snapshot",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Store Renovate Merge Queue": {
+        "main": [
+          [
+            {
+              "node": "Accept Queued Renovate Review",
+              "type": "main",
+              "index": 0
+            }
+          ]
         ]
       }
     },
