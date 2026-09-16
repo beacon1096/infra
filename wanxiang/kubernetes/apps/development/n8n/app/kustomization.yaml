@@ -12,5 +12,6 @@ configMapGenerator:
   - name: n8n-workflows
     files:
       - infra-ci.json=infra-ci.workflow.json
+      - renovate-merge-queue.json=renovate-merge-queue.workflow.json
 generatorOptions:
   disableNameSuffixHash: true

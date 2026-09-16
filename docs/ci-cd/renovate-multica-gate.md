@@ -285,14 +285,55 @@ Agent-specific Forgejo identities remain the long-term way to recover that
 separation; until then, the audit record proves which exact revision the shared
 principal confirmed, not whether a human or delegated agent clicked it.
 
+## Renovate merge queue
+
+An approved Renovate PR enters a PostgreSQL-backed FIFO queue instead of
+merging in the callback execution. This prevents every merge into `main` from
+forcing all other approved dependency PRs through another agent review.
+
+At approval time n8n reads the recursive Git trees for the PR's merge base and
+reviewed head. It computes a canonical, path-sorted delta containing each
+changed leaf's path, type, mode, base blob ID, and head blob ID, then stores its
+SHA-256 digest with the repository, PR, exact approved head, Multica capability
+JTI, and a 24-hour expiry. A truncated, unreadable, or oversized tree fails
+closed. `git patch-id` is deliberately not used because its whitespace
+normalization is weaker than the required byte-level tree identity.
+
+The `Renovate Merge Queue` n8n workflow leases one active item at a time. It
+re-reads the PR and requires it to remain open, authored by `renovate`, and
+targeted at `main`. If the PR merge base is behind the current base head, the
+isolated merger credential asks Forgejo to update the PR branch and releases
+the lease. The resulting synchronize webhook leaves `policy/merge-gate`
+pending but suppresses a duplicate Multica dispatch while that queue record is
+active.
+
+Once the PR contains the current base, the worker recomputes the tree delta.
+Only an exact digest and changed-path count match carries approval to the new
+head. Changes elsewhere on `main` therefore do not require another review, but
+any change to the approved path/blob/mode/type set blocks the queue item. A
+blocked item must receive a new Multica review; approval is never inferred from
+the old commit status.
+
+After equivalence is proven, `multica-gate` marks only the current head
+successful. The worker re-reads the combined status and uses
+`multica-merger` only when all required checks report success. Its merge request
+contains the current `head_commit_id`, disables delayed merging, omits force,
+and remains subject to Forgejo branch protection. A concurrent merge that
+makes the item stale returns it to the queue for another deterministic update
+cycle.
+
+Queue states are `queued`, `updating`, `waiting_ci`, `merging`, `merged`,
+`blocked`, and `expired`. Claims use a short database lease and
+`FOR UPDATE SKIP LOCKED`; approval expires after the original capability's
+24-hour lifetime.
+
 ## Merge readiness and observability
 
-Immediately before using the merger credential, n8n re-reads the combined
-Forgejo commit status for the exact reviewed SHA. A successful status requests
-an immediate protected merge with `merge_when_checks_succeed=false`; a pending
-status requests a queued merge with `merge_when_checks_succeed=true`. A failed,
-missing, or unreadable status never reaches the merger node. Both modes retain
-`head_commit_id`, omit force merge, and remain subject to branch protection.
+Human-approved PRs retain the immediate merge path. Immediately before using
+the merger credential, n8n re-reads the combined Forgejo commit status for the
+exact approved SHA. Failed, missing, or unreadable status never reaches the
+merger node. The merge retains `head_commit_id`, omits force merge, and remains
+subject to branch protection.
 
 Policy outcomes are sent to the Forgejo CI Matrix room as plain-text notices.
 They cover invalid callbacks, capability replay, stale SHA, `reject`,
@@ -302,13 +343,12 @@ n8n execution URL, but never a capability or credential. Callback responses
 run in parallel with notification delivery, so a Matrix outage cannot turn an
 accepted decision into a retry that would collide with single-use consumption.
 
-For an immediately completed Renovate merge, n8n resolves the originating
+For a completed Renovate merge, n8n resolves the originating
 Multica autopilot run through a dispatch record bound to the signed capability
 JTI, repository, PR number, and head SHA. It then marks that run's Issue as
 `done` with the dedicated `multica-closer.no-reply@beacoworks.xyz` member
 identity. Agent-supplied Issue URLs are not trusted for this lookup. A queued
-merge remains `in_review`; closing it after the later Forgejo merge event is a
-separate follow-up.
+merge remains `in_review` until Forgejo confirms the merge.
 
 Multica currently does not expose scopes on personal access tokens. The closer
 therefore has ordinary workspace-member permissions, and n8n isolates its token

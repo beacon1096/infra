@@ -134,7 +134,9 @@ spec:
                 n8n import:credentials --input=/tmp/multica-closer.json
                 rm /tmp/multica-closer.json
                 n8n import:workflow --input=/workflows/infra-ci.json
+                n8n import:workflow --input=/workflows/renovate-merge-queue.json
                 n8n publish:workflow --id=GzhPPYlazQObUguC
+                n8n publish:workflow --id=renovateMergeQueue01
     defaultPodOptions:
       annotations:
         reloader.stakater.com/auto: "true"

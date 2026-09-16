@@ -292,6 +292,78 @@ const approvalCondition = nodes.get("Multica Review Approved")
   .parameters.conditions.conditions[0];
 assert.equal(approvalCondition.rightValue, "approve");
 
+const treeEntry = (path, sha, mode = "100644", type = "blob") => ({
+  path,
+  mode,
+  type,
+  sha,
+});
+const baseBlob = "1".repeat(40);
+const approvedBlob = "2".repeat(40);
+const unrelatedBlob = "3".repeat(40);
+const mergeBase = "4".repeat(40);
+const approvedHead = "5".repeat(40);
+const buildDelta = (baseTree, headTree) => execute("Build Approved Tree Delta", {
+  $: (name) => ({
+    first: () => ({
+      json: name === "Verify Current Renovate PR"
+        ? { ...valid, HEAD_SHA: approvedHead }
+        : name === "Get Current Renovate PR"
+          ? { body: { merge_base: mergeBase } }
+          : name === "Get Approved Base Tree"
+            ? { statusCode: 200, body: { truncated: false, tree: baseTree } }
+            : { statusCode: 200, body: { truncated: false, tree: headTree } },
+    }),
+  }),
+}).json;
+const originalDelta = buildDelta(
+  [treeEntry("flake.lock", baseBlob)],
+  [treeEntry("flake.lock", approvedBlob)],
+);
+const rebasedEquivalentDelta = buildDelta(
+  [treeEntry("flake.lock", baseBlob), treeEntry("README.md", unrelatedBlob)],
+  [treeEntry("flake.lock", approvedBlob), treeEntry("README.md", unrelatedBlob)],
+);
+assert.equal(originalDelta.DELTA_VALID, true);
+assert.equal(originalDelta.DELTA_COUNT, 1);
+assert.equal(originalDelta.DELTA_DIGEST, rebasedEquivalentDelta.DELTA_DIGEST);
+assert.notEqual(
+  originalDelta.DELTA_DIGEST,
+  buildDelta(
+    [treeEntry("flake.lock", baseBlob)],
+    [treeEntry("flake.lock", unrelatedBlob)],
+  ).DELTA_DIGEST,
+);
+assert.equal(
+  execute("Build Approved Tree Delta", {
+    $: (name) => ({
+      first: () => ({
+        json: name === "Verify Current Renovate PR"
+          ? { ...valid, HEAD_SHA: approvedHead }
+          : name === "Get Current Renovate PR"
+            ? { body: { merge_base: mergeBase } }
+            : { statusCode: 200, body: { truncated: true, tree: [] } },
+      }),
+    }),
+  }).json.DELTA_VALID,
+  false,
+);
+
+assert.equal(nodes.get("Get Active Renovate Queue").credentials.postgres.id, "reviewCapabilityPg");
+assert.match(nodes.get("Get Active Renovate Queue").parameters.query, /renovate_merge_queue/);
+assert.match(nodes.get("Store Renovate Merge Queue").parameters.query, /delta_digest/);
+assert.match(nodes.get("Store Renovate Merge Queue").parameters.query, /state = 'queued'/);
+assert.deepEqual(
+  workflow.connections["Renovate Review Already Queued"].main.map((branch) =>
+    branch.map(({ node }) => node)),
+  [[], ["Create Review Capability"]],
+);
+assert.deepEqual(
+  workflow.connections["Multica Review Approved"].main.map((branch) =>
+    branch.map(({ node }) => node)),
+  [["Get Approved Base Tree"], ["Build Policy Notice"]],
+);
+
 const humanMerge = nodes.get("Merge Human-Approved PR");
 assert.equal(humanMerge.credentials.httpHeaderAuth.id, "multicaMerger01");
 const humanMergeFields = Object.fromEntries(
