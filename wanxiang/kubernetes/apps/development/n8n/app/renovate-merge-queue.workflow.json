@@ -809,7 +809,7 @@
           -128
         ],
         "parameters": {
-          "jsCode": "const run = $json ?? {};\nconst dispatch = $('Get Queued Multica Dispatch').first().json;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (String(run.id) !== String(dispatch.run_id)\n  || String(run.autopilot_id) !== String(dispatch.autopilot_id)\n  || run.status !== 'completed'\n  || !uuid.test(String(run.issue_id ?? ''))) throw new Error('queued Multica run binding mismatch');\nreturn { json: { ISSUE_ID: run.issue_id } };"
+          "jsCode": "const run = $json ?? {};\nconst dispatch = $('Get Queued Multica Dispatch').first().json;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (String(run.id) !== String(dispatch.run_id)\n  || String(run.autopilot_id) !== String(dispatch.autopilot_id)\n  || !uuid.test(String(run.issue_id ?? ''))) throw new Error('queued Multica run binding mismatch');\nreturn { json: { ISSUE_ID: run.issue_id } };"
         }
       },
       {

@@ -97,6 +97,10 @@ assert.match(mergeFields.head_commit_id, /CURRENT_HEAD_SHA/);
 assert.match(nodes.get("Record Queued Merge Result").parameters.query, /405, 409/);
 assert.match(nodes.get("Record Queued Merge Result").parameters.query, /approval_jti::text/);
 assert.equal(nodes.get("Get Queued Multica Dispatch").credentials.postgres.id, "reviewCapabilityPg");
+const verifyMulticaRun = nodes.get("Verify Queued Multica Run").parameters.jsCode;
+assert.match(verifyMulticaRun, /run\.id.*dispatch\.run_id/s);
+assert.match(verifyMulticaRun, /run\.autopilot_id.*dispatch\.autopilot_id/s);
+assert.doesNotMatch(verifyMulticaRun, /run\.status|completed/);
 for (const name of ["Get Queued Multica Run", "Complete Queued Multica Issue"]) {
   assert.equal(nodes.get(name).credentials.httpHeaderAuth.id, "multicaCloser01");
 }
