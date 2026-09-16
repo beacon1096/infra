@@ -435,6 +435,18 @@ for (const name of [
 }
 assert.match(nodes.get("Get Current Renovate PR").parameters.url, /\.first\(\)/);
 assert.match(nodes.get("Respond Policy Event").parameters.responseBody, /\.first\(\)/);
+assert.equal(
+  nodes.get("Create Review Capability").parameters.jsCode
+    .includes('$("Decide Event Transition").item'),
+  false,
+);
+const multicaTrigger = nodes.get("Trigger Multica Renovate Autopilot");
+assert.equal(multicaTrigger.parameters.body.includes('$("Decide Event Transition").item'), false);
+assert.equal(
+  multicaTrigger.parameters.headerParameters.parameters[1].value
+    .includes('$("Decide Event Transition").item'),
+  false,
+);
 
 assert.deepEqual(
   workflow.connections["Build Policy Notice"].main[0].map(({ node }) => node).sort(),
