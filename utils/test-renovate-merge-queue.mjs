@@ -118,5 +118,7 @@ const helmRelease = fs.readFileSync(new URL(
 assert.match(kustomization, /renovate-merge-queue\.json=renovate-merge-queue\.workflow\.json/);
 assert.match(helmRelease, /import:workflow --input=\/workflows\/renovate-merge-queue\.json/);
 assert.match(helmRelease, /publish:workflow --id=renovateMergeQueue01/);
+assert.match(helmRelease, /path: \/workflows\/renovate-merge-queue\.json/);
+assert.match(helmRelease, /subPath: renovate-merge-queue\.json/);
 
 console.log("Renovate merge queue workflow checks passed");
