@@ -459,6 +459,29 @@ assert.match(dispatchStore.parameters.query, /multica_review_dispatches/);
 assert.match(dispatchStore.parameters.query, /run_id uuid NOT NULL UNIQUE/);
 assert.doesNotMatch(dispatchStore.parameters.query, /\$json|\$\(/);
 
+assert.equal(
+  nodes.get("Trigger Multica Renovate Autopilot").parameters.options.response,
+  undefined,
+);
+const validatedDispatch = execute("Validate Multica Dispatch", {
+  $json: {
+    status: "accepted",
+    autopilot_id: "11111111-1111-4111-8111-111111111111",
+    run_id: "22222222-2222-4222-8222-222222222222",
+  },
+  $: () => ({ first: () => ({ json: {
+    REVIEW_JTI: "33333333-3333-4333-8333-333333333333",
+    REPO: event.REPO,
+    PR_NUMBER: Number(event.PR_NUMBER),
+    PR_HEAD_SHA: event.PR_HEAD_SHA,
+  } }) }),
+}).json;
+assert.equal(validatedDispatch.RUN_ID, "22222222-2222-4222-8222-222222222222");
+assert.throws(() => execute("Validate Multica Dispatch", {
+  $json: { status: "rejected" },
+  $: () => ({ first: () => ({ json: {} }) }),
+}));
+
 for (const name of ["Get Multica Autopilot Run", "Complete Multica Review Issue"]) {
   assert.equal(nodes.get(name).credentials.httpHeaderAuth.id, "multicaCloser01");
 }
