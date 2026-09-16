@@ -102,6 +102,41 @@ assert.equal(humanReviewEvent.IS_HUMAN_APPROVAL_SIGNAL, true);
 assert.equal(humanReviewEvent.IS_RENOVATE_PR, false);
 assert.match(humanReviewEvent.EVENT_KEY, /pull_request_review_approved:10$/);
 
+const selfApprovalEvent = execute("Normalize Forgejo Event", {
+  $json: {
+    headers: { "x-forgejo-event": "issue" },
+    body: {
+      action: "created",
+      repository: { full_name: "infrastructure/infra" },
+      sender: { login: "beacon1096" },
+      issue: { number: 8, pull_request: { merged: false } },
+      comment: { id: 20, body: `/approve ${event.PR_HEAD_SHA}` },
+    },
+  },
+  $execution: { id: "self-approval-execution" },
+}).json;
+assert.equal(selfApprovalEvent.SUPPORTED, true);
+assert.equal(selfApprovalEvent.IS_HUMAN_APPROVAL_SIGNAL, true);
+assert.equal(selfApprovalEvent.APPROVAL_KIND, "comment");
+assert.equal(selfApprovalEvent.APPROVAL_COMMENT_ID, 20);
+assert.equal(selfApprovalEvent.PR_HEAD_SHA, event.PR_HEAD_SHA);
+
+const shortShaApproval = execute("Normalize Forgejo Event", {
+  $json: {
+    headers: { "x-forgejo-event": "issue" },
+    body: {
+      action: "created",
+      repository: { full_name: "infrastructure/infra" },
+      sender: { login: "beacon1096" },
+      issue: { number: 8, pull_request: { merged: false } },
+      comment: { id: 21, body: "/approve 0123456" },
+    },
+  },
+  $execution: { id: "short-sha-approval-execution" },
+}).json;
+assert.equal(shortShaApproval.SUPPORTED, false);
+assert.equal(shortShaApproval.IS_HUMAN_APPROVAL_SIGNAL, false);
+
 const verifyHumanApproval = (reviews, headSha = event.PR_HEAD_SHA) =>
   execute("Verify Human Approval", {
     $json: { statusCode: 200, body: reviews },
@@ -135,6 +170,48 @@ assert.equal(verifyHumanApproval([{
   commit_id: event.PR_HEAD_SHA,
   user: { login: "untrusted-reviewer" },
 }]).HUMAN_APPROVAL_VALID, false);
+
+const verifySelfApproval = (comment, headSha = event.PR_HEAD_SHA) =>
+  execute("Verify Human Approval", {
+    $json: { statusCode: 200, body: comment },
+    $: (name) => ({
+      item: {
+        json: name === "Decide Event Transition"
+          ? selfApprovalEvent
+          : {
+              statusCode: 200,
+              body: {
+                state: "open",
+                html_url: "https://forgejo.beaco.works/infrastructure/infra/pulls/8",
+                user: { login: "beacon1096" },
+                base: { ref: "main" },
+                head: { sha: headSha },
+              },
+            },
+      },
+    }),
+  }).json;
+
+assert.equal(verifySelfApproval({
+  id: 20,
+  body: `/approve ${event.PR_HEAD_SHA}`,
+  user: { login: "beacon1096" },
+}).HUMAN_APPROVAL_VALID, true);
+assert.equal(verifySelfApproval({
+  id: 20,
+  body: "/approve aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  user: { login: "beacon1096" },
+}).HUMAN_APPROVAL_VALID, false);
+assert.equal(verifySelfApproval({
+  id: 20,
+  body: `/approve ${event.PR_HEAD_SHA}`,
+  user: { login: "untrusted-reviewer" },
+}).HUMAN_APPROVAL_VALID, false);
+assert.equal(verifySelfApproval({
+  id: 999,
+  body: `/approve ${event.PR_HEAD_SHA}`,
+  user: { login: "beacon1096" },
+}).HUMAN_APPROVAL_VALID, false);
 assert.equal(verifyHumanApproval([{
   id: 12,
   state: "APPROVED",
