@@ -228,6 +228,12 @@ separate change to the Multica HelmRelease, made only after the registry tag is
 available anonymously. This ordering prevents Flux from reconciling a manifest
 whose image has not been published yet.
 
+The publish job logs in through a temporary `skopeo` auth file populated from
+standard input. Registry credentials must not be passed with `--dest-creds`:
+command arguments are visible in the runner's process table. The auth file is
+removed by an exit trap, and the registry PAT is rotated if process-table
+exposure is observed.
+
 Upstream contribution and eventual removal of the downstream image remain
 tracked in [`TODO.md`](../../TODO.md).
 
