@@ -696,23 +696,27 @@ jobs:
           registry_host="${REGISTRY_ENDPOINT#http://}"
           registry_host="${registry_host#https://}"
           skopeo_args=(--retry-times 5 --retry-delay 10s)
+          auth_file="$PWD/.skopeo-auth.json"
+          trap 'rm -f "$auth_file"' EXIT
           mkdir -p "$PWD/.skopeo-tmp"
+
+          printf '%s' "$REGISTRY_TOKEN" | nix shell nixpkgs#skopeo -c \
+            skopeo login --authfile "$auth_file" --username "$REGISTRY_USER" \
+            --password-stdin "$registry_host"
 
           if [[ "$registry_host" == *"svc.cluster.local"* ]]; then
             skopeo_args+=(--dest-tls-verify=false)
           fi
 
-          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
+          nix shell nixpkgs#skopeo -c skopeo --authfile "$auth_file" --tmpdir "$PWD/.skopeo-tmp" copy \
             "${skopeo_args[@]}" \
-            --dest-creds "$REGISTRY_USER:$REGISTRY_TOKEN" \
             docker-archive:result \
             docker://$registry_host/$IMAGE_PATH:latest
 
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             tag=${GITHUB_REF#refs/tags/}
-            nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
+            nix shell nixpkgs#skopeo -c skopeo --authfile "$auth_file" --tmpdir "$PWD/.skopeo-tmp" copy \
               "${skopeo_args[@]}" \
-              --dest-creds "$REGISTRY_USER:$REGISTRY_TOKEN" \
               docker-archive:result \
               docker://$registry_host/$IMAGE_PATH:$tag
           fi
@@ -754,10 +758,14 @@ jobs:
           registry_host="${registry_host#https://}"
           test -n "$REGISTRY_USER"
           test -n "$REGISTRY_TOKEN"
+          auth_file="$PWD/.skopeo-auth.json"
+          trap 'rm -f "$auth_file"' EXIT
           mkdir -p "$PWD/.skopeo-tmp"
-          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
+          printf '%s' "$REGISTRY_TOKEN" | nix shell nixpkgs#skopeo -c \
+            skopeo login --authfile "$auth_file" --username "$REGISTRY_USER" \
+            --password-stdin "$registry_host"
+          nix shell nixpkgs#skopeo -c skopeo --authfile "$auth_file" --tmpdir "$PWD/.skopeo-tmp" copy \
             --retry-times 5 --retry-delay 10s \
-            --dest-creds "$REGISTRY_USER:$REGISTRY_TOKEN" \
             docker-archive:result-multica \
             "docker://$registry_host/$IMAGE_PATH:$IMAGE_TAG"
 
