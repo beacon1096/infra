@@ -130,10 +130,10 @@ assert.deepEqual(
 );
 assert.match(nodes.get("Block Changed Queue Delta").parameters.query, /approval_jti::text/);
 assert.equal(nodes.get("Get Superseded Multica Dispatch").credentials.postgres.id, "reviewCapabilityPg");
-for (const name of ["Get Superseded Multica Run", "Block Superseded Multica Issue"]) {
+for (const name of ["Get Superseded Multica Run", "Cancel Superseded Multica Issue"]) {
   assert.equal(nodes.get(name).credentials.httpHeaderAuth.id, "multicaCloser01");
 }
-assert.match(nodes.get("Block Superseded Multica Issue").parameters.jsonBody, /status: 'blocked'/);
+assert.match(nodes.get("Cancel Superseded Multica Issue").parameters.jsonBody, /status: 'cancelled'/);
 assert.deepEqual(
   workflow.connections["Request Fresh Multica Review"].main[0].map(({ node }) => node),
   ["Get Superseded Multica Dispatch"],

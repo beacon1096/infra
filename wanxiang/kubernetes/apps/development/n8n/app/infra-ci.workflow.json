@@ -2014,6 +2014,253 @@
         }
       },
       {
+        "id": "b8a5e253-b401-41b2-a06d-752e9236e880",
+        "name": "Get Superseded Multica Dispatches",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          3008,
+          32
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT autopilot_id::text, run_id::text, head_sha FROM multica_review_dispatches WHERE repo = $1 AND pr_number = $2::bigint AND head_sha <> $3 AND run_id <> $4::uuid ORDER BY created_at DESC;",
+          "options": {
+            "queryBatching": "single",
+            "queryReplacement": "={{ [$(\"Validate Multica Dispatch\").first().json.REPO, $(\"Validate Multica Dispatch\").first().json.PR_NUMBER, $(\"Validate Multica Dispatch\").first().json.HEAD_SHA, $(\"Validate Multica Dispatch\").first().json.RUN_ID] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "ffb359e1-cbe6-4a0a-b4e1-59def86ab322",
+        "name": "Get Superseded Multica Run",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          3264,
+          32
+        ],
+        "parameters": {
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "url": "={{ 'https://multica.beaco.works/api/autopilots/' + $json.autopilot_id + '/runs/' + $json.run_id }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Workspace-Slug",
+                "value": "beacoworks"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaCloser01",
+            "name": "Multica Issue Closer"
+          }
+        }
+      },
+      {
+        "id": "1fd98ec6-e9e3-4199-b6ed-025f381694ef",
+        "name": "Verify Superseded Multica Run",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3520,
+          32
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const run = $json ?? {};\nconst dispatch = $('Get Superseded Multica Dispatches').item.json;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (String(run.id) !== String(dispatch.run_id) || String(run.autopilot_id) !== String(dispatch.autopilot_id) || !uuid.test(String(run.issue_id ?? ''))) throw new Error('Superseded Multica run binding mismatch');\nreturn { json: { ISSUE_ID: run.issue_id, RUN_ID: run.id, RUN_STATUS: String(run.status ?? '').toLowerCase() } };"
+        }
+      },
+      {
+        "id": "150bf76e-7bf6-4a46-8fca-62de44d248ee",
+        "name": "Superseded Multica Run Is Active",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          3776,
+          -80
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "552186c5-a7b9-4be8-85bd-2be17146a16c",
+                "leftValue": "={{ ['queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred'].includes($json.RUN_STATUS) }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "98dfd7cb-84da-4a0d-b907-a4dff0a2689b",
+        "name": "Cancel Superseded Multica Run",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          4032,
+          -80
+        ],
+        "parameters": {
+          "method": "POST",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "url": "={{ 'https://multica.beaco.works/api/tasks/' + $json.RUN_ID + '/cancel' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Workspace-Slug",
+                "value": "beacoworks"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ {} }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaCloser01",
+            "name": "Multica Issue Closer"
+          }
+        }
+      },
+      {
+        "id": "f059f345-309d-4746-9cef-d516e28df7d7",
+        "name": "Get Superseded Multica Issue",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          3776,
+          32
+        ],
+        "parameters": {
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "url": "={{ 'https://multica.beaco.works/api/issues/' + $('Verify Superseded Multica Run').item.json.ISSUE_ID }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Workspace-Slug",
+                "value": "beacoworks"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaCloser01",
+            "name": "Multica Issue Closer"
+          }
+        }
+      },
+      {
+        "id": "98317083-e29c-4724-b124-8cc72d0e0499",
+        "name": "Superseded Multica Issue Is Active",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          4032,
+          32
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "58f8a707-0975-42b0-a3dc-a6f0c7c212ef",
+                "leftValue": "={{ !['done', 'cancelled'].includes(String($json.status ?? '').toLowerCase()) }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "8e288458-7708-4851-8449-e36dd0ce67ff",
+        "name": "Cancel Superseded Multica Issue",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          4288,
+          32
+        ],
+        "parameters": {
+          "method": "PUT",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "url": "={{ 'https://multica.beaco.works/api/issues/' + $json.id }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Workspace-Slug",
+                "value": "beacoworks"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ { status: 'cancelled' } }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaCloser01",
+            "name": "Multica Issue Closer"
+          }
+        }
+      },
+      {
         "id": "27fade1f-54c9-4520-b702-d2757f03849e",
         "name": "Renovate Merge Completed",
         "type": "n8n-nodes-base.if",
@@ -3188,6 +3435,102 @@
         ]
       },
       "Store Multica Review Dispatch": {
+        "main": [
+          [
+            {
+              "node": "Get Superseded Multica Dispatches",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Superseded Multica Dispatches": {
+        "main": [
+          [
+            {
+              "node": "Get Superseded Multica Run",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Superseded Multica Run": {
+        "main": [
+          [
+            {
+              "node": "Verify Superseded Multica Run",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verify Superseded Multica Run": {
+        "main": [
+          [
+            {
+              "node": "Superseded Multica Run Is Active",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Superseded Multica Run Is Active": {
+        "main": [
+          [
+            {
+              "node": "Cancel Superseded Multica Run",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Get Superseded Multica Issue",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Cancel Superseded Multica Run": {
+        "main": [
+          [
+            {
+              "node": "Get Superseded Multica Issue",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Superseded Multica Issue": {
+        "main": [
+          [
+            {
+              "node": "Superseded Multica Issue Is Active",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Superseded Multica Issue Is Active": {
+        "main": [
+          [
+            {
+              "node": "Cancel Superseded Multica Issue",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Cancel Superseded Multica Issue": {
         "main": [
           []
         ]
