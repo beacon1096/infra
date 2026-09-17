@@ -15,7 +15,8 @@ the tested state rather than a guarantee about the current running system.
 | --- | --- | --- |
 | Qwen3.8-27B original NVFP4 | [Retest and launch configuration](thor/models/qwen3.8-27b.md) | Ordinary decode, MTP, DFlash2 and FA4 comparison |
 | Huihui Qwen3.8-27B NVFP4 | [Trial and profiling](thor/models/huihui-qwen3.8-27b.md) | Modified target, capability checks, DFlash2 and output-head profiling |
-| Qwen3.8 Flash Next NVFP4 | [Deployment and performance](thor/models/qwen3.8-flash-next.md) | SM110 fixes, K3/native GDN, draft-head quantization and target profiling |
+| Qwen3.8 Flash Next official Lazycat app | [Official deployment and benchmark](thor/models/qwen3.8-flash-next-lazycat.md) | App/runtime versions, K16, eight-request scheduling, 5K prefill and 260K context |
+| Qwen3.8 Flash Next experimental adaptation | [Deployment and performance](thor/models/qwen3.8-flash-next.md) | SM110 fixes, K3/native GDN, draft-head quantization and target profiling |
 | MiniMax H3 VDN FP8 | [Official deployment and benchmark](thor/models/minimax-h3.md) | Lazycat app/runtime composition, API limits and three-profile timing matrix |
 | DeepSeek-v4 Flash | [Feasibility review](thor/models/deepseek-v4-flash.md) | Capacity and architecture constraints; not deployed |
 
