@@ -53,6 +53,8 @@ ADRs are organized by their scope:
 
 - [Repository CI/CD and fleet delivery](../../docs/ci-cd/README.md) — release
   approval, protected merging, Forgejo service accounts, and Nix rollout.
+- [Wanxiang off-site backups](operations/offsite-backup.md) — TrueNAS,
+  routed NFS, Longhorn SystemBackup, and restore verification.
 - [Syncthing introducer](operations/syncthing-introducer.md)
 
 - [zot — multi-registry pull-through cache](operations/zot-mirror.md) — what the LAN registry on `172.16.80.240:5000` does, how nodes are configured to use it, performance characteristics, how to add an upstream.
@@ -82,7 +84,8 @@ ADRs are organized by their scope:
   - loongarch64 needs QEMU 7.0+ and `tonistiigi/binfmt` may not include the loongarch64 interpreter by default — may need a custom binfmt registration
   - For Nix, also need `boot.binfmt.emulatedSystems` analogue + `nix.settings.extra-platforms` so the Nix daemon accepts cross-arch derivations
 - **High-bandwidth public exposure** — for any service hitting Cloudflare's body-size or fair-use limits (large media uploads), use the NixOS VPS + Tailscale + Caddy path described in [Constitution §VI](../.specify/memory/constitution.md#vi-public-exposure-both). The list of services on this path will grow over time; track in per-spec docs.
-- **Backup strategy** beyond the one-shot 2026-04-27 local export
+- **CloudNativePG PITR target** — add an S3-compatible off-site target for WAL
+  archiving and base backups; Longhorn backups alone are not database PITR.
 - **Multi-cluster mesh** between talos-i and talos-ii — not needed yet, but PodCIDRs are non-overlapping by design (10.42 vs 10.44)
 
 ## Conventions

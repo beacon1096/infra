@@ -79,6 +79,21 @@ resource "unifi_network" "managed" {
   }
 }
 
+resource "unifi_static_route" "jinyintan_storage_via_ms_r1" {
+  distance     = 1
+  enabled      = true
+  gateway_type = "default"
+  name         = "Jinyintan storage via ms-r1"
+  network      = "172.16.19.0/24"
+  next_hop     = "172.16.80.240"
+  site         = "default"
+  type         = "nexthop-route"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 # The provider has no OSPF resource. Keep the live OSPF adjacency unmanaged.
 
 import {
