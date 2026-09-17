@@ -1,0 +1,11 @@
+apiVersion: longhorn.io/v1beta2
+kind: BackupTarget
+metadata:
+  name: default
+  namespace: storage
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: Override
+spec:
+  backupTargetURL: nfs://172.16.19.254:/mnt/beaco-01/Backups/wanxiang/longhorn
+  credentialSecret: ""
+  pollInterval: 5m0s
