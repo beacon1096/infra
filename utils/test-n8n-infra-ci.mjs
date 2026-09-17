@@ -76,6 +76,29 @@ assert.equal(normalized.ACTOR, "human-reviewer");
 assert.equal(normalized.PR_AUTHOR, "renovate");
 assert.equal(normalized.IS_RENOVATE_PR, true);
 
+const queueRereview = execute("Normalize Forgejo Event", {
+  $json: {
+    headers: {
+      "x-forgejo-event-type": "pull_request_review_merge_queue_rerequested",
+      "x-forgejo-delivery": `merge-queue-rereview:infrastructure/infra:7:${event.PR_HEAD_SHA}`,
+    },
+    body: {
+      action: "synchronize",
+      repository: { full_name: "infrastructure/infra" },
+      sender: { login: "multica-merger" },
+      pull_request: {
+        number: 7,
+        user: { login: "renovate" },
+        head: { sha: event.PR_HEAD_SHA },
+        base: { ref: "main" },
+      },
+    },
+  },
+  $execution: { id: "queue-rereview-test" },
+}).json;
+assert.equal(queueRereview.IS_RENOVATE_PR, true);
+assert.match(queueRereview.EVENT_KEY, /pull_request_review_merge_queue_rerequested:/);
+
 const humanReviewEvent = execute("Normalize Forgejo Event", {
   $json: {
     headers: {
