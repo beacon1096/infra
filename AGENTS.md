@@ -36,5 +36,11 @@ Run commands from the repository root.
 - Shell validation: `bash -n utils/<script>.sh`
 - Formatting: `nix fmt` when available, otherwise `nixpkgs-fmt` on touched Nix files.
 
+The Coder coding-agent image uses single-user Nix with `sandbox = false`.
+Inside that runtime, do not build a complete NixOS or nix-darwin closure from
+PR-controlled source. Use evaluation and focused non-Nix tests locally, then
+require the Forgejo CI result for the exact commit. Full targeted builds remain
+required on a sandboxed CI runner or builder.
+
 Do not commit generated `result*` links or local credentials. Review every diff
 for private host data before publishing.
