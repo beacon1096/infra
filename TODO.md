@@ -30,3 +30,15 @@
   - Remove the callback-specific User-Agent workaround only after agents no
     longer traverse Cloudflare and the private path has equivalent
     observability and availability.
+
+## Agent validation tools
+
+- [ ] Prototype bounded n8n MCP tools for agent-requested validation.
+  - Reuse existing Forgejo validation implementations; do not create a second
+    set of test commands with different semantics.
+  - Start with exact-SHA Nix evaluation and Helm rendering tools.
+  - Allowlist repositories and targets, keep credentials inside n8n/runner,
+    and return structured results plus immutable evidence URLs.
+  - Test authorization, malicious inputs, replay, timeout, cancellation,
+    unavailable capacity, and result-to-SHA binding.
+  - Keep MCP validation separate from approval and merge authority.
