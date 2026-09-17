@@ -122,6 +122,14 @@ The agent makes the contextual judgment; n8n and Forgejo enforce deterministic
 facts such as identity, repository scope, current SHA, required checks, branch
 freshness, and merge permission.
 
+The review agent intentionally has no Forgejo PAT. Failure to query a private
+PR, Multica's PR link table, Forgejo commit statuses, or required checks is an
+expected trust-boundary limitation, not change-specific uncertainty and not by
+itself a reason for `human_required`. The agent reports the repository and
+runtime evidence it can obtain; n8n then re-reads the open PR, exact head SHA,
+and required checks with isolated credentials. Likewise, an unavailable cache
+or tool is reported separately from a test that actually ran and failed.
+
 ### Treat repository content as untrusted
 
 PR titles, descriptions, diffs, release notes, and linked pages can contain
