@@ -52,21 +52,67 @@ Estimated implementation cost: configuration and runbook changes only; no new
 service. Add workflow-dispatch inputs later if agents need a bounded selection
 of extra build targets.
 
-### Reuse the three Forgejo builders
+### Reuse the Forgejo builders as Nix remote builders
 
-This requires a restricted `nixremote` SSH identity, a key available to Coder,
-network access, client `buildMachines` configuration, and builder-side
-sandbox verification. A stolen key should permit only Nix store/build protocol
-operations, never a shell or deployment action.
+The three Forgejo builders are viable capacity because maintenance is rotated
+and a majority remains online. Nix itself schedules derivations across multiple
+remote builders according to platform, required features, `maxJobs`,
+`speedFactor`, and load. A Multica workspace can therefore use its local Nix
+daemon as the dispatcher and set local `max-jobs = 0` to prevent fallback to
+the unsandboxed workspace.
 
-This option is operationally awkward. Remote jobs would currently bypass the
-runner drain marker, compete with Actions jobs, and evade the maintenance
-coordination documented in `runner-maintenance.md`. It therefore also needs a
-shared admission/drain mechanism, resource limits, disk-pressure handling, and
-audit coverage.
+The same separation can apply to Forgejo jobs. The runner remains the CI
+control session: it checks out the exact commit, starts `nix build`, streams
+logs, propagates cancellation, and reports the protected status. It does not
+need to select or execute derivations itself. Its Nix client can submit them to
+the same remote-builder pool with local builds disabled, leaving placement and
+execution to Nix. The current builders instead use `distributedBuilds = false`
+and build locally on whichever node Forgejo selected, so this is an explicit
+future architecture change rather than a description of current behavior.
 
-Estimated implementation cost: medium to high, roughly two to four engineering
-days plus load testing. Do not enable it by adding an SSH key alone.
+There are two materially different Nix layouts:
+
+- With ordinary distributed builders, the runner or workspace daemon remains
+  the primary store and scheduler. It sends derivations away but receives
+  outputs into its own store. Local store growth, garbage collection, and some
+  substituter configuration therefore remain on every client.
+- With a dedicated remote store/dispatcher, CI and agents address that store
+  for the whole operation, and its daemon may distribute builds to the worker
+  pool. Store retention, garbage collection, optimisation, read-side binary
+  cache configuration, and build admission can then be centralized. This is
+  the intended end state if thin Forgejo runners are the goal.
+
+The remote-store layout needs explicit tests for log retrieval, cancellation,
+result-path handling, failed-build diagnostics, and OCI outputs. Workflows that
+consume a result locally may still need an explicit copy or a remote execution
+step.
+
+Do not give the shared dispatcher an ambient Attic write credential merely to
+remove workflow steps. Multica agents can submit builds to the same service, so
+automatic upload would let agent-requested outputs enter the trusted cache.
+Keep Attic reads and public verification keys in the builder configuration, but
+retain cache publication as a Forgejo-authorized operation with a scoped write
+credential. The repetitive login, path validation, and push logic can move to
+a reviewed helper without moving that trust decision into the builder.
+
+This is scheduling, but it is not one global queue. Every workspace has an
+independent Nix daemon, and those daemons do not know the Forgejo Actions queue
+or its runner drain state. If both systems share the machines, builder-side
+admission must be the common boundary: entering maintenance drains the Forgejo
+runner and rejects new Nix SSH sessions, waits for Actions jobs and leased Nix
+sessions to finish, and only then changes the host. The remaining machines stay
+available to both schedulers.
+
+Before relying on this behavior, test that a new build is assigned elsewhere
+when one endpoint is drained or unreachable, and test a connection loss both
+before and during a build. Do not assume that every transport failure has the
+same retry behavior. Apply builder-side concurrency and resource limits so
+independent Nix clients cannot starve Forgejo jobs.
+
+Estimated implementation cost is medium: roughly one to two engineering days
+for restricted identities and client configuration, and another two to three
+days for shared admission, drain integration, resource limits, and failover
+tests. This does not require a custom scheduling service.
 
 ### Add a dedicated remote builder
 
@@ -77,14 +123,45 @@ from the coding-agent namespace or identity. Set client `max-jobs = 0` so PR
 derivations cannot fall back to the unsandboxed local store. Add concurrency,
 disk, build-time, and garbage-collection limits before enabling agent access.
 
+Cleanup must be coordinated with build sessions rather than assigned a fixed
+maintenance window:
+
+1. The forced-command SSH wrapper holds a shared lease for the complete Nix
+   protocol session and records when the final session ends.
+2. A cleanup controller evaluates an idle grace period, a minimum interval
+   between cleanups, and disk high/critical watermarks. A systemd timer may
+   evaluate these predicates, but elapsed wall-clock time alone must not start
+   cleanup.
+3. Before cleanup it enters drain mode, rejects or queues new sessions, waits
+   for all shared leases to end, and acquires an exclusive maintenance lease.
+   Acquiring the exclusive lease closes the race between the idle check and a
+   new connection.
+4. It runs bounded garbage collection and store optimisation, records the
+   result and space recovered, then clears drain mode even after failure. A
+   pending non-critical cleanup can yield to a newly arriving agent request.
+
+Nix temporary roots protect active realizations from garbage collection, but
+they do not address admission races, disk and I/O contention, or service
+availability. The external lease and drain protocol is therefore still
+required. Emergency cleanup at the critical watermark should stop accepting
+new work, but must not kill an active build unless a separately documented
+resource or execution timeout has already expired.
+
 The existing Harvester VM and NixOS module patterns can be reused, but this
 still adds another machine lifecycle and capacity pool. Estimated
-implementation cost: medium, roughly one to three engineering days for a
-prototype and another day for failure, isolation, and maintenance tests.
+implementation cost: medium, roughly one to two engineering days for the
+restricted builder and two to three days for admission, lease, cleanup,
+observability, and failure tests. Strict availability during host maintenance
+would require at least two builders and the same tested drain and admission
+behavior. A dedicated pool avoids competing with Actions, but Nix can still
+provide its derivation scheduling.
 
 ## Decision
 
-Use Forgejo CI as the authoritative full-build environment now. Revisit a
-dedicated remote builder only when review latency or missing ad-hoc build
-targets becomes a recurring problem. Do not weaken the merge gate because a
-Coder-local realization is unavailable.
+Use Forgejo CI as the authoritative full-build environment now. A Nix remote
+builder path may reuse the majority-online runner pool for exploratory agent
+builds after shared admission and failover are tested; its result does not
+replace the protected exact-commit CI status. Move to a dedicated builder pool
+only if contention with Actions or stronger availability requirements justify
+the extra capacity. Do not weaken the merge gate because a Coder-local
+realization is unavailable.
