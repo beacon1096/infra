@@ -465,6 +465,8 @@ assert.equal(
 );
 const multicaTrigger = nodes.get("Trigger Multica Renovate Autopilot");
 assert.equal(multicaTrigger.parameters.body.includes('$("Decide Event Transition").item'), false);
+assert.match(multicaTrigger.parameters.body, /User-Agent: Multica-Review-Callback\/1\.0/);
+assert.match(multicaTrigger.parameters.body, /rejects Python-urllib/);
 assert.equal(
   multicaTrigger.parameters.headerParameters.parameters[1].value
     .includes('$("Decide Event Transition").item'),

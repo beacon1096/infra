@@ -86,6 +86,13 @@ PostgreSQL table whose primary key is `jti`. `INSERT ... ON CONFLICT DO NOTHING`
 allows exactly one execution to continue; a concurrent or later replay returns
 HTTP 409 before any Forgejo status or merge request is written.
 
+Callback clients must send an explicit
+`User-Agent: Multica-Review-Callback/1.0` header. The public ingress rejects
+generic automated-client signatures such as Python `urllib`'s default user
+agent with Cloudflare error 1010 before the request reaches n8n. This header is
+only an ingress compatibility requirement; authorization continues to depend
+on the signed, scoped, single-use capability.
+
 Consumption is deliberately fail-closed and happens before the fresh PR lookup.
 If a later Forgejo request fails, the same capability cannot be retried; a new
 PR event must issue a new capability. Consumed rows are retained through expiry
