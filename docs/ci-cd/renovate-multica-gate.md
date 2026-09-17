@@ -358,6 +358,33 @@ The byte-level rule intentionally treats an unrelated edit to the same file as
 a changed delta. Renovate therefore groups all `mise` manager updates into one
 PR, reducing collisions in `wanxiang/.mise.toml` without weakening the gate.
 
+### Same-file rebase incident and decision
+
+PRs #33 (`go-task`) and #39 (`pipx`) were created before the `mise` grouping
+rule took effect. Both changed separate assignments in `wanxiang/.mise.toml`.
+After one PR merged, rebasing the other changed that file's base and head blob
+IDs even though its own version assignment was unchanged. The merge queue
+correctly failed the exact tree-delta check and requested another Multica
+review. This repeated once while the two legacy PRs were merged serially. It
+was safe, but added avoidable reviews.
+
+Forgejo's authenticated `pulls/{number}.diff` endpoint was tested as a possible
+replacement invariant. A normalized digest could ignore hunk line numbers and
+therefore survive unrelated edits in the same file. The `pulls/{number}/files`
+endpoint does not include patch content, so the raw diff endpoint would be the
+required source. This approach was not adopted: ignoring location or context
+can treat identical added and removed lines applied at a different semantic
+location as the approved change, while retaining enough context to prevent
+that reintroduces collisions for nearby dependency edits. It would weaken the
+current byte-level approval binding for limited operational benefit.
+
+The decision is to keep the fail-closed tree digest and address the collision
+at its source. Renovate groups `mise` manager updates into one PR, so new
+updates to `.mise.toml` share one reviewed delta. Old, already-open PRs may
+still require repeat review while they drain. A future relaxation needs a
+manager-aware semantic model with explicit ambiguity tests; a generic
+line-only patch digest is not sufficient.
+
 After equivalence is proven, `multica-gate` marks only the current head
 successful. The worker re-reads the combined status and uses
 `multica-merger` only when all required checks report success. Its merge request
