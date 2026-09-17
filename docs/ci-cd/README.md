@@ -11,6 +11,8 @@ implementation details and recovery procedures remain in `wanxiang/docs`.
   identities and credential separation.
 - [Forgejo runner maintenance](runner-maintenance.md) — builder rotation and
   Nix store maintenance.
+- [Agent Nix build trust boundary](agent-nix-build-trust.md) — local
+  `sandbox = false`, CI evidence, and the remote-builder roadmap.
 
 Related operational runbooks:
 
@@ -18,4 +20,3 @@ Related operational runbooks:
 - [n8n restore](../../wanxiang/docs/operations/n8n-restore.md)
 - [Attic restore](../../wanxiang/docs/operations/attic-restore.md)
 - [Flux and Helm recovery](../../wanxiang/docs/operations/flux-helm-recovery.md)
-
