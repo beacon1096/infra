@@ -367,10 +367,14 @@ makes the item stale returns it to the queue for another deterministic update
 cycle.
 
 After a successful merge, issue closure is bound to the exact stored Multica
-run, autopilot, and issue identifiers. It does not require the Multica run to
-report `completed`: webhook-triggered runs currently remain `issue_created`
-after an approved callback, while the callback capability and approved tree
-snapshot are the authorization boundary for the merge.
+run, autopilot, and issue identifiers. The autopilot run itself is not used as
+the completion signal: webhook-triggered runs can remain `issue_created` after
+an approved callback. After Forgejo confirms the merge, the queue instead
+queries the bound Issue's active task runs and waits until none remain before
+marking the Issue `done`. This prevents the reviewing agent's final
+`in_review` write from racing with the closer. Merged rows without a recorded
+Issue closure remain eligible for idempotent reconciliation on later queue
+runs.
 
 Queue states are `queued`, `updating`, `waiting_ci`, `merging`, `merged`,
 `blocked`, and `expired`. Claims use a short database lease and
@@ -396,9 +400,10 @@ accepted decision into a retry that would collide with single-use consumption.
 For a completed Renovate merge, n8n resolves the originating
 Multica autopilot run through a dispatch record bound to the signed capability
 JTI, repository, PR number, and head SHA. It then marks that run's Issue as
-`done` with the dedicated `multica-closer.no-reply@beacoworks.xyz` member
-identity. Agent-supplied Issue URLs are not trusted for this lookup. A queued
-merge remains `in_review` until Forgejo confirms the merge.
+`done`, after its active agent task has exited, with the dedicated
+`multica-closer.no-reply@beacoworks.xyz` member identity. Agent-supplied Issue
+URLs are not trusted for this lookup. A queued merge remains `in_review` until
+Forgejo confirms the merge and the review run becomes idle.
 
 Multica currently does not expose scopes on personal access tokens. The closer
 therefore has ordinary workspace-member permissions, and n8n isolates its token
