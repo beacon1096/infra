@@ -17,6 +17,15 @@ You are running on a Nix-managed system — either **NixOS** (flake at
 - `/bin` and `/usr/bin` are FUSE-backed (NixOS `services.envfs`), so
   hard-coded `#!/bin/bash` / `#!/usr/bin/env python3` scripts resolve normally.
 
+### Nix builds in coding-agent containers
+
+If `nix config show sandbox` reports `false`, treat the runtime as an
+interactive evaluation environment, not a trust boundary for PR derivations.
+Do not run full NixOS or nix-darwin closure builds from PR-controlled source in
+that runtime. Use evaluation and focused non-Nix tests locally, and rely on the
+Forgejo required status for the exact commit. Run full builds only on a
+sandboxed CI runner or dedicated remote builder without deployment credentials.
+
 ## Style
 
 - Be terse. No throat-clearing, no "Great question!", no end-of-turn summaries
