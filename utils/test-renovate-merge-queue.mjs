@@ -111,6 +111,38 @@ assert.deepEqual(
   [["Get Queued Multica Dispatch"], []],
 );
 
+const freshReview = nodes.get("Request Fresh Multica Review");
+assert.equal(freshReview.parameters.method, "POST");
+assert.match(freshReview.parameters.url, /^http:\/\/n8n:5678\/webhook/);
+assert.match(freshReview.parameters.body, /action: 'synchronize'/);
+assert.match(freshReview.parameters.body, /Get Queued Renovate PR/);
+assert.match(
+  JSON.stringify(freshReview.parameters.headerParameters),
+  /FORGEJO_WEBHOOK_CREDENTIAL/,
+);
+assert.match(
+  JSON.stringify(freshReview.parameters.headerParameters),
+  /pull_request_review_merge_queue_rerequested/,
+);
+assert.deepEqual(
+  workflow.connections["Block Changed Queue Delta"].main[0].map(({ node }) => node),
+  ["Request Fresh Multica Review"],
+);
+assert.match(nodes.get("Block Changed Queue Delta").parameters.query, /approval_jti::text/);
+assert.equal(nodes.get("Get Superseded Multica Dispatch").credentials.postgres.id, "reviewCapabilityPg");
+for (const name of ["Get Superseded Multica Run", "Block Superseded Multica Issue"]) {
+  assert.equal(nodes.get(name).credentials.httpHeaderAuth.id, "multicaCloser01");
+}
+assert.match(nodes.get("Block Superseded Multica Issue").parameters.jsonBody, /status: 'blocked'/);
+assert.deepEqual(
+  workflow.connections["Request Fresh Multica Review"].main[0].map(({ node }) => node),
+  ["Get Superseded Multica Dispatch"],
+);
+
+const renovate = JSON.parse(fs.readFileSync(new URL("../renovate.json", import.meta.url)));
+const miseRule = renovate.packageRules.find((rule) => rule.matchManagers?.includes("mise"));
+assert.equal(miseRule.groupName, "mise toolchain dependencies");
+
 const kustomization = fs.readFileSync(new URL(
   "../wanxiang/kubernetes/apps/development/n8n/app/kustomization.yaml",
   import.meta.url,
