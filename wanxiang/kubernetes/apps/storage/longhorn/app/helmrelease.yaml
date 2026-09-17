@@ -63,9 +63,6 @@ spec:
       v2DataEngine: false
       # No upstream telemetry.
       allowCollectingLonghornUsageMetrics: false
-      # NFS is served by the off-site TrueNAS through the routed Tailscale path.
-      backupTarget: "nfs://172.16.19.254:/mnt/beaco-01/Backups/wanxiang/longhorn"
-
     metrics:
       serviceMonitor:
         enabled: false  # flip to true once VictoriaMetrics lands
