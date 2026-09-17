@@ -63,9 +63,8 @@ spec:
       v2DataEngine: false
       # No upstream telemetry.
       allowCollectingLonghornUsageMetrics: false
-      # Backup target: TBD (see docs/index.md "Open questions: backup
-      # strategy"). Empty = backups disabled until target is configured.
-      backupTarget: ""
+      # NFS is served by the off-site TrueNAS through the routed Tailscale path.
+      backupTarget: "nfs://172.16.19.254:/mnt/beaco-01/Backups/wanxiang/longhorn"
 
     metrics:
       serviceMonitor:
