@@ -374,7 +374,9 @@ queries the bound Issue's active task runs and waits until none remain before
 marking the Issue `done`. This prevents the reviewing agent's final
 `in_review` write from racing with the closer. Merged rows without a recorded
 Issue closure remain eligible for idempotent reconciliation on later queue
-runs.
+runs. The workflow filters active statuses locally because older deployed
+Multica releases ignore the API's `active=true` query parameter and return the
+full task history.
 
 Queue states are `queued`, `updating`, `waiting_ci`, `merging`, `merged`,
 `blocked`, and `expired`. Claims use a short database lease and
