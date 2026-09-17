@@ -16,6 +16,10 @@
   ],
   "packageRules": [
     {
+      "matchManagers": ["mise"],
+      "groupName": "mise toolchain dependencies"
+    },
+    {
       "matchPackageNames": ["code.forgejo.org/forgejo/forgejo"],
       "automerge": false,
       "prPriority": 100
