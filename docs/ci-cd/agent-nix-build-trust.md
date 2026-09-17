@@ -52,6 +52,36 @@ Estimated implementation cost: configuration and runbook changes only; no new
 service. Add workflow-dispatch inputs later if agents need a bounded selection
 of extra build targets.
 
+### Expose bounded validation through n8n MCP
+
+n8n MCP can turn reviewed validation workflows into named tools for Multica
+agents. This moves orchestration out of the model prompt: a smaller model can
+request `validate_nix_pr`, `render_helm_release`, or another narrow operation
+without constructing shell commands, choosing builders, or interpreting raw
+scheduler state. The workflow returns a structured result and evidence URL for
+the review decision.
+
+Do not expose generic workflow execution, arbitrary commands, repository URLs,
+flake attributes, or Kubernetes objects through MCP. Each tool must accept a
+small validated schema, allowlist repositories and targets, re-read the PR and
+exact head SHA with an isolated credential, and execute on the sandboxed CI or
+dedicated-builder path. Credentials stay in n8n and the runner; neither MCP
+arguments nor results contain them. Long-running calls need an execution ID,
+bounded logs, cancellation, timeout, and an immutable result tied to the
+requested SHA.
+
+MCP invocation is not approval. The existing merge gate still evaluates the
+signed review capability, current PR identity, required checks, and branch
+freshness. A workflow result should distinguish a test failure from unavailable
+capacity, cache, or tooling so agents do not turn infrastructure failures into
+compatibility judgments.
+
+Start with the validation commands already encoded in Forgejo workflows rather
+than creating a parallel test implementation. The first prototype should cover
+one Nix evaluation and one Helm render, with schema, authorization, replay,
+timeout, cancellation, malicious-input, and result-binding tests before more
+tools are exposed.
+
 ### Reuse the Forgejo builders as Nix remote builders
 
 The three Forgejo builders are viable capacity because maintenance is rotated

@@ -122,6 +122,14 @@ The agent makes the contextual judgment; n8n and Forgejo enforce deterministic
 facts such as identity, repository scope, current SHA, required checks, branch
 freshness, and merge permission.
 
+The review agent intentionally has no Forgejo PAT. Failure to query a private
+PR, Multica's PR link table, Forgejo commit statuses, or required checks is an
+expected trust-boundary limitation, not change-specific uncertainty and not by
+itself a reason for `human_required`. The agent reports the repository and
+runtime evidence it can obtain; n8n then re-reads the open PR, exact head SHA,
+and required checks with isolated credentials. Likewise, an unavailable cache
+or tool is reported separately from a test that actually ran and failed.
+
 ### Treat repository content as untrusted
 
 PR titles, descriptions, diffs, release notes, and linked pages can contain
@@ -350,6 +358,33 @@ The byte-level rule intentionally treats an unrelated edit to the same file as
 a changed delta. Renovate therefore groups all `mise` manager updates into one
 PR, reducing collisions in `wanxiang/.mise.toml` without weakening the gate.
 
+### Same-file rebase incident and decision
+
+PRs #33 (`go-task`) and #39 (`pipx`) were created before the `mise` grouping
+rule took effect. Both changed separate assignments in `wanxiang/.mise.toml`.
+After one PR merged, rebasing the other changed that file's base and head blob
+IDs even though its own version assignment was unchanged. The merge queue
+correctly failed the exact tree-delta check and requested another Multica
+review. This repeated once while the two legacy PRs were merged serially. It
+was safe, but added avoidable reviews.
+
+Forgejo's authenticated `pulls/{number}.diff` endpoint was tested as a possible
+replacement invariant. A normalized digest could ignore hunk line numbers and
+therefore survive unrelated edits in the same file. The `pulls/{number}/files`
+endpoint does not include patch content, so the raw diff endpoint would be the
+required source. This approach was not adopted: ignoring location or context
+can treat identical added and removed lines applied at a different semantic
+location as the approved change, while retaining enough context to prevent
+that reintroduces collisions for nearby dependency edits. It would weaken the
+current byte-level approval binding for limited operational benefit.
+
+The decision is to keep the fail-closed tree digest and address the collision
+at its source. Renovate groups `mise` manager updates into one PR, so new
+updates to `.mise.toml` share one reviewed delta. Old, already-open PRs may
+still require repeat review while they drain. A future relaxation needs a
+manager-aware semantic model with explicit ambiguity tests; a generic
+line-only patch digest is not sufficient.
+
 After equivalence is proven, `multica-gate` marks only the current head
 successful. The worker re-reads the combined status and uses
 `multica-merger` only when all required checks report success. Its merge request
@@ -359,10 +394,16 @@ makes the item stale returns it to the queue for another deterministic update
 cycle.
 
 After a successful merge, issue closure is bound to the exact stored Multica
-run, autopilot, and issue identifiers. It does not require the Multica run to
-report `completed`: webhook-triggered runs currently remain `issue_created`
-after an approved callback, while the callback capability and approved tree
-snapshot are the authorization boundary for the merge.
+run, autopilot, and issue identifiers. The autopilot run itself is not used as
+the completion signal: webhook-triggered runs can remain `issue_created` after
+an approved callback. After Forgejo confirms the merge, the queue instead
+queries the bound Issue's active task runs and waits until none remain before
+marking the Issue `done`. This prevents the reviewing agent's final
+`in_review` write from racing with the closer. Merged rows without a recorded
+Issue closure remain eligible for idempotent reconciliation on later queue
+runs. The workflow filters active statuses locally because older deployed
+Multica releases ignore the API's `active=true` query parameter and return the
+full task history.
 
 Queue states are `queued`, `updating`, `waiting_ci`, `merging`, `merged`,
 `blocked`, and `expired`. Claims use a short database lease and
@@ -388,9 +429,10 @@ accepted decision into a retry that would collide with single-use consumption.
 For a completed Renovate merge, n8n resolves the originating
 Multica autopilot run through a dispatch record bound to the signed capability
 JTI, repository, PR number, and head SHA. It then marks that run's Issue as
-`done` with the dedicated `multica-closer.no-reply@beacoworks.xyz` member
-identity. Agent-supplied Issue URLs are not trusted for this lookup. A queued
-merge remains `in_review` until Forgejo confirms the merge.
+`done`, after its active agent task has exited, with the dedicated
+`multica-closer.no-reply@beacoworks.xyz` member identity. Agent-supplied Issue
+URLs are not trusted for this lookup. A queued merge remains `in_review` until
+Forgejo confirms the merge and the review run becomes idle.
 
 Multica currently does not expose scopes on personal access tokens. The closer
 therefore has ordinary workspace-member permissions, and n8n isolates its token
