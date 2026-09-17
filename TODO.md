@@ -31,6 +31,25 @@
     longer traverse Cloudflare and the private path has equivalent
     observability and availability.
 
+## Renovate review continuation
+
+- [ ] Add a first-class continuation path after a Renovate review returns
+  `human_required`.
+  - The signed review capability is single-use and is consumed by the
+    `human_required` callback, so a later human approval currently cannot
+    submit `approve` for the same PR head.
+  - After an allowlisted human approves the exact reviewed SHA, mint a new
+    short-lived capability bound to the same repository, PR, head SHA, review
+    evidence, and Multica Issue instead of replaying the consumed capability.
+  - Re-read Forgejo and the human approval at continuation time, reject stale
+    or changed heads, and retain the existing merge-queue and branch-protection
+    checks.
+  - Add regression coverage for approve, reject, expiry, replay, concurrent
+    head changes, and duplicate human-approval events.
+  - Until implemented, refreshing the PR with a signed empty commit is an
+    audited fail-closed workaround only when its Git tree is proven identical;
+    it is not the intended steady-state workflow.
+
 ## Agent validation tools
 
 - [ ] Prototype bounded n8n MCP tools for agent-requested validation.
