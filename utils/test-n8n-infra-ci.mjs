@@ -465,6 +465,11 @@ assert.equal(
 );
 const multicaTrigger = nodes.get("Trigger Multica Renovate Autopilot");
 assert.equal(multicaTrigger.parameters.body.includes('$("Decide Event Transition").item'), false);
+assert.match(multicaTrigger.parameters.body, /User-Agent: Multica-Review-Callback\/1\.0/);
+assert.match(multicaTrigger.parameters.body, /rejects Python-urllib/);
+assert.match(multicaTrigger.parameters.body, /intentionally has no Forgejo PAT/);
+assert.match(multicaTrigger.parameters.body, /must not by itself cause human_required/);
+assert.match(multicaTrigger.parameters.body, /n8n independently re-reads the open PR, exact head SHA, and required checks/);
 assert.equal(
   multicaTrigger.parameters.headerParameters.parameters[1].value
     .includes('$("Decide Event Transition").item'),
@@ -481,6 +486,75 @@ assert.equal(dispatchStore.credentials.postgres.id, "reviewCapabilityPg");
 assert.match(dispatchStore.parameters.query, /multica_review_dispatches/);
 assert.match(dispatchStore.parameters.query, /run_id uuid NOT NULL UNIQUE/);
 assert.doesNotMatch(dispatchStore.parameters.query, /\$json|\$\(/);
+
+const supersededDispatches = nodes.get("Get Superseded Multica Dispatches");
+assert.equal(supersededDispatches.credentials.postgres.id, "reviewCapabilityPg");
+assert.match(supersededDispatches.parameters.query, /repo = \$1/);
+assert.match(supersededDispatches.parameters.query, /pr_number = \$2::bigint/);
+assert.match(supersededDispatches.parameters.query, /head_sha <> \$3/);
+assert.match(supersededDispatches.parameters.query, /run_id <> \$4::uuid/);
+assert.doesNotMatch(supersededDispatches.parameters.query, /\$json|\$\(/);
+
+for (const name of [
+  "Get Superseded Multica Run",
+  "Cancel Superseded Multica Run",
+  "Get Superseded Multica Issue",
+  "Cancel Superseded Multica Issue",
+]) {
+  assert.equal(nodes.get(name).credentials.httpHeaderAuth.id, "multicaCloser01");
+}
+assert.equal(nodes.get("Cancel Superseded Multica Run").parameters.method, "POST");
+assert.match(nodes.get("Cancel Superseded Multica Run").parameters.url, /\/api\/tasks\/.*\/cancel/);
+assert.match(
+  nodes.get("Superseded Multica Run Is Active").parameters.conditions.conditions[0].leftValue,
+  /queued.*dispatched.*running.*waiting_local_directory.*deferred/,
+);
+assert.match(nodes.get("Cancel Superseded Multica Issue").parameters.jsonBody, /status: 'cancelled'/);
+assert.deepEqual(
+  workflow.connections["Store Multica Review Dispatch"].main[0].map(({ node }) => node),
+  ["Get Superseded Multica Dispatches"],
+);
+assert.deepEqual(
+  workflow.connections["Superseded Multica Run Is Active"].main.map((branch) =>
+    branch.map(({ node }) => node)),
+  [["Cancel Superseded Multica Run"], ["Get Superseded Multica Issue"]],
+);
+assert.deepEqual(
+  workflow.connections["Cancel Superseded Multica Run"].main[0].map(({ node }) => node),
+  ["Get Superseded Multica Issue"],
+);
+assert.deepEqual(
+  workflow.connections["Superseded Multica Issue Is Active"].main.map((branch) =>
+    branch.map(({ node }) => node)),
+  [["Cancel Superseded Multica Issue"], []],
+);
+
+const supersededRun = execute("Verify Superseded Multica Run", {
+  $json: {
+    id: "22222222-2222-4222-8222-222222222222",
+    autopilot_id: "11111111-1111-4111-8111-111111111111",
+    issue_id: "44444444-4444-4444-8444-444444444444",
+    status: "running",
+  },
+  $: () => ({ item: { json: {
+    autopilot_id: "11111111-1111-4111-8111-111111111111",
+    run_id: "22222222-2222-4222-8222-222222222222",
+  } } }),
+}).json;
+assert.equal(supersededRun.ISSUE_ID, "44444444-4444-4444-8444-444444444444");
+assert.equal(supersededRun.RUN_ID, "22222222-2222-4222-8222-222222222222");
+assert.equal(supersededRun.RUN_STATUS, "running");
+assert.throws(() => execute("Verify Superseded Multica Run", {
+  $json: {
+    id: "55555555-5555-4555-8555-555555555555",
+    autopilot_id: "11111111-1111-4111-8111-111111111111",
+    issue_id: "44444444-4444-4444-8444-444444444444",
+  },
+  $: () => ({ item: { json: {
+    autopilot_id: "11111111-1111-4111-8111-111111111111",
+    run_id: "22222222-2222-4222-8222-222222222222",
+  } } }),
+}));
 
 assert.equal(
   nodes.get("Trigger Multica Renovate Autopilot").parameters.options.response,
