@@ -315,7 +315,9 @@ blocked item is sent back through the authenticated infra-ci webhook as a new
 `synchronize` event. This event is only a wake-up signal: infra-ci creates a
 new capability for the updated head, and the callback still re-reads Forgejo
 before accepting a decision. Approval is never inferred from the old commit
-status. Once the new review request is accepted, the worker resolves the old
+status. Its dedicated event variant prevents the earlier Forgejo
+`synchronize` delivery from suppressing the re-review through event
+deduplication. Once the new review request is accepted, the worker resolves the old
 issue through its stored capability JTI and marks that strictly bound issue
 `blocked`, leaving the new head with its own issue and capability.
 
