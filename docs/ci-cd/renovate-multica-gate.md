@@ -218,6 +218,24 @@ created separate runs and Issues; retrying the first key returned `duplicate`
 and reused its delivery. The official `v0.4.24` image was restored immediately
 after the test.
 
+Distinct pull-request revisions intentionally retain distinct runs and scoped
+capabilities: a decision for one head SHA must never authorize another. To keep
+that safety property without leaving several actionable Issues for one PR, n8n
+reconciles Issue state after accepting a new dispatch. It queries prior
+dispatch records for the same repository and PR number, verifies each stored
+autopilot/run binding through Multica, cancels any prior run that is still
+queued or executing, reads the bound Issue, and changes only non-terminal prior
+Issues to `cancelled`. `done` and already `cancelled` Issues are never
+downgraded. The new SHA remains the sole active Issue; cancellation does not
+carry forward the old verdict, and the old agent cannot continue writing after
+its review has become stale.
+
+This reconciliation is deliberately idempotent. Concurrent deliveries may
+read the same prior Issue, but setting `cancelled` repeatedly has the same end
+state. All Issue identifiers come from the stored run binding, not from an
+agent-provided URL or title. A failure to read or verify Multica stops that
+reconciliation branch rather than guessing an Issue identity.
+
 The temporary downstream image is built reproducibly by the
 `multica-backend-oci` flake output. It fetches the pinned upstream `v0.4.24`
 source, applies the patch above, builds the static Go binaries, and produces an
@@ -319,7 +337,7 @@ status. Its dedicated event variant prevents the earlier Forgejo
 `synchronize` delivery from suppressing the re-review through event
 deduplication. Once the new review request is accepted, the worker resolves the old
 issue through its stored capability JTI and marks that strictly bound issue
-`blocked`, leaving the new head with its own issue and capability.
+`cancelled`, leaving the new head with its own issue and capability.
 
 The byte-level rule intentionally treats an unrelated edit to the same file as
 a changed delta. Renovate therefore groups all `mise` manager updates into one

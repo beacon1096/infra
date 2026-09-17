@@ -791,7 +791,7 @@
       },
       {
         "id": "a5f0e697-ad50-42fa-b4a8-538849640253",
-        "name": "Block Superseded Multica Issue",
+        "name": "Cancel Superseded Multica Issue",
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.4,
         "position": [
@@ -815,7 +815,7 @@
           "sendBody": true,
           "contentType": "json",
           "specifyBody": "json",
-          "jsonBody": "={{ { status: 'blocked' } }}",
+          "jsonBody": "={{ { status: 'cancelled' } }}",
           "options": {
             "timeout": 15000
           }
@@ -1239,7 +1239,7 @@
         "main": [
           [
             {
-              "node": "Block Superseded Multica Issue",
+              "node": "Cancel Superseded Multica Issue",
               "type": "main",
               "index": 0
             }
