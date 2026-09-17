@@ -17,3 +17,16 @@
     create two Issues while a retry of one delivery remains idempotent.
   - The reproducible `multica-backend-oci` flake output and Forgejo publish job
     carry `0.4.24-beacon.1` until an official fixed release replaces it.
+
+## Automation ingress
+
+- [ ] Move Forgejo, n8n, and Multica machine-to-machine webhooks onto
+  self-hosted ingress or private service discovery.
+  - Keep the public Cloudflare path as a compatibility layer while migration
+    is incomplete.
+  - Preserve scoped, single-use callback capabilities and fixed destination
+    allowlists; private routing must not replace application-layer
+    authorization.
+  - Remove the callback-specific User-Agent workaround only after agents no
+    longer traverse Cloudflare and the private path has equivalent
+    observability and availability.
