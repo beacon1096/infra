@@ -42,3 +42,23 @@
   - Test authorization, malicious inputs, replay, timeout, cancellation,
     unavailable capacity, and result-to-SHA binding.
   - Keep MCP validation separate from approval and merge authority.
+
+## GitOps validation migration
+
+- [ ] Replace the sunsetted `flux-local` workflow with `flate` validation.
+  - Preserve the current test and rendered-diff coverage before changing the
+    required status name.
+  - Pin the executable or container by immutable digest and test Forgejo
+    Actions compatibility.
+  - Evaluate `konflate` separately as a read-only Forgejo PR review service;
+    do not make a new service a prerequisite for the initial CLI migration.
+  - Keep `flux-local` 8.4.0 only as a short-term compatibility bridge.
+
+## Wanxiang cluster upgrade
+
+- [ ] Execute the staged Talos/Kubernetes upgrade described in
+  [`wanxiang/docs/cluster-upgrade.md`](wanxiang/docs/cluster-upgrade.md).
+  - Do not close Renovate PR #36 while the control-plane upgrade is pending.
+  - Do not merge its kubectl 1.37 pin while every API server remains on 1.35.
+  - Re-evaluate the open Flux, Cilium, CoreDNS, Envoy Gateway, and related
+    chart PRs against each target Kubernetes minor before approval.
