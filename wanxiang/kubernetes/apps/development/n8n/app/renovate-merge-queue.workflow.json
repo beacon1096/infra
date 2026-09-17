@@ -702,7 +702,7 @@
               },
               {
                 "name": "X-Forgejo-Event-Type",
-                "value": "pull_request"
+                "value": "pull_request_review_merge_queue_rerequested"
               },
               {
                 "name": "X-Forgejo-Delivery",

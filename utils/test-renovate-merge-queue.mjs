@@ -120,6 +120,10 @@ assert.match(
   JSON.stringify(freshReview.parameters.headerParameters),
   /FORGEJO_WEBHOOK_CREDENTIAL/,
 );
+assert.match(
+  JSON.stringify(freshReview.parameters.headerParameters),
+  /pull_request_review_merge_queue_rerequested/,
+);
 assert.deepEqual(
   workflow.connections["Block Changed Queue Delta"].main[0].map(({ node }) => node),
   ["Request Fresh Multica Review"],
