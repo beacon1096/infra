@@ -86,6 +86,13 @@ PostgreSQL table whose primary key is `jti`. `INSERT ... ON CONFLICT DO NOTHING`
 allows exactly one execution to continue; a concurrent or later replay returns
 HTTP 409 before any Forgejo status or merge request is written.
 
+Callback clients must send an explicit
+`User-Agent: Multica-Review-Callback/1.0` header. The public ingress rejects
+generic automated-client signatures such as Python `urllib`'s default user
+agent with Cloudflare error 1010 before the request reaches n8n. This header is
+only an ingress compatibility requirement; authorization continues to depend
+on the signed, scoped, single-use capability.
+
 Consumption is deliberately fail-closed and happens before the fresh PR lookup.
 If a later Forgejo request fails, the same capability cannot be retried; a new
 PR event must issue a new capability. Consumed rows are retained through expiry
@@ -114,6 +121,14 @@ finish a task.
 The agent makes the contextual judgment; n8n and Forgejo enforce deterministic
 facts such as identity, repository scope, current SHA, required checks, branch
 freshness, and merge permission.
+
+The review agent intentionally has no Forgejo PAT. Failure to query a private
+PR, Multica's PR link table, Forgejo commit statuses, or required checks is an
+expected trust-boundary limitation, not change-specific uncertainty and not by
+itself a reason for `human_required`. The agent reports the repository and
+runtime evidence it can obtain; n8n then re-reads the open PR, exact head SHA,
+and required checks with isolated credentials. Likewise, an unavailable cache
+or tool is reported separately from a test that actually ran and failed.
 
 ### Treat repository content as untrusted
 
@@ -218,6 +233,24 @@ created separate runs and Issues; retrying the first key returned `duplicate`
 and reused its delivery. The official `v0.4.24` image was restored immediately
 after the test.
 
+Distinct pull-request revisions intentionally retain distinct runs and scoped
+capabilities: a decision for one head SHA must never authorize another. To keep
+that safety property without leaving several actionable Issues for one PR, n8n
+reconciles Issue state after accepting a new dispatch. It queries prior
+dispatch records for the same repository and PR number, verifies each stored
+autopilot/run binding through Multica, cancels any prior run that is still
+queued or executing, reads the bound Issue, and changes only non-terminal prior
+Issues to `cancelled`. `done` and already `cancelled` Issues are never
+downgraded. The new SHA remains the sole active Issue; cancellation does not
+carry forward the old verdict, and the old agent cannot continue writing after
+its review has become stale.
+
+This reconciliation is deliberately idempotent. Concurrent deliveries may
+read the same prior Issue, but setting `cancelled` repeatedly has the same end
+state. All Issue identifiers come from the stored run binding, not from an
+agent-provided URL or title. A failure to read or verify Multica stops that
+reconciliation branch rather than guessing an Issue identity.
+
 The temporary downstream image is built reproducibly by the
 `multica-backend-oci` flake output. It fetches the pinned upstream `v0.4.24`
 source, applies the patch above, builds the static Go binaries, and produces an
@@ -311,8 +344,19 @@ Once the PR contains the current base, the worker recomputes the tree delta.
 Only an exact digest and changed-path count match carries approval to the new
 head. Changes elsewhere on `main` therefore do not require another review, but
 any change to the approved path/blob/mode/type set blocks the queue item. A
-blocked item must receive a new Multica review; approval is never inferred from
-the old commit status.
+blocked item is sent back through the authenticated infra-ci webhook as a new
+`synchronize` event. This event is only a wake-up signal: infra-ci creates a
+new capability for the updated head, and the callback still re-reads Forgejo
+before accepting a decision. Approval is never inferred from the old commit
+status. Its dedicated event variant prevents the earlier Forgejo
+`synchronize` delivery from suppressing the re-review through event
+deduplication. Once the new review request is accepted, the worker resolves the old
+issue through its stored capability JTI and marks that strictly bound issue
+`cancelled`, leaving the new head with its own issue and capability.
+
+The byte-level rule intentionally treats an unrelated edit to the same file as
+a changed delta. Renovate therefore groups all `mise` manager updates into one
+PR, reducing collisions in `wanxiang/.mise.toml` without weakening the gate.
 
 After equivalence is proven, `multica-gate` marks only the current head
 successful. The worker re-reads the combined status and uses
@@ -323,10 +367,16 @@ makes the item stale returns it to the queue for another deterministic update
 cycle.
 
 After a successful merge, issue closure is bound to the exact stored Multica
-run, autopilot, and issue identifiers. It does not require the Multica run to
-report `completed`: webhook-triggered runs currently remain `issue_created`
-after an approved callback, while the callback capability and approved tree
-snapshot are the authorization boundary for the merge.
+run, autopilot, and issue identifiers. The autopilot run itself is not used as
+the completion signal: webhook-triggered runs can remain `issue_created` after
+an approved callback. After Forgejo confirms the merge, the queue instead
+queries the bound Issue's active task runs and waits until none remain before
+marking the Issue `done`. This prevents the reviewing agent's final
+`in_review` write from racing with the closer. Merged rows without a recorded
+Issue closure remain eligible for idempotent reconciliation on later queue
+runs. The workflow filters active statuses locally because older deployed
+Multica releases ignore the API's `active=true` query parameter and return the
+full task history.
 
 Queue states are `queued`, `updating`, `waiting_ci`, `merging`, `merged`,
 `blocked`, and `expired`. Claims use a short database lease and
@@ -352,9 +402,10 @@ accepted decision into a retry that would collide with single-use consumption.
 For a completed Renovate merge, n8n resolves the originating
 Multica autopilot run through a dispatch record bound to the signed capability
 JTI, repository, PR number, and head SHA. It then marks that run's Issue as
-`done` with the dedicated `multica-closer.no-reply@beacoworks.xyz` member
-identity. Agent-supplied Issue URLs are not trusted for this lookup. A queued
-merge remains `in_review` until Forgejo confirms the merge.
+`done`, after its active agent task has exited, with the dedicated
+`multica-closer.no-reply@beacoworks.xyz` member identity. Agent-supplied Issue
+URLs are not trusted for this lookup. A queued merge remains `in_review` until
+Forgejo confirms the merge and the review run becomes idle.
 
 Multica currently does not expose scopes on personal access tokens. The closer
 therefore has ordinary workspace-member permissions, and n8n isolates its token
