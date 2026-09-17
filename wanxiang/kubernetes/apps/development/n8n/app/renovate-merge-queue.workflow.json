@@ -666,7 +666,7 @@
         ],
         "parameters": {
           "operation": "executeQuery",
-          "query": "UPDATE renovate_merge_queue SET state = 'blocked', lease_until = NULL, updated_at = now(), last_error = left($3, 500) WHERE repo = $1 AND pr_number = $2::bigint RETURNING repo, pr_number, state, last_error;",
+          "query": "UPDATE renovate_merge_queue SET state = 'blocked', lease_until = NULL, updated_at = now(), last_error = left($3, 500) WHERE repo = $1 AND pr_number = $2::bigint RETURNING repo, pr_number, state, last_error, approval_jti::text;",
           "options": {
             "queryReplacement": "={{ [$(\"Verify Queued Tree Delta\").item.json.repo, $(\"Verify Queued Tree Delta\").item.json.pr_number, $json.ERROR_MESSAGE || $json.error?.message || $json.message || 'tree-delta verification or gate write failed'] }}"
           }
@@ -675,6 +675,155 @@
           "postgres": {
             "id": "reviewCapabilityPg",
             "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "ca091db5-4d5a-43c6-b595-624f5317fd22",
+        "name": "Request Fresh Multica Review",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2912,
+          128
+        ],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 1000,
+        "parameters": {
+          "method": "POST",
+          "url": "http://n8n:5678/webhook/62dea6af-c08b-4292-b811-b67b0efa7fab",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'Bearer ' + $env.FORGEJO_WEBHOOK_CREDENTIAL }}"
+              },
+              {
+                "name": "X-Forgejo-Event-Type",
+                "value": "pull_request_review_merge_queue_rerequested"
+              },
+              {
+                "name": "X-Forgejo-Delivery",
+                "value": "={{ 'merge-queue-rereview:' + $(\"Verify Queued Tree Delta\").first().json.repo + ':' + $(\"Verify Queued Tree Delta\").first().json.pr_number + ':' + $(\"Verify Queued Tree Delta\").first().json.CURRENT_HEAD_SHA }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "raw",
+          "rawContentType": "application/json",
+          "body": "={{ JSON.stringify({ action: 'synchronize', repository: { full_name: $(\"Verify Queued Tree Delta\").first().json.repo, html_url: 'https://forgejo.beaco.works/' + $(\"Verify Queued Tree Delta\").first().json.repo }, pull_request: $(\"Get Queued Renovate PR\").first().json.body, sender: { login: 'multica-merger' } }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        }
+      },
+      {
+        "id": "39333d6a-4d33-4797-b313-2c502ff1e106",
+        "name": "Get Superseded Multica Dispatch",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          3136,
+          128
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT repo, pr_number, head_sha, autopilot_id::text, run_id::text FROM multica_review_dispatches WHERE jti = $1::uuid AND expires_at > now();",
+          "options": {
+            "queryBatching": "single",
+            "queryReplacement": "={{ [$(\"Block Changed Queue Delta\").first().json.approval_jti] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        }
+      },
+      {
+        "id": "3020f824-22df-483b-87fb-1a4b1c3480a6",
+        "name": "Get Superseded Multica Run",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          3360,
+          128
+        ],
+        "parameters": {
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "url": "={{ 'https://multica.beaco.works/api/autopilots/' + $(\"Get Superseded Multica Dispatch\").first().json.autopilot_id + '/runs/' + $(\"Get Superseded Multica Dispatch\").first().json.run_id }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Workspace-Slug",
+                "value": "beacoworks"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaCloser01",
+            "name": "Multica Issue Closer"
+          }
+        }
+      },
+      {
+        "id": "4a8d4ddd-5b78-4d42-aa23-6bca01441a01",
+        "name": "Verify Superseded Multica Run",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3584,
+          128
+        ],
+        "parameters": {
+          "jsCode": "const run = $json ?? {};\nconst dispatch = $('Get Superseded Multica Dispatch').first().json;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (String(run.id) !== String(dispatch.run_id)\n  || String(run.autopilot_id) !== String(dispatch.autopilot_id)\n  || !uuid.test(String(run.issue_id ?? ''))) throw new Error('superseded Multica run binding mismatch');\nreturn { json: { ISSUE_ID: run.issue_id } };"
+        }
+      },
+      {
+        "id": "a5f0e697-ad50-42fa-b4a8-538849640253",
+        "name": "Block Superseded Multica Issue",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          3808,
+          128
+        ],
+        "parameters": {
+          "method": "PUT",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "url": "={{ 'https://multica.beaco.works/api/issues/' + $json.ISSUE_ID }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Workspace-Slug",
+                "value": "beacoworks"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ { status: 'blocked' } }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaCloser01",
+            "name": "Multica Issue Closer"
           }
         }
       },
@@ -1036,6 +1185,61 @@
           [
             {
               "node": "Block Changed Queue Delta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Block Changed Queue Delta": {
+        "main": [
+          [
+            {
+              "node": "Request Fresh Multica Review",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Request Fresh Multica Review": {
+        "main": [
+          [
+            {
+              "node": "Get Superseded Multica Dispatch",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Superseded Multica Dispatch": {
+        "main": [
+          [
+            {
+              "node": "Get Superseded Multica Run",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Superseded Multica Run": {
+        "main": [
+          [
+            {
+              "node": "Verify Superseded Multica Run",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verify Superseded Multica Run": {
+        "main": [
+          [
+            {
+              "node": "Block Superseded Multica Issue",
               "type": "main",
               "index": 0
             }
