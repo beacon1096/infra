@@ -1,6 +1,7 @@
 # Qwen3.8 Flash Next: NVFP4, CUDA Graph and MTP
 
-[Thor overview](../../thor.md)
+[Thor overview](../../thor.md) ·
+[Official Lazycat app deployment](qwen3.8-flash-next-lazycat.md)
 
 Source review: deployment revision `d03809008834124e80223c3482f2ddb59577a48f`.
 Local startup and performance experiments: 2026-09-13.
