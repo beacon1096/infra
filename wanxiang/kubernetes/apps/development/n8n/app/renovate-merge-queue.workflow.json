@@ -36,7 +36,7 @@
         ],
         "parameters": {
           "operation": "executeQuery",
-          "query": "CREATE TABLE IF NOT EXISTS renovate_merge_queue (\n  repo text NOT NULL,\n  pr_number bigint NOT NULL,\n  approved_head_sha char(40) NOT NULL,\n  approved_base_sha char(40) NOT NULL,\n  delta_digest char(64) NOT NULL,\n  delta_count integer NOT NULL,\n  approval_jti uuid NOT NULL UNIQUE,\n  multica_summary text NOT NULL,\n  evidence_url text NOT NULL DEFAULT '',\n  state text NOT NULL CHECK (state IN ('queued', 'updating', 'waiting_ci', 'merging', 'merged', 'blocked', 'expired')),\n  attempt_count integer NOT NULL DEFAULT 0,\n  lease_until timestamptz,\n  approved_at timestamptz NOT NULL DEFAULT now(),\n  updated_at timestamptz NOT NULL DEFAULT now(),\n  expires_at timestamptz NOT NULL,\n  last_error text NOT NULL DEFAULT '',\n  PRIMARY KEY (repo, pr_number)\n);\nWITH expired AS (\n  UPDATE renovate_merge_queue SET state = 'expired', updated_at = now(), last_error = 'approval expired'\n  WHERE state IN ('queued', 'updating', 'waiting_ci', 'merging') AND expires_at <= now()\n), candidate AS (\n  SELECT repo, pr_number FROM renovate_merge_queue\n  WHERE state IN ('queued', 'updating', 'waiting_ci', 'merging')\n    AND expires_at > now() AND (lease_until IS NULL OR lease_until < now())\n  ORDER BY approved_at, repo, pr_number\n  FOR UPDATE SKIP LOCKED LIMIT 1\n)\nUPDATE renovate_merge_queue q SET lease_until = now() + interval '45 seconds', attempt_count = attempt_count + 1, updated_at = now()\nFROM candidate c WHERE q.repo = c.repo AND q.pr_number = c.pr_number\nRETURNING q.*;",
+          "query": "CREATE TABLE IF NOT EXISTS renovate_merge_queue (\n  repo text NOT NULL,\n  pr_number bigint NOT NULL,\n  approved_head_sha char(40) NOT NULL,\n  approved_base_sha char(40) NOT NULL,\n  delta_digest char(64) NOT NULL,\n  delta_count integer NOT NULL,\n  approval_jti uuid NOT NULL UNIQUE,\n  multica_summary text NOT NULL,\n  evidence_url text NOT NULL DEFAULT '',\n  state text NOT NULL CHECK (state IN ('queued', 'updating', 'waiting_ci', 'merging', 'merged', 'blocked', 'expired')),\n  attempt_count integer NOT NULL DEFAULT 0,\n  lease_until timestamptz,\n  approved_at timestamptz NOT NULL DEFAULT now(),\n  updated_at timestamptz NOT NULL DEFAULT now(),\n  expires_at timestamptz NOT NULL,\n  last_error text NOT NULL DEFAULT '',\n  multica_closed_at timestamptz,\n  PRIMARY KEY (repo, pr_number)\n);\nALTER TABLE renovate_merge_queue ADD COLUMN IF NOT EXISTS multica_closed_at timestamptz;\nWITH expired AS (\n  UPDATE renovate_merge_queue SET state = 'expired', updated_at = now(), last_error = 'approval expired'\n  WHERE state IN ('queued', 'updating', 'waiting_ci', 'merging') AND expires_at <= now()\n), candidate AS (\n  SELECT repo, pr_number FROM renovate_merge_queue\n  WHERE ((state IN ('queued', 'updating', 'waiting_ci', 'merging') AND expires_at > now())\n      OR (state = 'merged' AND multica_closed_at IS NULL))\n    AND (lease_until IS NULL OR lease_until < now())\n  ORDER BY CASE WHEN state = 'merged' THEN 1 ELSE 0 END, approved_at, repo, pr_number\n  FOR UPDATE SKIP LOCKED LIMIT 1\n)\nUPDATE renovate_merge_queue q SET lease_until = now() + interval '45 seconds', attempt_count = attempt_count + 1, updated_at = now()\nFROM candidate c WHERE q.repo = c.repo AND q.pr_number = c.pr_number\nRETURNING q.*;",
           "options": {}
         },
         "credentials": {
@@ -791,7 +791,7 @@
       },
       {
         "id": "a5f0e697-ad50-42fa-b4a8-538849640253",
-        "name": "Block Superseded Multica Issue",
+        "name": "Cancel Superseded Multica Issue",
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.4,
         "position": [
@@ -815,7 +815,7 @@
           "sendBody": true,
           "contentType": "json",
           "specifyBody": "json",
-          "jsonBody": "={{ { status: 'blocked' } }}",
+          "jsonBody": "={{ { status: 'cancelled' } }}",
           "options": {
             "timeout": 15000
           }
@@ -962,12 +962,64 @@
         }
       },
       {
+        "id": "ce91b3b6-9128-4348-8701-262956853661",
+        "name": "Get Active Queued Issue Runs",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          4928,
+          -128
+        ],
+        "parameters": {
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "url": "={{ 'https://multica.beaco.works/api/issues/' + $json.ISSUE_ID + '/task-runs' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Workspace-Slug",
+                "value": "beacoworks"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaCloser01",
+            "name": "Multica Issue Closer"
+          }
+        }
+      },
+      {
+        "id": "13ee510f-fd50-42a0-acfe-cf433ea45c44",
+        "name": "Verify Queued Issue Is Idle",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          5152,
+          -128
+        ],
+        "parameters": {
+          "jsCode": "if (Number($json.statusCode) !== 200 || !Array.isArray($json.body)) throw new Error('failed to read Multica issue runs');\nconst activeStatuses = new Set(['queued', 'dispatched', 'running', 'waiting_local_directory']);\nif ($json.body.some((run) => activeStatuses.has(String(run?.status ?? '')))) return [];\nreturn { json: { ISSUE_ID: $('Verify Queued Multica Run').first().json.ISSUE_ID } };"
+        }
+      },
+      {
         "id": "7470d85b-7014-41cf-92be-3a3ecb55ed66",
         "name": "Complete Queued Multica Issue",
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.4,
         "position": [
-          4928,
+          5376,
           -128
         ],
         "parameters": {
@@ -996,6 +1048,29 @@
           "httpHeaderAuth": {
             "id": "multicaCloser01",
             "name": "Multica Issue Closer"
+          }
+        }
+      },
+      {
+        "id": "9709c8bb-c1ab-4670-b741-b30011877c30",
+        "name": "Record Multica Issue Closed",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          5600,
+          -128
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE renovate_merge_queue SET multica_closed_at = now(), lease_until = NULL, updated_at = now() WHERE repo = $1 AND pr_number = $2::bigint AND state = 'merged' RETURNING repo, pr_number, state, multica_closed_at;",
+          "options": {
+            "queryReplacement": "={{ [$(\"Claim Renovate Queue Item\").first().json.repo, $(\"Claim Renovate Queue Item\").first().json.pr_number] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
           }
         }
       }
@@ -1239,7 +1314,7 @@
         "main": [
           [
             {
-              "node": "Block Superseded Multica Issue",
+              "node": "Cancel Superseded Multica Issue",
               "type": "main",
               "index": 0
             }
@@ -1358,7 +1433,40 @@
         "main": [
           [
             {
+              "node": "Get Active Queued Issue Runs",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Active Queued Issue Runs": {
+        "main": [
+          [
+            {
+              "node": "Verify Queued Issue Is Idle",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verify Queued Issue Is Idle": {
+        "main": [
+          [
+            {
               "node": "Complete Queued Multica Issue",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Complete Queued Multica Issue": {
+        "main": [
+          [
+            {
+              "node": "Record Multica Issue Closed",
               "type": "main",
               "index": 0
             }
