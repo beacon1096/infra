@@ -83,7 +83,8 @@ const claim = nodes.get("Claim Renovate Queue Item");
 assert.equal(claim.credentials.postgres.id, "reviewCapabilityPg");
 assert.match(claim.parameters.query, /FOR UPDATE SKIP LOCKED/);
 assert.match(claim.parameters.query, /lease_until = now\(\) \+ interval '45 seconds'/);
-assert.match(claim.parameters.query, /ORDER BY approved_at/);
+assert.match(claim.parameters.query, /state = 'merged' AND multica_closed_at IS NULL/);
+assert.match(claim.parameters.query, /CASE WHEN state = 'merged' THEN 1 ELSE 0 END/);
 
 for (const name of ["Update Queued Renovate PR", "Merge Queued Renovate PR"]) {
   assert.equal(nodes.get(name).credentials.httpHeaderAuth.id, "multicaMerger01");
@@ -101,15 +102,60 @@ const verifyMulticaRun = nodes.get("Verify Queued Multica Run").parameters.jsCod
 assert.match(verifyMulticaRun, /run\.id.*dispatch\.run_id/s);
 assert.match(verifyMulticaRun, /run\.autopilot_id.*dispatch\.autopilot_id/s);
 assert.doesNotMatch(verifyMulticaRun, /run\.status|completed/);
-for (const name of ["Get Queued Multica Run", "Complete Queued Multica Issue"]) {
+for (const name of ["Get Queued Multica Run", "Get Active Queued Issue Runs", "Complete Queued Multica Issue"]) {
   assert.equal(nodes.get(name).credentials.httpHeaderAuth.id, "multicaCloser01");
 }
+assert.match(nodes.get("Get Active Queued Issue Runs").parameters.url, /task-runs'/);
+assert.equal(nodes.get("Get Active Queued Issue Runs").parameters.options.response.response.fullResponse, true);
+assert.match(nodes.get("Verify Queued Issue Is Idle").parameters.jsCode, /activeStatuses.*waiting_local_directory/s);
+assert.match(nodes.get("Verify Queued Issue Is Idle").parameters.jsCode, /\.some\(.*activeStatuses\.has/s);
 assert.match(nodes.get("Complete Queued Multica Issue").parameters.jsonBody, /status: 'done'/);
+assert.match(nodes.get("Record Multica Issue Closed").parameters.query, /multica_closed_at = now\(\)/);
+assert.deepEqual(
+  workflow.connections["Verify Queued Multica Run"].main[0].map(({ node }) => node),
+  ["Get Active Queued Issue Runs"],
+);
+assert.deepEqual(
+  workflow.connections["Complete Queued Multica Issue"].main[0].map(({ node }) => node),
+  ["Record Multica Issue Closed"],
+);
 assert.deepEqual(
   workflow.connections["Queue Merge Completed"].main.map((branch) =>
     branch.map(({ node }) => node)),
   [["Get Queued Multica Dispatch"], []],
 );
+
+const freshReview = nodes.get("Request Fresh Multica Review");
+assert.equal(freshReview.parameters.method, "POST");
+assert.match(freshReview.parameters.url, /^http:\/\/n8n:5678\/webhook/);
+assert.match(freshReview.parameters.body, /action: 'synchronize'/);
+assert.match(freshReview.parameters.body, /Get Queued Renovate PR/);
+assert.match(
+  JSON.stringify(freshReview.parameters.headerParameters),
+  /FORGEJO_WEBHOOK_CREDENTIAL/,
+);
+assert.match(
+  JSON.stringify(freshReview.parameters.headerParameters),
+  /pull_request_review_merge_queue_rerequested/,
+);
+assert.deepEqual(
+  workflow.connections["Block Changed Queue Delta"].main[0].map(({ node }) => node),
+  ["Request Fresh Multica Review"],
+);
+assert.match(nodes.get("Block Changed Queue Delta").parameters.query, /approval_jti::text/);
+assert.equal(nodes.get("Get Superseded Multica Dispatch").credentials.postgres.id, "reviewCapabilityPg");
+for (const name of ["Get Superseded Multica Run", "Cancel Superseded Multica Issue"]) {
+  assert.equal(nodes.get(name).credentials.httpHeaderAuth.id, "multicaCloser01");
+}
+assert.match(nodes.get("Cancel Superseded Multica Issue").parameters.jsonBody, /status: 'cancelled'/);
+assert.deepEqual(
+  workflow.connections["Request Fresh Multica Review"].main[0].map(({ node }) => node),
+  ["Get Superseded Multica Dispatch"],
+);
+
+const renovate = JSON.parse(fs.readFileSync(new URL("../renovate.json", import.meta.url)));
+const miseRule = renovate.packageRules.find((rule) => rule.matchManagers?.includes("mise"));
+assert.equal(miseRule.groupName, "mise toolchain dependencies");
 
 const kustomization = fs.readFileSync(new URL(
   "../wanxiang/kubernetes/apps/development/n8n/app/kustomization.yaml",

@@ -431,8 +431,8 @@
             experimental-features = nix-command flakes
             sandbox = false
             build-users-group =
-            substituters = https://cache.nixos.org https://nix.beaco.works/nix-fleet https://nix-community.cachix.org https://cache.numtide.com
-            trusted-public-keys = nix-fleet:y2rSAuD7txybrsaKciEu0z25W6nvS2fNfGorGLpIB2k= nix-community.cachix.org-1:mB9xqQyK3k3k0mBf2j7a1oUczJ9xwYpR2CtX5QBYBCE= cache.numtide.com-1:U0mE9AwWfcn3cFErm7dGd0nw3hEqNfYxckeeGJk2wJE=
+            substituters = https://cache.nixos.org https://nix-community.cachix.org https://cache.numtide.com
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9xqQyK3k3k0mBf2j7a1oUczJ9xwYpR2CtX5QBYBCE= cache.numtide.com-1:U0mE9AwWfcn3cFErm7dGd0nw3hEqNfYxckeeGJk2wJE=
             EOF
           '';
           entrypoint = pkgs.writeShellApplication {
