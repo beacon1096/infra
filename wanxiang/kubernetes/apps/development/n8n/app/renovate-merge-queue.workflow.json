@@ -973,7 +973,7 @@
         "parameters": {
           "authentication": "genericCredentialType",
           "genericAuthType": "httpHeaderAuth",
-          "url": "={{ 'https://multica.beaco.works/api/issues/' + $json.ISSUE_ID + '/task-runs?active=true' }}",
+          "url": "={{ 'https://multica.beaco.works/api/issues/' + $json.ISSUE_ID + '/task-runs' }}",
           "sendHeaders": true,
           "headerParameters": {
             "parameters": [
@@ -1010,7 +1010,7 @@
           -128
         ],
         "parameters": {
-          "jsCode": "if (Number($json.statusCode) !== 200 || !Array.isArray($json.body)) throw new Error('failed to read active Multica issue runs');\nif ($json.body.length > 0) return [];\nreturn { json: { ISSUE_ID: $('Verify Queued Multica Run').first().json.ISSUE_ID } };"
+          "jsCode": "if (Number($json.statusCode) !== 200 || !Array.isArray($json.body)) throw new Error('failed to read Multica issue runs');\nconst activeStatuses = new Set(['queued', 'dispatched', 'running', 'waiting_local_directory']);\nif ($json.body.some((run) => activeStatuses.has(String(run?.status ?? '')))) return [];\nreturn { json: { ISSUE_ID: $('Verify Queued Multica Run').first().json.ISSUE_ID } };"
         }
       },
       {

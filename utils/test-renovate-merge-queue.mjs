@@ -105,9 +105,10 @@ assert.doesNotMatch(verifyMulticaRun, /run\.status|completed/);
 for (const name of ["Get Queued Multica Run", "Get Active Queued Issue Runs", "Complete Queued Multica Issue"]) {
   assert.equal(nodes.get(name).credentials.httpHeaderAuth.id, "multicaCloser01");
 }
-assert.match(nodes.get("Get Active Queued Issue Runs").parameters.url, /task-runs\?active=true/);
+assert.match(nodes.get("Get Active Queued Issue Runs").parameters.url, /task-runs'/);
 assert.equal(nodes.get("Get Active Queued Issue Runs").parameters.options.response.response.fullResponse, true);
-assert.match(nodes.get("Verify Queued Issue Is Idle").parameters.jsCode, /\$json\.body\.length > 0.*return \[\]/s);
+assert.match(nodes.get("Verify Queued Issue Is Idle").parameters.jsCode, /activeStatuses.*waiting_local_directory/s);
+assert.match(nodes.get("Verify Queued Issue Is Idle").parameters.jsCode, /\.some\(.*activeStatuses\.has/s);
 assert.match(nodes.get("Complete Queued Multica Issue").parameters.jsonBody, /status: 'done'/);
 assert.match(nodes.get("Record Multica Issue Closed").parameters.query, /multica_closed_at = now\(\)/);
 assert.deepEqual(
