@@ -788,6 +788,28 @@ matrix retained at least 60.2 GiB `MemAvailable`, peaked at 70.8 degrees
 Celsius, held the active GPU clock at 1,385--1,386 MHz and did not create the
 memory-stop lock.
 
+The final Performance-profile stability gate ran for 7,217.6 seconds and
+completed 58 rounds without a failed request. It covered 348 representative
+service cases and 232 additional coding/agent, structured-output and tool cases.
+Each of the six fixed representative workloads retained one output hash across
+all 58 repetitions. Twelve periodic long-context groups added eight 16K and
+four 64K schema/tool retrieval pairs plus twelve aborted 128K requests. All 36
+checks passed; 64K TTFC remained between 69.50 and 69.95 seconds, and every
+post-cancellation short request completed in 0.244--0.275 seconds. Available
+memory remained at least 61.12 GiB, swap use did not grow, GPU temperature
+peaked at 58.5 degrees Celsius and no memory guard or CUDA fault triggered.
+
+A post-soak repeat of the 128K mixed-load matrix also passed:
+
+| Decode streams | 128K TTFC | Complete | p95 decode gap | Maximum gap |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 254.936 s | 258.969 s | 3.427 s | 3.600 s |
+| 2 | 256.035 s | 260.160 s | 3.433 s | 3.668--3.721 s |
+| 3 | 258.307 s | 262.479 s | 3.457--3.478 s | 3.860--3.911 s |
+
+All retrieval and six forced 1,024-token decode requests completed correctly.
+The one-to-three-stream TTFC increase was again about 1.3%.
+
 The guarded candidate was then packaged in the private fleet configuration at
 commit `9b9905e`. The runtime patch is hash-pinned to original source SHA-256
 `8aa8d01f0a73a144f51a8b7e8dae94a96c227b1dc6b6397ab8ff03116514dfd9`
@@ -797,8 +819,13 @@ The generated service was checked to use the Lazycat target and K16 draft,
 ModelOpt FP4 for both, the 1,024-token chunk, interval 1 and the guarded
 `extend_attention.py`; it does not enable the BF16-draft-only INT8-head path.
 A clean build of the complete `nixosConfigurations.thor` system closure passed.
-This validates packaging and evaluation only: the closure has not been deployed
-and the managed service remains stopped.
+After the stability gate, the exact hash-pinned closure was promoted to the
+system profile. The managed service, memory watcher, health timer, performance
+fan controller and Tailscale-only proxy all recovered after a reboot. The
+post-reboot API returned the exact smoke response, the patch hash matched the
+qualified artifact and the service reported zero restarts. The old official
+container remains present but stopped; its restart policy was changed from
+`unless-stopped` to `no` to prevent the previously observed dual-start hazard.
 
 ### Independent review provenance
 
@@ -899,42 +926,39 @@ benchmark client. Complete root-visible process and cgroup snapshots remain in
 private raw evidence because they include unrelated host details.
 
 One dual-boot operational hazard was confirmed: the official container shares
-the NixOS Docker store and had `unless-stopped` restart policy, so it started
-automatically alongside the managed SGLang service after reboot. It was stopped
-before testing to avoid unified-memory contention. Experiments used bounded
-systemd units with independent cleanup. Earlier batches verified recovery to
-the normal managed SGLang service with HTTP health 200. At operator request,
-the later tuning batch instead left the managed service, memory watcher and
-health timer inactive. The official container and all experiment containers
-were stopped, and no memory-stop lock was present.
+the NixOS Docker store and originally had `unless-stopped` restart policy, so it
+could start alongside the managed SGLang service after reboot. Experiments used
+bounded systemd units with independent cleanup. The final reboot kept that
+container stopped under restart policy `no`; only the managed container used
+unified memory, and no memory-stop lock was present.
 
-These results justify retaining Lazycat K16 as a replacement candidate, not
-switching it into production yet. It has now passed bounded fixed-context
-retrieval, tool/structured-output, memory-headroom and cancellation checks
-through 128K. The remaining replacement gate is broader quality evaluation on
-additional real workloads plus sustained operation, especially because target
-lineage and speculative paths changed the deterministic output trajectories.
+These results qualify Lazycat K16 as the managed NixOS baseline. It has passed
+fixed-context retrieval, tool/structured-output, memory-headroom, cancellation,
+mixed-load and sustained-operation checks through 128K. Broader quality
+evaluation on diverse real workloads remains useful because the target lineage
+and speculative paths changed deterministic output trajectories.
 
 ### Experiment handoff TODO
 
-Completed on 2026-09-18: direct operator parity, the guarded short-query
+Completed on 2026-09-19: direct operator parity, the guarded short-query
 fallback, representative service workloads, the 1/2/3-stream 128K mixed
 matrix, hash-pinned runtime packaging, a clean complete NixOS system build, the
-fleet-owned Performance-profile retest and true eight-request scheduling.
+fleet-owned Performance-profile retest, true eight-request scheduling, a
+two-hour sustained-operation gate, the post-soak mixed matrix and reboot
+recovery of the promoted managed service.
 Resume in this order:
 
-1. Run additional real coding/agent workloads and a multi-hour stability test.
-   Preserve strict-schema, tool, cancellation, short-latency and 1/2/3-stream
-   128K checks as regression gates. Only then enable the managed service and
-   verify recovery after reboot.
-2. Keep FlashInfer 0.6.18 and updated FA4 as separate backend experiments.
+1. Observe broader real coding/agent workloads during normal use. Preserve
+   strict-schema, tool, cancellation, short-latency and 1/2/3-stream 128K checks
+   as regression gates.
+2. Keep FlashInfer 0.6.18 and updated FA4 as separate, reversible backend
+   experiments.
    MLP fusion, KV-only draft projection and draft calibration remain lower
-   priority until the Triton candidate is qualified.
+   priority than the now-qualified Triton baseline.
 
-Current stop state on 2026-09-18: the managed inference service, memory watcher
-and health timer are inactive; the official and experimental containers are
-stopped. This is intentional at the operator's request and is not a failed
-health state.
+Current state on 2026-09-19: the managed inference service, memory watcher,
+health timer, performance fan controller and Tailscale-only proxy are active.
+The official and experimental containers are stopped.
 
 The completed qualification used this staged order:
 
