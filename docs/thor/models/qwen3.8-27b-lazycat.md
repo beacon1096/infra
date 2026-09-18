@@ -466,6 +466,44 @@ slightly lower median TTFC. The three local aggregate results were 231.05,
 232.04 and 231.97 tokens/s, so the result was repeatable rather than a single
 fast batch.
 
+### Context ceiling versus YaRN
+
+The management UI describes the 512K profile as the fastest single-stream
+choice. To separate the numerical request ceiling from its bundled YaRN model
+view, four local SGLang variants retained the same 270,336-token KV pool, four
+running-request limit, BF16 KV, K16 draft and CUDA Graph settings. Only the
+advertised context ceiling and target-model RoPE configuration changed. The
+same warmup plus three measured short-request protocol was used.
+
+| Advertised ceiling | Target RoPE view | Chinese | Short code | Long code | Output-hash group |
+| ---: | --- | ---: | ---: | ---: | --- |
+| 262,144 | Native 262,144 | 21.42 tok/s | 68.79 tok/s | 88.10 tok/s | A |
+| 512,000 | Native 262,144 | 21.37 tok/s | 68.62 tok/s | 87.90 tok/s | A |
+| 512,000 | YaRN 512,000, factor 1.953125 | 21.98 tok/s | 67.04 tok/s | 87.95 tok/s | B |
+| 262,144 | YaRN 512,000, factor 1.953125 | 21.94 tok/s | 67.04 tok/s | 88.01 tok/s | B |
+
+For every workload and repetition, changing only the ceiling from 262,144 to
+512,000 preserved the output hash; decode rates differed by no more than 0.25%.
+Conversely, moving the 512K YaRN view under a 262,144 ceiling preserved the
+corresponding 512K-profile output hashes, with rates within 0.19%. The observed
+behavior therefore follows the YaRN configuration, not the numerical context
+ceiling.
+
+This is not evidence that YaRN makes the kernels intrinsically faster. It
+changes rotary frequencies, hence logits, generated-token trajectories and
+DFlash acceptance even for short prompts. Relative to native 262K, the 512K
+view changed the three rates by about +2.6%, -2.5% and -0.2%; the 900K view
+changed them by +1.8%, -11.3% and -7.7%. In an eight-request short-code batch,
+the 512K view was 4.2% faster in aggregate than a 128K native view, while the
+900K view was 14.1% slower. These are workload-dependent speculative-decode
+effects, not a general advantage of the number 512K.
+
+The control holds the physical token pool fixed and exercises short prompts.
+It does not test quality beyond the native 262K range or the memory and prefill
+cost of an actually occupied 512K context. The exact 512K value matters only
+indirectly through its selected YaRN factor and any other settings bundled into
+an official preset.
+
 Across 829 one-second telemetry samples covering short decode, eight-way load
 and the long-prefill probes, active GPU clocks stayed at 1,385--1,386 MHz. Peak
 GPU temperature was 57.2 C, the controller observed 39--57 C and selected PWM
