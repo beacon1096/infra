@@ -98,9 +98,10 @@ not restored on NixOS.
 
 This distinction changes the environment labels for the model experiments:
 
-- official AI Pod and factory-system measurements used Performance; and
-- self-hosted NixOS SGLang tuning through the 71-minute bounded stability run
-  used Quiet.
+- official AI Pod and factory-system measurements from the evening of
+  2026-09-17 through 2026-09-18 (Asia/Shanghai) used Performance; and
+- self-hosted NixOS measurements on 2026-09-18, including SGLang tuning and the
+  71-minute bounded stability run, used Quiet.
 
 The NixOS run completed 34 correct rounds before it was deliberately stopped.
 It reached 70.2 C but held the active GPU clock at 1,385--1,386 MHz, so no
