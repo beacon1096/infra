@@ -6,12 +6,17 @@ import vm from "node:vm";
 
 const require = createRequire(import.meta.url);
 
-const workflow = JSON.parse(
-  fs.readFileSync(
-    new URL("../wanxiang/kubernetes/apps/development/n8n/app/infra-ci.workflow.json", import.meta.url),
-    "utf8",
-  ),
-)[0];
+const workflowSource = fs.readFileSync(
+  new URL("../wanxiang/kubernetes/apps/development/n8n/app/infra-ci.workflow.json", import.meta.url),
+  "utf8",
+);
+const workflowDocument = JSON.parse(workflowSource);
+assert.equal(
+  workflowSource,
+  `${JSON.stringify(workflowDocument, null, 2)}\n`,
+  "infra CI workflow JSON must use canonical two-space formatting",
+);
+const workflow = workflowDocument[0];
 const nodes = new Map(workflow.nodes.map((node) => [node.name, node]));
 const secret = "review-capability-secret-used-only-for-tests";
 const event = {

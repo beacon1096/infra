@@ -1,6 +1,7 @@
 name: Nix Validation
 
 on:
+  push:
   pull_request:
   workflow_dispatch:
 
@@ -13,4 +14,6 @@ jobs:
       - name: Evaluate flake outputs
         run: nix flake show --all-systems --no-write-lock-file
       - name: Test n8n CI policy
-        run: nix shell nixpkgs#nodejs_24 --command node utils/test-n8n-infra-ci.mjs
+        run: |
+          nix shell nixpkgs#nodejs_24 --command node utils/test-n8n-infra-ci.mjs
+          nix shell nixpkgs#nodejs_24 --command node utils/test-renovate-merge-queue.mjs

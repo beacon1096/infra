@@ -5,10 +5,17 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 
 const require = createRequire(import.meta.url);
-const workflow = JSON.parse(fs.readFileSync(
+const workflowSource = fs.readFileSync(
   new URL("../wanxiang/kubernetes/apps/development/n8n/app/renovate-merge-queue.workflow.json", import.meta.url),
   "utf8",
-))[0];
+);
+const workflowDocument = JSON.parse(workflowSource);
+assert.equal(
+  workflowSource,
+  `${JSON.stringify(workflowDocument, null, 2)}\n`,
+  "Renovate merge queue workflow JSON must use canonical two-space formatting",
+);
+const workflow = workflowDocument[0];
 const nodes = new Map(workflow.nodes.map((node) => [node.name, node]));
 
 assert.equal(nodes.size, workflow.nodes.length);
