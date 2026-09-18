@@ -215,6 +215,31 @@ inference with HTTP 400 in 0.72 seconds. The error explicitly stated a maximum
 total context of 265,000 tokens. Thus the internal 320K model view does not make
 320K available through this deployment.
 
+## Active-inference process snapshot
+
+A root-level process snapshot was taken during a separate eight-request load.
+At the capture point, vLLM reported four running requests, four waiting
+requests and zero preemptions. All eight requests later completed with HTTP 200
+at their 4,096-token limit; this load was used to hold the runtime active for
+inspection, not as an additional performance result.
+
+The Qwen container had five processes at that instant:
+
+| Role | Process | Threads |
+| --- | --- | ---: |
+| Container init | `docker-init` | 1 |
+| Runtime bootstrap and signal-forwarding wrapper | `bash` | 1 |
+| vLLM OpenAI API frontend | `vllm.real serve` | 66 |
+| Python multiprocessing resource tracker | `multiprocessing.resource_tracker` | 41 |
+| Model execution process | `VLLM::EngineCore` | 134 |
+
+The full host snapshot contained 484 processes and 1,279 threads. The private
+capture also includes the complete root-visible command lines, executable
+mappings, process tree, Docker process lists, cgroups, namespaces, sockets and
+a contemporaneous `tegrastats` sample. Those raw files remain outside the
+public repository because the whole-host lists contain environment-specific
+identifiers and unrelated service command lines.
+
 ## Measurement status and follow-ups
 
 This is sufficient as an initial version-pinned record of the official app,
