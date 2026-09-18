@@ -27,8 +27,9 @@ references; numbers from different workloads are not a model ranking.
 
 For local measurements made from the evening of 2026-09-17 through
 2026-09-18 (Asia/Shanghai), all official Lazycat AI Pod runs on the factory
-system used the Performance fan profile. All self-hosted NixOS runs on
-2026-09-18 used the Quiet fan profile.
+system used the Performance fan profile. The initial self-hosted NixOS tuning
+and bounded stability run on 2026-09-18 used Quiet; the later fleet-owned fan
+controller retest is separately labeled Performance.
 
 Model serving remains experimental rather than a persistent fleet service.
 Private addresses, device identifiers and raw machine inventories are excluded

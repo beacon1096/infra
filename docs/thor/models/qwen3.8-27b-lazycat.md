@@ -23,9 +23,10 @@ thermal daemon regenerated its runtime configuration with the Quiet profile
 (`<Max-Q>`) even though the AI Pod backend retained `<Max-P>`. The subsequent
 self-hosted SGLang tuning and the bounded stability run therefore used Quiet.
 GPU clocks remained at 1,385--1,386 MHz and no thermal decline was observed, so
-the attribution and relative kernel comparisons remain valid. See the
-[thermal-control inspection](../lzc-thermal.md). Private addresses, hostnames,
-credentials, user and device identifiers are omitted.
+the attribution and relative kernel comparisons remain valid. A later retest
+used the fleet-owned Performance curve and is labeled separately below. See
+the [thermal-control inspection](../lzc-thermal.md). Private addresses,
+hostnames, credentials, user and device identifiers are omitted.
 
 ## Lazycat management app
 
@@ -409,6 +410,68 @@ profile on this test set: 21.87 versus 17.37 tokens/s for Chinese, 70.26 versus
 62.37 for short code, 89.95 versus 79.49 for long code, and 1.689 versus 2.612
 seconds at 5K. The different context, scheduler, KV and graph settings prevent
 attributing these deltas to SGLang alone.
+
+### Fleet-owned Performance-profile retest
+
+After removing the adapted Lazycat control plane, the NixOS host activated its
+own controller with the observed `<Max-P>` curve. The same checkpoint pair,
+image, text, output caps, seed and three-run protocol were then repeated. The
+ordinary four-request service retained 24 Mamba slots and decode Graph batch
+four. Prompt-token counts and all three measured output hashes per workload
+matched the earlier Quiet run exactly.
+
+| Environment | Chinese | Short code | Long code | Median first-content range |
+| --- | ---: | ---: | ---: | ---: |
+| Official vLLM, Performance | 17.37 tok/s | 62.37 tok/s | 79.49 tok/s | 0.148--0.153 s |
+| NixOS SGLang, Quiet | 21.87 tok/s | 70.26 tok/s | 89.95 tok/s | 0.166--0.168 s |
+| NixOS SGLang, Performance | 21.39 tok/s | 68.70 tok/s | 88.00 tok/s | 0.164--0.166 s |
+
+The Performance retest was about 2.2% slower than the Quiet run on all three
+decode workloads despite identical generated tokens. This does not establish a
+fan-induced regression; both runs held the same GPU clock and were performed at
+different times. It does show that the more aggressive fan curve did not
+improve decode at these temperatures.
+
+Cold-prefill probes gave a mixed but consistent boundary:
+
+| Probe | NixOS Quiet | NixOS Performance | Performance change | Correctness |
+| --- | ---: | ---: | ---: | --- |
+| Exact 5,001-token prompt | 1.689 s | 1.619 s | 4.1% lower TTFC | same prompt hash and token count |
+| 65,535-token retrieval | 69.393 s, two-run mean | 69.466 s | 0.1% higher TTFC | 3/3 |
+| 131,072-token retrieval | 242.556 s | 243.135 s | 0.2% higher TTFC | 3/3 |
+
+The 64K and 128K probes used the same message hashes as the Quiet baselines.
+Their differences are measurement noise, while the 5K result shows a small
+short-prefill improvement that was not reproduced at long context. Fan mode is
+therefore not a meaningful performance lever for the dominant full-attention
+work; its value is lower temperature and additional sustained-load margin.
+
+The true eight-request retest changed only concurrency capacity: maximum
+running requests and decode Graph batch became eight, and the Mamba pool grew
+from 24 to 48 slots. Every request used a unique cache salt. Retaining only 24
+slots admitted the eight requests as two effective four-request waves and is
+excluded from the result.
+
+| Eight-request short-code batch | Official vLLM, Performance | NixOS SGLang, Performance |
+| --- | ---: | ---: |
+| Aggregate decode, three-batch median | 179.50 tok/s | **231.97 tok/s** |
+| End-to-end batch output | not reported | 225.56 tok/s |
+| Batch wall time | 5.823 s | **4.540 s** |
+| Per-request decode median | 23.38 tok/s | **30.86 tok/s** |
+| Per-request TTFC median | **0.384 s** | 0.420 s |
+
+The local aggregate was 29.2% above the official deployment, with 32.0% higher
+per-request decode and 22.0% lower batch wall time. The official service kept a
+slightly lower median TTFC. The three local aggregate results were 231.05,
+232.04 and 231.97 tokens/s, so the result was repeatable rather than a single
+fast batch.
+
+Across 829 one-second telemetry samples covering short decode, eight-way load
+and the long-prefill probes, active GPU clocks stayed at 1,385--1,386 MHz. Peak
+GPU temperature was 57.2 C, the controller observed 39--57 C and selected PWM
+102--147, peak reported GPU-rail power was 110.7 W, and maximum reported RAM use
+was 77,179 MiB. No OOM, Xid or memory guard event occurred. The transient model
+and telemetry units were stopped afterward; only fan control remained active.
 
 Both resident production and Lazycat K16 correctly emitted an automatic
 `get_weather` call with JSON arguments `{"city":"上海"}`. Within each tested
@@ -818,7 +881,8 @@ lineage and speculative paths changed the deterministic output trajectories.
 
 Completed on 2026-09-18: direct operator parity, the guarded short-query
 fallback, representative service workloads, the 1/2/3-stream 128K mixed
-matrix, hash-pinned runtime packaging and a clean complete NixOS system build.
+matrix, hash-pinned runtime packaging, a clean complete NixOS system build, the
+fleet-owned Performance-profile retest and true eight-request scheduling.
 Resume in this order:
 
 1. Run additional real coding/agent workloads and a multi-hour stability test.
