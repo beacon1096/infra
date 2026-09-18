@@ -681,6 +681,18 @@ matrix retained at least 60.2 GiB `MemAvailable`, peaked at 70.8 degrees
 Celsius, held the active GPU clock at 1,385--1,386 MHz and did not create the
 memory-stop lock.
 
+The guarded candidate was then packaged in the private fleet configuration at
+commit `9b9905e`. The runtime patch is hash-pinned to original source SHA-256
+`8aa8d01f0a73a144f51a8b7e8dae94a96c227b1dc6b6397ab8ff03116514dfd9`
+and patched source SHA-256
+`c6a977a9092c43c3649ac5ff75f3801b1880a37ef9347bde7e213e571216d06f`.
+The generated service was checked to use the Lazycat target and K16 draft,
+ModelOpt FP4 for both, the 1,024-token chunk, interval 1 and the guarded
+`extend_attention.py`; it does not enable the BF16-draft-only INT8-head path.
+A clean build of the complete `nixosConfigurations.thor` system closure passed.
+This validates packaging and evaluation only: the closure has not been deployed
+and the managed service remains stopped.
+
 ### Independent review provenance
 
 This investigation used several model-assisted passes whose roles are recorded
@@ -742,9 +754,9 @@ The combined evidence changes the order of work:
 4. The Triton sweep found `128x64`, eight warps and two stages as the current
    reliable candidate. It passed repeated 64K retrieval plus 128K schema, tool
    and cancellation gates and reduced 128K TTFC by about 39%. Before managed
-   deployment, package the exact SM110/D=256 conditional as a reviewable
-   runtime patch and run broader output/logit parity plus representative agent
-   workloads. Do not generalize the tile to other architectures or head dims.
+   deployment, its packaged exact SM110/D=256 conditional still requires the
+   sustained-operation gate below. Do not generalize the tile to other
+   architectures or head dims.
 5. Keep the full-attention MLP SiLU+NVFP4 fusion and packed KV-only DFlash
    projection as secondary linear/decode experiments. The former can save MLP
    intermediates but not attention pairs; the latter normally affects only
@@ -799,20 +811,15 @@ lineage and speculative paths changed the deterministic output trajectories.
 ### Experiment handoff TODO
 
 Completed on 2026-09-18: direct operator parity, the guarded short-query
-fallback, representative service workloads and the 1/2/3-stream 128K mixed
-matrix described above. Resume in this order:
+fallback, representative service workloads, the 1/2/3-stream 128K mixed
+matrix, hash-pinned runtime packaging and a clean complete NixOS system build.
+Resume in this order:
 
-1. Package the guarded SM110/head-dimension-256/`max_len_extend > 64` change as
-   a hash-pinned runtime patch. Keep an explicit source-level rollback and do
-   not change the unified kernel or other architectures/shapes.
-2. Build the Lazycat target/K16 draft service candidate with the existing
-   1,024-token chunk and `prefill_decode_interval=1`. Do not carry over the old
-   BF16-draft-only INT8-head flag to the ModelOpt-FP4 draft.
-3. Run additional real coding/agent workloads and a multi-hour stability test.
+1. Run additional real coding/agent workloads and a multi-hour stability test.
    Preserve strict-schema, tool, cancellation, short-latency and 1/2/3-stream
    128K checks as regression gates. Only then enable the managed service and
    verify recovery after reboot.
-4. Keep FlashInfer 0.6.18 and updated FA4 as separate backend experiments.
+2. Keep FlashInfer 0.6.18 and updated FA4 as separate backend experiments.
    MLP fusion, KV-only draft projection and draft calibration remain lower
    priority until the Triton candidate is qualified.
 
