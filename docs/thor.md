@@ -25,6 +25,11 @@ Performance results belong to their recorded prompts, runtime revisions and
 measurement methods. The model pages retain those conditions and external
 references; numbers from different workloads are not a model ranking.
 
+For local measurements made from the evening of 2026-09-17 through
+2026-09-18 (Asia/Shanghai), all official Lazycat AI Pod runs on the factory
+system used the Performance fan profile. All self-hosted NixOS runs on
+2026-09-18 used the Quiet fan profile.
+
 Model serving remains experimental rather than a persistent fleet service.
 Private addresses, device identifiers and raw machine inventories are excluded
 from these public records.
