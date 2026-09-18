@@ -504,8 +504,8 @@ distinction. The fitted per-chunk slope against prior-prefix length was
 8192. Dividing each slope by its chunk size gives similar values, while total
 complete-chunk time stayed near 106.0, 106.1 and 107.5 seconds. The current
 screen therefore found no evidence that a larger service chunk removes the
-dominant prefix-dependent work. A 128K confirmation and mixed prefill/decode
-latency check remain required before changing the production value.
+dominant prefix-dependent work. The later 128K and mixed-load tests below favor
+keeping 1024 when interactive decode latency matters.
 
 The same startups exposed two useful implementation facts. Each target load
 logged exactly 48 successful SiLU+mul+FP4-quant fusions, matching the 48 Gated
@@ -516,6 +516,124 @@ caches for both target and draft. Further tactic work must therefore establish
 missing real serving shapes rather than assume that the deployment is using a
 single untuned CUTLASS tactic.
 
+### Kernel-level prefill attribution
+
+An Nsight Systems 2026.4.1 trace isolated one correct 65,535-token schema
+request at chunk size 1024. It returned all three facts, reached first content
+in 108.220 seconds and completed in 110.099 seconds. The unprofiled baseline was
+107.390 seconds, so profiling added about 0.8% to TTFC.
+
+The trace contained exactly 1,024 Triton `_fwd_kernel` launches: 64 chunks
+times the model's 16 full-attention layers. They consumed 89.243 seconds, or
+82.5% of observed TTFC and 84.1% of the summed GPU-kernel time. Regressing the
+attention time accumulated per chunk against chunk index gave
+`-11.444 + 44.631 * index` milliseconds with R-squared 0.99947. The matching
+whole-chunk GPU window grew by 44.920 milliseconds per index with R-squared
+0.99937. Full attention therefore explained 99.4% of the measured
+prefix-dependent slope.
+
+The other GPU buckets remained approximately flat per chunk: FP4 GEMM about
+100.8 milliseconds, GDN about 65.7 milliseconds, FP4 quantization about 24.3
+milliseconds, normalization/RoPE/activation about 36.1 milliseconds and BF16
+GEMM about 16.9 milliseconds. GPU clocks stayed at 1,385--1,386 MHz, EMC at
+4,266 MHz and temperature at 53.6--64.3 degrees Celsius. Minimum
+`MemAvailable` was 55.14 GiB and the experiment memory guard did not fire.
+This rules out sustained thermal downclocking and assigns essentially all of
+the observed super-linear growth to the full-attention prefill kernels rather
+than GDN, GEMM, draft materialization or host scheduling.
+
+A process snapshot during the request contained the expected Nsight wrapper,
+tokenizer, scheduler, detokenizer, compile worker and benchmark client. The raw
+trace, telemetry and root-visible process snapshots remain private because
+they contain host details.
+
+### FlashInfer prefill correctness screen
+
+A minimal backport of SGLang PR #39811 changed only the SM110 backend gate.
+The experiment retained Triton for target decode, draft attention and all GDN
+phases, and selected FlashInfer only for target full-attention prefill. The
+server started successfully with installed FlashInfer 0.6.17 and logged the
+intended resolved backends.
+
+The first 16,386-token correctness request reached content in 6.932 seconds
+and completed in 8.422 seconds, but retrieved none of the three sentinel
+values: it returned unrelated prompt fragments instead. The harness therefore
+stopped before the planned 64K timing. There was no server crash, OOM, Xid or
+thermal event. This path is much faster but unusable on the installed stack;
+it also validates PR #39811's warning that its Thor measurements did not
+establish accuracy parity. FlashInfer 0.6.18 was used by that PR and remains a
+separate dependency-upgrade experiment, not an assumed correctness fix. No
+production source or dependency was changed.
+
+### FA4 source qualification
+
+The image contains both `flash-attn-4` 4.0.0b19 under site-packages and an
+SGLang-vendored FA4 tree. Both copies still contain the head-dimension-256
+forward assertion rejecting `seqused_q/seqused_k`. Neither contains #2810's
+rounded paged-KV extent nor #2880's `domain_offset_aligned` and singleton-stride
+alignment changes. The installed FA4 path therefore failed the source gate and
+was not run against the service. Both source copies must be updated together
+before the operator-level correctness test described below.
+
+### SM110 Triton tuning
+
+The pinned Triton extend-attention configuration uses `BLOCK_M=64`,
+`BLOCK_N=64`, eight warps and one pipeline stage for this SM110,
+QK/V-head-dimension-256 shape. A source-mounted experiment changed only this
+shape, leaving the Lazycat K16 pair, 1024-token service chunk, BF16 cache and
+all other backends unchanged.
+
+| Extend-attention configuration | Cold 64K first content | Complete | Result |
+| --- | ---: | ---: | --- |
+| Pinned `64x64`, stages 1 | 107.390 s | 109.264 s | 3/3 |
+| `128x64`, stages 1 | 75.099, 75.101 s | 77.354, 77.356 s | 3/3 both |
+| `128x128`, stages 1 | 75.034 s | 77.290 s | 3/3 |
+| `128x64`, stages 2 | 69.225, 69.562 s | 71.297, 71.630 s | 3/3 both |
+| `128x64`, stages 3 | not run | not run | compile rejected |
+
+Doubling `BLOCK_M` halves the number of query programs that independently
+stream the prefix KV for each Q head and reduced 64K TTFC by about 30%.
+Doubling `BLOCK_N` produced no further material change. A second pipeline stage
+reduced the two-run mean to 69.393 seconds, 35.4% below the pinned baseline.
+Three stages required 262,688 bytes of shared memory versus Thor's 232,448-byte
+limit and were rejected before a measured request. The two stages=2 repeats
+differed by 0.337 seconds and produced identical parsed values and output hash.
+
+The gain increased at 128K:
+
+| Path | Pinned TTFC | Tuned TTFC | Tuned complete | Retrieval |
+| --- | ---: | ---: | ---: | --- |
+| Strict JSON schema, 131,072 tokens | 396.082 s | 242.556 s | 247.660 s | 3/3 |
+| Automatic tool call, 131,073 tokens | 397.953 s | 246.278 s | 251.428 s | 3/3 |
+
+That is a 38.8% schema-TTFC reduction and 38.1% tool-TTFC reduction. The tuned
+128K schema run kept GPU clocks at 1,385--1,386 MHz, reached at most 65.7
+degrees Celsius, retained at least 61.09 GiB `MemAvailable` and did not trigger
+the memory guard. A 15-second client disconnect still released the long
+request; after the five-second observation delay, a short request returned
+`THOR_CANCEL_OK` in 0.663 seconds.
+
+The first mixed-load test also exposed scheduler behavior that isolated TTFC
+does not show. Two `ignore_eos` decode requests, each forced to 1,024 output
+tokens, were started before the same cold 64K prefill:
+
+| Kernel / scheduler | 64K TTFC | Decode p95 gap | Decode maximum gap | Decode completion |
+| --- | ---: | ---: | ---: | ---: |
+| Pinned, interval 0 | 108.716 s | 107.963 s | 107.963 s | 148.992 s |
+| Tuned, interval 0 | 70.323 s | 69.706 s | 69.706 s | 111.005 s |
+| Tuned, interval 1 | 77.274 s | 1.937 s | 2.449 s | 111.262 s |
+
+With the default `prefill_decode_interval=0`, both decode streams received only
+six payload events during the prefill and each had one near-TTFC-size gap. The
+kernel improvement shortened but did not solve that starvation. Setting the
+existing scheduler option to 1 runs one decode round after each prefill batch:
+the two streams then received 65--66 events during prefill, with median gaps
+of 1.25--1.27 seconds. It added 9.9% to mixed-load prefill TTFC but left the
+decode requests' total completion time effectively unchanged. For an
+interactive service this is the qualified scheduling candidate; interval 0 is
+appropriate only when isolated-prefill latency is deliberately prioritized.
+No tuned kernel or scheduler option was installed into the managed service.
+
 ### Independent review provenance
 
 This investigation used several model-assisted passes whose roles are recorded
@@ -524,7 +642,8 @@ so that their suggestions are not mistaken for measurements:
 - **GPT-6-Astra Medium** performed the earlier deployment inspection,
   benchmark construction and initial analysis recorded in this document.
 - **GPT-5.6-Sol xhigh** performed the current local/source verification,
-  re-analysis of the per-chunk logs and synthesis with the measured results.
+  profiling, controlled backend/tile experiments and synthesis with the
+  measured results.
 - **Claude Opus Max** supplied an independent source-level critique through an
   operator-provided transcript. It reviewed the pinned SGLang, FlashInfer and
   Triton code and challenged the initial optimization ordering.
@@ -541,44 +660,44 @@ itself assign the fitted quadratic percentage to attention kernels.
 
 The target config has 16 full-attention and 48 Gated DeltaNet layers. Full
 attention is the model's intrinsic quadratic GPU operation; GDN, MLP and normal
-incremental draft materialization are linear in new tokens. That makes the
-full-attention prefill path the leading hypothesis, not a completed attribution.
-Thermal throttling, scheduler work or accidentally repeated cumulative-prefix
-preparation must still be excluded with a timeline. The observed 61.13 GiB
-minimum `MemAvailable` rules out capacity pressure in these tests, but it does
-not rule out memory-bandwidth or cache-efficiency limits.
+incremental draft materialization are linear in new tokens. The isolated trace
+now measures full attention as the dominant cost and source of virtually all
+prefix-dependent growth. It does not by itself distinguish inefficient kernel
+tiling, redundant KV traffic or another device-level cause inside that kernel.
 
 ### Revised optimization research targets
 
 The combined evidence changes the order of work:
 
-1. Profile one cold 64K request by chunk and stage, with clocks and temperature
-   sampled throughout. Separate full-attention QK/softmax/PV, GDN, MLP and
-   projections, draft context materialization, CPU preparation and GPU idle
-   gaps. Compare equal-length chunks near 8K, 32K and 60K prior prefix, then use
-   a light 128K trace to confirm which stage explains the length increment.
-2. If full attention dominates, change only the target prefill backend. As of
+1. The cold 64K timeline has assigned 82.5% of TTFC and 99.4% of its
+   prefix-dependent slope to full attention while excluding thermal decline.
+   A lighter 128K trace is optional confirmation rather than a prerequisite for
+   backend work.
+2. Change only the target prefill backend. As of
    2026-09-18, open [SGLang PR #39811](https://github.com/sgl-project/sglang/pull/39811)
    at `5705691f4c3cdcc669cca04c7d19e14da8d607b9` admits FlashInfer full
    attention for hybrid-GDN models on SM110. Its Thor evidence uses FlashInfer
    0.6.18 and reports shared-prefix output throughput, not cold-prefill TTFC;
-   accuracy parity was not established. Backport the gate separately from any
-   dependency upgrade, keep decode and linear attention on Triton, print the
-   resolved target/draft/verify backends and treat this as an experimental FA2
-   path. FlashInfer 0.6.17's separate CUTLASS FMHA prefill dispatcher does not
-   accept this model's `(256,256)` QK/V head dimensions.
-3. Test FA4 only after an operator-level BF16, GQA 24:4, head-dimension-256,
-   paged-KV and unequal-Q/K correctness check. Upstream
+   accuracy parity was not established. The isolated 0.6.17 backport resolved
+   the requested phase split and was fast at 16K, but failed retrieval before
+   the 64K benchmark. Reject it for service use. Any 0.6.18 retest must remain
+   behind the same correctness gate. FlashInfer 0.6.17's separate CUTLASS FMHA
+   prefill dispatcher does not accept this model's `(256,256)` QK/V head
+   dimensions.
+3. The installed FA4 trees lack the required fixes and are ineligible for a
+   service test. After updating both copies, require an operator-level BF16,
+   GQA 24:4, head-dimension-256, paged-KV and unequal-Q/K correctness check.
+   Upstream
    [FlashAttention #2810](https://github.com/Dao-AILab/flash-attention/pull/2810)
    and [#2880](https://github.com/Dao-AILab/flash-attention/pull/2880), merged
    2026-09-11, remove relevant `seqused_q/k`, paged-KV and output-alignment
-   obstacles. Their published performance validation is on SM103, not Thor;
-   first confirm that the installed FA4 source contains both changes.
-4. If Triton remains the reliable backend, locally sweep its SM110/D=256
-   extend-attention configuration. The pinned code selects 64-by-64 tiles,
-   eight warps and one stage; service chunk growth does not automatically grow
-   those kernel tiles. Test block size, stages and warps one variable at a time
-   on real early and late prefix shapes before a service-level A/B.
+   obstacles. Their published performance validation is on SM103, not Thor.
+4. The Triton sweep found `128x64`, eight warps and two stages as the current
+   reliable candidate. It passed repeated 64K retrieval plus 128K schema, tool
+   and cancellation gates and reduced 128K TTFC by about 39%. Before managed
+   deployment, package the exact SM110/D=256 conditional as a reviewable
+   runtime patch and run broader output/logit parity plus representative agent
+   workloads. Do not generalize the tile to other architectures or head dims.
 5. Keep the full-attention MLP SiLU+NVFP4 fusion and packed KV-only DFlash
    projection as secondary linear/decode experiments. The former can save MLP
    intermediates but not attention pairs; the latter normally affects only
@@ -587,11 +706,12 @@ The combined evidence changes the order of work:
    projection width. FlashInfer cuDNN FP4 GEMM is also an experimental linear
    path: the installed backend accepts SM110, while SGLang `auto` currently
    resolves to FlashInfer CUTLASS on this device.
-6. Retain 2048 only as the current chunk candidate and confirm it at 128K plus
-   mixed prefill/decode and cancellation load before production use. Larger
-   chunks reduce scheduling opportunities and can improve isolated TTFC while
-   worsening other requests' inter-token or cancellation latency. Preserve
-   retrieval, schema, tool and cancellation checks as correctness gates.
+6. Keep the service chunk at 1024 while concurrency matters. The earlier 2048
+   screen saved about 3% in isolation, but default scheduling starved existing
+   decodes for the entire long prefill. Use `prefill_decode_interval=1` for an
+   interactive deployment; it bounded the observed mixed-load gap below 2.45
+   seconds. Preserve retrieval, schema, tool, mixed-decode and cancellation
+   checks as correctness gates.
 7. Independently determine whether an uncensored-target on-policy K16 draft
    calibration improves acceptance without losing the quantized draft's memory
    and compute advantage. This remains a quality/decode investigation rather
@@ -616,9 +736,11 @@ One dual-boot operational hazard was confirmed: the official container shares
 the NixOS Docker store and had `unless-stopped` restart policy, so it started
 automatically alongside the managed SGLang service after reboot. It was stopped
 before testing to avoid unified-memory contention. Experiments used bounded
-systemd units with independent cleanup. Final state was the normal managed
-SGLang service active with HTTP health 200, no memory-stop lock, the official
-container stopped and no experiment container remaining.
+systemd units with independent cleanup. Earlier batches verified recovery to
+the normal managed SGLang service with HTTP health 200. At operator request,
+the later tuning batch instead left the managed service, memory watcher and
+health timer inactive. The official container and all experiment containers
+were stopped, and no memory-stop lock was present.
 
 These results justify retaining Lazycat K16 as a replacement candidate, not
 switching it into production yet. It has now passed bounded fixed-context
@@ -642,7 +764,7 @@ The completed qualification used this staged order:
    request to complete promptly. Confirm that the scheduler slot and temporary
    request state were released.
 4. Preserve the existing host-memory thresholds throughout the trial and verify
-   normal production recovery afterward. A passing bounded run establishes
+   the requested final service state afterward. A passing bounded run establishes
    headroom for these cases, not safety for arbitrary concurrent long prompts.
 
 ## References
