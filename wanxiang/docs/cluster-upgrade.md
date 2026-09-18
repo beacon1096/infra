@@ -78,6 +78,12 @@ including the manifest artifact pin. Cilium must be qualified for both the
 current and next Kubernetes minors before the API-server upgrade. Apply at
 most one subsystem change at a time and wait for Flux and workloads to settle.
 
+For Kubernetes 1.36 specifically, upgrade CloudNativePG to 1.30.x (chart
+0.29.x) and Longhorn to 1.12.x first. CloudNativePG 1.29.x supports Kubernetes
+only through 1.35, and Longhorn 1.11.1 was tested only through Kubernetes 1.35.
+Deploy and validate these prerequisites separately before running
+`talosctl upgrade-k8s`.
+
 ### Stage 2: Talos/Kubernetes 1.36
 
 Choose the supported Talos target for Kubernetes 1.36 from its release matrix.
