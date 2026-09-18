@@ -4,7 +4,7 @@ This runbook prepares the next Talos and Kubernetes upgrade. It records the
 ordering and evidence requirements; it does not authorize a deployment by
 itself.
 
-## Observed baseline
+## Pre-upgrade observed baseline
 
 Read-only checks on 2026-09-17 showed:
 
@@ -92,6 +92,42 @@ after each node. Upgrade Kubernetes from 1.35 to the latest selected 1.36
 patch using the Talos-supported procedure. Validate all nodes, system pods,
 webhooks, CRDs, storage, DNS, ingress, Flux reconciliation, and representative
 stateful workloads before leaving this stage.
+
+### 2026-09-19 execution record
+
+Stage 2 completed with the repository pins from PRs #79, #80, and #81:
+
+- Talos rolled one node at a time from 1.12.7 to 1.13.10. Etcd retained three
+  consistent voting members and the Talos health checks passed after the roll.
+- Two CloudNativePG replica PVCs exposed invalid PostgreSQL checkpoints during
+  node drains. Their primaries and other replicas remained healthy. The broken
+  instances were replaced with `kubectl cnpg destroy`; replacement replicas
+  reached streaming state before work continued.
+- CloudNativePG was upgraded to operator 1.30.0 / chart 0.29.0. Updating the
+  bootstrap controller image restarted each cluster primary in place, briefly
+  removing its write endpoint. All eight clusters returned to three ready
+  instances with two streaming replicas. Treat future operator upgrades that
+  change the bootstrap image as a coordinated database maintenance event.
+- Longhorn's chart, manager, CSI components, and V1 engine image were upgraded
+  from 1.11.1 to 1.12.1. The Helm pre-upgrade check passed. One healthy volume
+  was used as a live-upgrade canary, then the remaining attached volumes were
+  upgraded serially. The final inventory was 38 attached healthy volumes and
+  two intentionally detached workspace volumes, all on the 1.12.1 engine.
+- A Ready Longhorn system backup covering all 40 volumes and a fresh etcd
+  snapshot were verified before the Kubernetes change. The final etcd snapshot
+  had revision 97697615 and SHA-256
+  `28f31e210244cf9b6d8123b402e89710488f541a8e9bc4f03db34d582f9f0114`.
+- `talosctl upgrade-k8s --dry-run` found no removed component flags or API
+  versions. The real upgrade then moved API server, controller manager,
+  scheduler, and kubelet from 1.35.4 to 1.36.3.
+
+Post-upgrade checks showed all three nodes Ready on Talos 1.13.10 and
+Kubernetes 1.36.3, the API readiness endpoint passing, Cilium healthy with all
+cluster Pods managed, all Flux Kustomizations and HelmReleases Ready, no
+unavailable Deployments or StatefulSets, Longhorn healthy, and every
+CloudNativePG primary serving SQL with two streaming replicas. Static Pod,
+CSI registration, and volume-mount warnings seen during kubelet restarts were
+transient and had cleared at the final observation point.
 
 ### Stage 3: Talos/Kubernetes 1.37
 
