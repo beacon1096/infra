@@ -57,6 +57,19 @@ Before changing a node:
 
 ## Staged execution
 
+### Selected 1.36 target
+
+- Talos: 1.13.10;
+- Kubernetes: 1.36.3, matching the control-plane and kubelet images shipped
+  in the Talos 1.13.10 release;
+- Cilium: 1.20.2, qualified on the existing Kubernetes 1.35.4 cluster before
+  the control-plane upgrade.
+
+Kubernetes 1.36.4 is newer, but it is intentionally deferred to a separate
+patch update after the 1.36.3 minor transition is stable. This keeps the
+first 1.35 to 1.36 rollout aligned with the exact component set published and
+tested together by Talos.
+
 ### Stage 1: platform prerequisites
 
 Review the pending controller/chart PRs as compatibility prerequisites, not as
