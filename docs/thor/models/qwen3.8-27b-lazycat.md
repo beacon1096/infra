@@ -749,6 +749,33 @@ through 128K. The remaining replacement gate is broader quality evaluation on
 representative coding and agent workloads, especially because target lineage
 and speculative paths changed the deterministic output trajectories.
 
+### Experiment handoff TODO
+
+The next session should resume from the tuned Triton candidate, in this order:
+
+1. Run direct operator-level numerical parity between the pinned and tuned
+   kernels at prefix lengths 0, 32K, 64K and 128K using BF16, GQA 24:4,
+   head dimension 256 and a 1024-token query chunk. Record exact equality,
+   maximum absolute/relative error and NaN/Inf counts; use a sampled independent
+   reference where a full 128K reference would consume excessive memory.
+2. If parity passes, package only the measured SM110 and `Lq=Lv=256` change:
+   `BLOCK_M=128`, `BLOCK_N=64`, eight warps and two stages on the regular
+   `_fwd_kernel` path. Do not change the unified kernel or generalize it to
+   other architectures/shapes. Keep an explicit source-level rollback.
+3. Build the service candidate with the existing 1024-token chunk and
+   `prefill_decode_interval=1`. Re-run 1/2/3 concurrent decode streams during
+   128K prefill, strict-schema and tool calls, disconnect cancellation, short
+   latency, representative coding/agent workloads and a multi-hour stability
+   run. Only then enable the managed service and verify recovery after reboot.
+4. Keep FlashInfer 0.6.18 and updated FA4 as separate backend experiments.
+   MLP fusion, KV-only draft projection and draft calibration remain lower
+   priority until the Triton candidate is qualified.
+
+Current stop state on 2026-09-18: the managed inference service, memory watcher
+and health timer are inactive; the official and experimental containers are
+stopped. This is intentional at the operator's request and is not a failed
+health state.
+
 The completed qualification used this staged order:
 
 1. At each context length, place three exact-value facts near 5%, 50% and 95%
