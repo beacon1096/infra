@@ -2,6 +2,8 @@
 
 [Thor overview](../../thor.md)
 
+[Official Lazycat app deployment and benchmark](qwen3.8-27b-lazycat.md)
+
 Retest: 2026-09-12. The [Huihui trial](huihui-qwen3.8-27b.md) compares a
 modified target and includes the subsequent DFlash2 profiling.
 
