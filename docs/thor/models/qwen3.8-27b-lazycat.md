@@ -668,9 +668,20 @@ values: it returned unrelated prompt fragments instead. The harness therefore
 stopped before the planned 64K timing. There was no server crash, OOM, Xid or
 thermal event. This path is much faster but unusable on the installed stack;
 it also validates PR #39811's warning that its Thor measurements did not
-establish accuracy parity. FlashInfer 0.6.18 was used by that PR and remains a
-separate dependency-upgrade experiment, not an assumed correctness fix. No
-production source or dependency was changed.
+establish accuracy parity.
+
+The dependency-upgrade screen then installed the official FlashInfer 0.6.18
+Python, cubin and JIT-cache wheels in an isolated image while retaining Torch
+2.13.0+cu130, Triton 3.7.1, the same SGLang commit and the same phase split.
+The 16,386-token request again failed with exactly the same parsed output and
+output hash as 0.6.17: `{"alpha":"1024","beta":"filler","gamma":"cobalt-60"}`
+instead of the three sentinels. TTFC was 6.810 seconds and completion 8.287
+seconds. The matching wrong output across both versions is stronger evidence
+of a path-level correctness problem than a 0.6.17-only packaging defect.
+FlashInfer 0.6.18 is therefore also rejected without spending time on 64K or
+128K timing. See the [0.6.18 release](https://github.com/flashinfer-ai/flashinfer/releases/tag/v0.6.18)
+and [installation documentation](https://docs.flashinfer.ai/installation.html).
+No production source or dependency was changed.
 
 ### FA4 source qualification
 
@@ -678,9 +689,87 @@ The image contains both `flash-attn-4` 4.0.0b19 under site-packages and an
 SGLang-vendored FA4 tree. Both copies still contain the head-dimension-256
 forward assertion rejecting `seqused_q/seqused_k`. Neither contains #2810's
 rounded paged-KV extent nor #2880's `domain_offset_aligned` and singleton-stride
-alignment changes. The installed FA4 path therefore failed the source gate and
-was not run against the service. Both source copies must be updated together
-before the operator-level correctness test described below.
+alignment changes. The installed FA4 path therefore failed the original source
+gate.
+
+SGLang also provides the explicit `SGLANG_INKLING_FA4_USE_PIP=1` escape hatch,
+which routes FA4 through the Python package rather than the vendored tree. This
+made a reversible A/B possible without modifying the base image. The isolated
+path used [flash-attn-4 4.0.0b31 from PyPI](https://pypi.org/project/flash-attn-4/),
+`apache-tvm-ffi` 0.1.14.post0, CUTLASS DSL 4.6.2, Torch 2.13.0+cu130 and Triton
+3.7.1. The wheel SHA-256 values were
+`6eda5890b29e90fc46e19a47b4018effae7c042f75ee8aaaeebd3f56ccd82edf`
+and `8efb2234473980271c665eea40bfdfbb154c46e0dda195e1c3a36963318aa029`
+for FA4 and TVM FFI respectively. This deliberately violates the pinned
+SGLang, `sgl-deep-gemm`, tokenspeed and TileLang expectation of TVM FFI 0.1.11;
+the tested path worked, but production packaging must resolve that dependency
+boundary rather than treat the overlay as globally compatible.
+
+The first operator probe established a hard page-layout constraint: FA4 b31's
+SM100/SM110 head-dimension-256 2CTA kernel rejects the existing page size 1 and
+requires TMA paged KV with page size 128. With page size 128, a BF16 causal GQA
+24:4 probe at Q=257, K=1025 and head dimension 256 passed against an independent
+reference. Maximum absolute error was `5.72e-4`, mean absolute error
+`5.29e-5`, cosine similarity `0.9999979`, repeated output was bitwise stable,
+and all values were finite.
+
+The full service exposed one more narrow incompatibility: the dedicated
+SM10x/SM11x head-dimension-256 kernel rejects SplitKV during target verify,
+while SGLang's FA4 backend defaults `num_splits` to automatic selection.
+Global deterministic mode forced one split but also selected unsupported
+DeepGEMM shapes on SM110, so it was rejected as too broad. The successful A/B
+instead used one source patch that forces `num_splits=1` only for FA4 on SM100
+or SM110 with head dimension 256; all other sampling, GEMM, decode, draft and
+GDN settings remained unchanged. The patched file SHA-256 is
+`d0e181e52c0de07149708fa57aee7e18bd14501826e005d374f9dc3b6cc7a494`.
+
+With page size 128, FA4 only for target prefill, Triton for target decode,
+draft attention and all GDN phases, and the existing 1024-token chunk and
+interval 1, the service passed every staged correctness gate:
+
+| Workload | FA4 TTFC | Complete | Result |
+| --- | ---: | ---: | --- |
+| 16,386-token schema | 4.844 s | 5.370 s | 3/3 |
+| 65,535-token schema | 21.865 s | 22.801 s | 3/3 |
+| 131,072-token schema, run 1 | 52.906 s | 53.978 s | 3/3 |
+| 131,072-token schema, run 2 | 52.867 s | 53.940 s | 3/3 |
+| 131,073-token tool call, run 1 | 52.863 s | 53.911 s | 3/3 |
+| 131,073-token tool call, run 2 | 52.882 s | 53.932 s | 3/3 |
+
+The 64K result is 68.5% faster than the tuned Triton mean and 79.6% faster
+than the pinned Triton path. The mean 128K schema TTFC is 78.2% below tuned
+Triton and 86.6% below the pinned path. Both 15-second client-cancellation
+checks released the long request; after the five-second observation delay,
+`THOR_CANCEL_OK` returned in 0.638 and 0.297 seconds. Six representative
+coding, agent, Chinese synthesis, strict-JSON and tool workloads each ran
+twice: all 12 requests passed and each pair produced the same output hash.
+
+Mixed-load qualification started one, two and three forced 1,024-token decode
+streams before the same cold 128K retrieval:
+
+| Decode streams | FA4 128K TTFC | Triton TTFC | FA4 maximum decode gap | Triton maximum gap |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 64.919 s | 254.936 s | 1.158 s | 3.600 s |
+| 2 | 66.239 s | 256.035 s | 1.189--1.194 s | 3.668--3.721 s |
+| 3 | 67.738 s | 258.307 s | 1.221--1.223 s | 3.860--3.911 s |
+
+All retrieval and decode requests completed correctly. FA4 reduced mixed-load
+TTFC by 73.8--74.5% and the one-to-three-stream TTFC increase remained only
+4.3%. A separate 64K matrix also passed, with TTFC 28.551, 29.088 and 29.668
+seconds and maximum decode gaps below 0.99 seconds. The 128K matrix retained at
+least 60.88 GiB `MemAvailable` and exited normally. CUTLASS DSL repeatedly
+warned that its auxiliary data should use a constant-expression or custom JIT
+adapter; it did not fail these operator or service requests, but remains a
+compatibility risk.
+
+This is now the leading performance candidate, not yet the managed default.
+It still needs declarative dependency packaging, removal or upstreaming of the
+single-split workaround, the same sustained-operation and reboot gates used by
+the Triton candidate, and an explicit rollback path. Upstream
+[FlashAttention #2810](https://github.com/Dao-AILab/flash-attention/pull/2810)
+and [#2880](https://github.com/Dao-AILab/flash-attention/pull/2880) supplied the
+relevant paged-KV and alignment fixes; their published validation did not cover
+this Thor service configuration.
 
 ### SM110 Triton tuning
 
@@ -873,24 +962,24 @@ The combined evidence changes the order of work:
    0.6.18 and reports shared-prefix output throughput, not cold-prefill TTFC;
    accuracy parity was not established. The isolated 0.6.17 backport resolved
    the requested phase split and was fast at 16K, but failed retrieval before
-   the 64K benchmark. Reject it for service use. Any 0.6.18 retest must remain
-   behind the same correctness gate. FlashInfer 0.6.17's separate CUTLASS FMHA
-   prefill dispatcher does not accept this model's `(256,256)` QK/V head
-   dimensions.
-3. The installed FA4 trees lack the required fixes and are ineligible for a
-   service test. After updating both copies, require an operator-level BF16,
-   GQA 24:4, head-dimension-256, paged-KV and unequal-Q/K correctness check.
-   Upstream
-   [FlashAttention #2810](https://github.com/Dao-AILab/flash-attention/pull/2810)
-   and [#2880](https://github.com/Dao-AILab/flash-attention/pull/2880), merged
-   2026-09-11, remove relevant `seqused_q/k`, paged-KV and output-alignment
-   obstacles. Their published performance validation is on SM103, not Thor.
-4. The Triton sweep found `128x64`, eight warps and two stages as the current
-   reliable candidate. It passed repeated 64K retrieval plus 128K schema, tool
-   and cancellation gates and reduced 128K TTFC by about 39%. Before managed
-   deployment, its packaged exact SM110/D=256 conditional still requires the
-   sustained-operation gate below. Do not generalize the tile to other
-   architectures or head dims.
+   the 64K benchmark. The official 0.6.18 dependency upgrade then reproduced
+   exactly the same wrong output at 16K. Reject both versions for service use.
+   FlashInfer 0.6.17's separate CUTLASS FMHA prefill dispatcher also does not
+   accept this model's `(256,256)` QK/V head dimensions.
+3. FA4 b31 with page size 128 is the leading backend candidate. The isolated
+   operator check, repeated schema/tool/cancellation suite, 12 representative
+   requests and 1/2/3-stream mixed-load matrices all passed. It reduced 64K
+   TTFC by 68.5% and 128K TTFC by about 78% versus tuned Triton. Package its
+   Python/TVM-FFI dependency boundary declaratively, retain the exact SM110
+   head-dimension-256 single-split guard, and run the sustained-operation and
+   reboot gates before promotion. Do not carry the experimental global
+   deterministic mode or assume the current dependency overlay is generally
+   compatible.
+4. The Triton `128x64`, eight-warp, two-stage conditional remains the qualified
+   and deployed fallback. It passed the sustained-operation, mixed-load and
+   reboot gates and reduced 128K TTFC by about 39% over the pinned path. Do not
+   generalize the tile to other architectures, head dimensions or short verify
+   batches.
 5. Keep the full-attention MLP SiLU+NVFP4 fusion and packed KV-only DFlash
    projection as secondary linear/decode experiments. The former can save MLP
    intermediates but not attention pairs; the latter normally affects only
@@ -902,9 +991,10 @@ The combined evidence changes the order of work:
 6. Keep the service chunk at 1024 while concurrency matters. The earlier 2048
    screen saved about 3% in isolation, but default scheduling starved existing
    decodes for the entire long prefill. Use `prefill_decode_interval=1` for an
-   interactive deployment; it bounded the observed mixed-load gap below 2.45
-   seconds. Preserve retrieval, schema, tool, mixed-decode and cancellation
-   checks as correctness gates.
+   interactive deployment. Tuned Triton bounded the observed gap below 3.92
+   seconds at 128K; the FA4 candidate reduced it below 1.23 seconds. Preserve
+   retrieval, schema, tool, mixed-decode and cancellation checks as correctness
+   gates. FA4 additionally requires KV page size 128.
 7. Independently determine whether an uncensored-target on-policy K16 draft
    calibration improves acceptance without losing the quantized draft's memory
    and compute advantage. This remains a quality/decode investigation rather
@@ -945,20 +1035,29 @@ fallback, representative service workloads, the 1/2/3-stream 128K mixed
 matrix, hash-pinned runtime packaging, a clean complete NixOS system build, the
 fleet-owned Performance-profile retest, true eight-request scheduling, a
 two-hour sustained-operation gate, the post-soak mixed matrix and reboot
-recovery of the promoted managed service.
+recovery of the promoted managed service. The separate backend screen also
+rejected FlashInfer 0.6.17 and 0.6.18 on identical wrong 16K output, then
+qualified FA4 b31 through operator parity, repeated 16K/64K/128K service
+correctness, representative workloads, cancellation and 1/2/3-stream mixed
+load.
 Resume in this order:
 
-1. Observe broader real coding/agent workloads during normal use. Preserve
+1. Package FA4 b31, TVM FFI and the narrow single-split workaround
+   declaratively, resolving the pinned 0.1.11 dependency conflict. Then repeat
+   the two-hour soak, reboot recovery and rollback checks before considering it
+   for the managed default.
+2. Observe broader real coding/agent workloads during normal use. Preserve
    strict-schema, tool, cancellation, short-latency and 1/2/3-stream 128K checks
    as regression gates.
-2. Keep FlashInfer 0.6.18 and updated FA4 as separate, reversible backend
-   experiments.
-   MLP fusion, KV-only draft projection and draft calibration remain lower
-   priority than the now-qualified Triton baseline.
+3. Keep FlashInfer rejected unless a source-level correctness fix explains and
+   removes the repeated wrong output. MLP fusion, KV-only draft projection and
+   draft calibration remain lower priority than the full-attention backend.
 
-Current state on 2026-09-19: the managed inference service, memory watcher,
-health timer, performance fan controller and Tailscale-only proxy are active.
-The official and experimental containers are stopped.
+Current state on 2026-09-19 after the backend experiments: the qualified
+Triton managed closure remains installed, but the inference service, memory
+watcher and health timer are intentionally stopped because the operator stated
+that there is no production demand. The performance fan controller remains
+active, and the official and experimental containers are stopped.
 
 The completed qualification used this staged order:
 
