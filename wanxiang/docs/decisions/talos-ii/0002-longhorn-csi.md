@@ -53,11 +53,11 @@ Negative:
 - iSCSI dependency (handled by `siderolabs/iscsi-tools` extension — see `docs/talos-image-factory.md`)
 - Cross-node replica sync uses cluster network. Plan for ~1 GiB Pod traffic per write doubling (replica=2 means each write travels once to a peer).
 
-## Implementation (verified 2026-04-28)
+## Implementation (verified 2026-09-19)
 
 What's actually deployed at `kubernetes/apps/storage/longhorn/`:
 
-- **Chart:** `longhorn` v1.11.1 from the official upstream **HTTP** Helm repo
+- **Chart:** `longhorn` v1.12.1 from the official upstream **HTTP** Helm repo
   (`https://charts.longhorn.io`). This is a documented exception to our
   OCIRepository-everywhere convention — Longhorn does not publish to OCI
   registries. See `helmrepository.yaml` in the same dir.
