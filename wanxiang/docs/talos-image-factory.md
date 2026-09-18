@@ -20,10 +20,10 @@ The repo manages multiple clusters with different factory strategies:
 **Status:** active again (rolled back 2026-05-05)
 **Supersedes:** `012427dcde4d2c4eff11f55adf2f20679292fcdffb76b5700dd022c813908b07` (same-day Tailscale host-extension attempt; see Historical section below)
 **Used by:** `ms01-a`, `ms01-b`, `ms01-c`
-**Talos version:** v1.12.7
+**Talos version:** v1.13.10
 **Bootloader:** `sd-boot` (systemd-boot — required for Secure Boot)
 **Secure Boot:** **enabled** — see [ADR talos-ii/0005](decisions/talos-ii/0005-secure-boot.md)
-**Image factory URL pattern:** `https://factory.talos.dev/image/5456009e429379979faf6c8c7c4791309a0b125f3caafc728e8f90c3c5f0deb4/v1.12.7/metal-amd64.iso` (or `.raw.xz` / `.installer.tar.gz`)
+**Image factory URL pattern:** `https://factory.talos.dev/image/5456009e429379979faf6c8c7c4791309a0b125f3caafc728e8f90c3c5f0deb4/v1.13.10/metal-amd64.iso` (or `.raw.xz` / `.installer.tar.gz`)
 
 ### Schematic YAML
 
