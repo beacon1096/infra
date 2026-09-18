@@ -11,6 +11,8 @@ observations are recorded in the [model index](../thor.md#model-experiments).
   users, Hyprland, Tailscale, SSH and network settings.
 - [Hardware configuration](../../hosts/personal/fixed/thor/hardware-configuration.nix):
   host-specific boot and storage configuration.
+- [Lazycat thermal-control inspection](lzc-thermal.md): the AI Pod UI, backend,
+  device-agent and fan-daemon control chain and the NixOS ownership boundary.
 
 These files describe the public configuration; the firmware observations below
 are a dated read-only snapshot.

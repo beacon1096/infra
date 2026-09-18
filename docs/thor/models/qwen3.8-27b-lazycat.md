@@ -17,9 +17,15 @@ Tested versions:
 - deployed model version: `0.5.1`; and
 - compute runtime: `runtime-160-0.2.2-modelopt-nvfp4-draft`.
 
-The compute-capsule control panel set the fan profile to Performance
-(`风扇-性能模式`). Private addresses, hostnames, credentials, user and device
-identifiers are omitted.
+The official-system runs used the compute-capsule control panel's Performance
+fan profile (`风扇-性能模式`). After rebooting into NixOS, the adapted Lazycat
+thermal daemon regenerated its runtime configuration with the Quiet profile
+(`<Max-Q>`) even though the AI Pod backend retained `<Max-P>`. The subsequent
+self-hosted SGLang tuning and the bounded stability run therefore used Quiet.
+GPU clocks remained at 1,385--1,386 MHz and no thermal decline was observed, so
+the attribution and relative kernel comparisons remain valid. See the
+[thermal-control inspection](../lzc-thermal.md). Private addresses, hostnames,
+credentials, user and device identifiers are omitted.
 
 ## Lazycat management app
 
