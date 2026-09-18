@@ -100,8 +100,16 @@ This distinction changes the environment labels for the model experiments:
 
 - official AI Pod and factory-system measurements from the evening of
   2026-09-17 through 2026-09-18 (Asia/Shanghai) used Performance; and
-- self-hosted NixOS measurements on 2026-09-18, including SGLang tuning and the
-  71-minute bounded stability run, used Quiet.
+- the initial self-hosted NixOS measurements on 2026-09-18, including SGLang
+  tuning and the 71-minute bounded stability run, used Quiet.
+
+A later NixOS retest is explicitly labeled Performance. It used the fleet-owned
+curve rather than `lzc-thermald`. Across 829 one-second samples covering short
+decode, true eight-request decode and cold 64K/128K prefill, the active GPU
+clock remained 1,385--1,386 MHz, peak GPU temperature was 57.2 C and PWM ranged
+from 102 to 147. The 64K and 128K TTFC changes versus Quiet were only +0.1% and
++0.2%, respectively; Performance cooling provided thermal margin rather than a
+measurable long-prefill speedup.
 
 The NixOS run completed 34 correct rounds before it was deliberately stopped.
 It reached 70.2 C but held the active GPU clock at 1,385--1,386 MHz, so no
@@ -116,7 +124,8 @@ measuring the complete official AI Pod stack.
 On NixOS, fan control is fleet-owned and declarative. A small host-specific
 controller reproduces the observed `<Max-P>` points, reads the maximum of the
 CPU and GPU thermal zones once per second and writes `pwmfan/pwm1`. Failure to
-read both sensors selects PWM 255. The service conflicts with
+read both sensors selects PWM 255; one temporarily unreadable sensor is ignored
+while the other remains valid. The service conflicts with
 `lzc-ai-agent.service`, `lzc-thermald.service` and `nvfancontrol.service`, so
 only one process can own the PWM controller. This deliberately avoids depending
 on the private device token or on compatibility with the AI Pod model-host
