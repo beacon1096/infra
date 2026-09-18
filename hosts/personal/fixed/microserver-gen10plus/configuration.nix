@@ -3,12 +3,11 @@
 # HPE ProLiant MicroServer Gen10 Plus
 # Intel CC150 (8C/16T), 64GB DDR4 ECC, 3× KIOXIA SATA SSD (RAID5)
 # Role: local home server, can also be used as desktop with monitor
-{
-  config,
-  inputs,
-  lib,
-  pkgs,
-  ...
+{ config
+, inputs
+, lib
+, pkgs
+, ...
 }:
 
 let
@@ -22,14 +21,11 @@ in
     ../../common/nixos-configuration.nix
     ../../../../modules/nixos/hyprland.nix
     ../../../../modules/nixos/comin.nix
-    ../../../../modules/nixos/tpm-ssh.nix
   ];
 
   networking.hostName = "microserver-gen10plus";
 
   users.users.beacon.linger = true;
-  home-manager.users.beacon.imports = [ ../../../../modules/home/tpm-ssh.nix ];
-  systemd.services.nix-daemon.environment.SSH_AUTH_SOCK = "/run/user/1000/ssh-tpm-agent.sock";
 
   nixpkgs.overlays = [ inputs.nix-cachyos-kernel.overlays.pinned ];
   boot.kernelPackages = pkgs.cachyosKernels.linuxPackages-cachyos-server-lto;

@@ -11,15 +11,10 @@
     ./disko.nix
     ../common/nixos-configuration.nix
     ../../../modules/nixos/hyprland.nix
-    ../../../modules/nixos/tpm-ssh.nix # TPM2 and SSH integration
     ../../../modules/nixos/tpm-sops.nix # age-plugin-tpm backed sops-nix
   ];
 
   networking.hostName = "surface-pro-8";
-
-  # Let the root-owned nix-daemon reuse the user TPM-backed SSH agent for
-  # remote builds to microserver-gen10plus.
-  systemd.services.nix-daemon.environment.SSH_AUTH_SOCK = "/run/user/1000/ssh-tpm-agent.sock";
 
   # ── Kernel ──────────────────────────────────────────────────
   # linux-surface kernel (enabled via nixos-hardware in flake.nix)
@@ -68,7 +63,4 @@
   # Sops TPM integration lives in tpm-sops.nix and now expects an
   # age-plugin-tpm identity file at /var/lib/sops-nix/age-plugin-tpm.txt.
 
-  # Keep TPM-backed SSH as the default, but allow explicit switching to the
-  # gpg-agent/YubiKey SSH socket when needed.
-  home-manager.users.beacon.imports = [ ../../../modules/home/tpm-ssh.nix ];
 }

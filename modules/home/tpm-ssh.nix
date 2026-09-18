@@ -1,5 +1,5 @@
 # Home-manager configuration for ssh-tpm-agent based SSH.
-{ pkgs, ... }:
+{ lib, pkgs, ... }:
 
 let
   tpmSshKeygenScript = pkgs.writeShellScriptBin "tpm-ssh-keygen" ''
@@ -58,10 +58,30 @@ let
   '';
 in
 {
+  services.gpg-agent = {
+    enableSshSupport = lib.mkForce false;
+    extraConfig = lib.mkAfter "enable-ssh-support";
+  };
+
+  systemd.user.sockets.gpg-agent-ssh = {
+    Unit = {
+      Description = "GnuPG cryptographic agent (ssh-agent emulation)";
+      Documentation = "man:gpg-agent(1)";
+    };
+    Socket = {
+      ListenStream = "%t/gnupg/S.gpg-agent.ssh";
+      FileDescriptorName = "ssh";
+      Service = "gpg-agent.service";
+      SocketMode = "0600";
+      DirectoryMode = "0700";
+    };
+    Install.WantedBy = [ "sockets.target" ];
+  };
+
   # Set SSH_AUTH_SOCK at session level so non-interactive processes
   # (IDE terminals, agents, etc.) also default to the TPM agent.
   home.sessionVariables = {
-    SSH_AUTH_SOCK = "\${XDG_RUNTIME_DIR}/ssh-tpm-agent.sock";
+    SSH_AUTH_SOCK = lib.mkForce "\${XDG_RUNTIME_DIR:-/run/user/$UID}/ssh-tpm-agent.sock";
   };
 
   # SSH client configuration
@@ -105,7 +125,9 @@ in
 
   programs.bash.initExtra = ''
     export SSH_AUTH_SOCK_TPM="''${XDG_RUNTIME_DIR:-/run/user/$UID}/ssh-tpm-agent.sock"
-    export SSH_AUTH_SOCK="''${SSH_AUTH_SOCK:-$SSH_AUTH_SOCK_TPM}"
+    if [[ -z "''${SSH_AUTH_SOCK:-}" || ! -S "$SSH_AUTH_SOCK" ]]; then
+      export SSH_AUTH_SOCK="$SSH_AUTH_SOCK_TPM"
+    fi
 
     ssh() {
       TERM=xterm-256color command ssh "$@"
@@ -114,7 +136,9 @@ in
 
   programs.zsh.initContent = ''
     export SSH_AUTH_SOCK_TPM="''${XDG_RUNTIME_DIR:-/run/user/$UID}/ssh-tpm-agent.sock"
-    export SSH_AUTH_SOCK="''${SSH_AUTH_SOCK:-$SSH_AUTH_SOCK_TPM}"
+    if [[ -z "''${SSH_AUTH_SOCK:-}" || ! -S "$SSH_AUTH_SOCK" ]]; then
+      export SSH_AUTH_SOCK="$SSH_AUTH_SOCK_TPM"
+    fi
 
     ssh() {
       TERM=xterm-256color command ssh "$@"

@@ -5,7 +5,6 @@
     ./hardware-configuration.nix
     ../common/nixos-configuration.nix
     ../../../modules/nixos/hyprland.nix
-    ../../../modules/nixos/tpm-ssh.nix
   ];
 
   networking.hostName = "thinkbook-plus-hybrid";
@@ -59,6 +58,4 @@
       timeout 6s hyprctl dispatch dpms on eDP-1
     '';
   };
-
-  home-manager.users.beacon.imports = [ ../../../modules/home/tpm-ssh.nix ];
 }

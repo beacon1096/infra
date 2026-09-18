@@ -3,11 +3,10 @@
 # Lenovo ThinkCentre M920x Tiny
 # Intel i5-8600 (6C/6T), 32GB DDR4, NVIDIA Tesla P4
 # Role: local home server, can also be used as desktop with monitor
-{
-  lib,
-  pkgs,
-  inputs,
-  ...
+{ lib
+, pkgs
+, inputs
+, ...
 }:
 
 {
@@ -17,7 +16,6 @@
     ../../common/nixos-configuration.nix
     ../../../../modules/nixos/hyprland.nix
     ../../../../modules/nixos/comin.nix
-    ../../../../modules/nixos/tpm-ssh.nix
   ];
 
   networking.hostName = "m920x";
@@ -26,8 +24,6 @@
   boot.kernelPackages = pkgs.cachyosKernels.linuxPackages-cachyos-server-lto;
 
   users.users.beacon.linger = true;
-  home-manager.users.beacon.imports = [ ../../../../modules/home/tpm-ssh.nix ];
-  systemd.services.nix-daemon.environment.SSH_AUTH_SOCK = "/run/user/1000/ssh-tpm-agent.sock";
 
   # ── Networking ──────────────────────────────────────────────
   # Use systemd-networkd with DHCP on wired NIC

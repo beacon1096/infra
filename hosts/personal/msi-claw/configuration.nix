@@ -2,11 +2,10 @@
 #
 # Intel Core Ultra 7 258V (Lunar Lake) + Intel Arc 130V/140V (xe driver)
 # Primary use: Hyprland desktop + Steam Gaming Mode
-{
-  pkgs,
-  lib,
-  inputs,
-  ...
+{ pkgs
+, lib
+, inputs
+, ...
 }:
 
 {
@@ -15,7 +14,6 @@
     ../common/nixos-configuration.nix
     ../../../modules/nixos/gaming.nix
     ../../../modules/nixos/hyprland.nix
-    ../../../modules/nixos/tpm-ssh.nix
     ../../../modules/nixos/tpm-sops.nix
   ];
 
@@ -67,14 +65,16 @@
       };
 
       gamescope = prev.gamescope.overrideAttrs (old: {
-        patches = builtins.filter (
-          patch:
-          let
-            patchPath = toString patch;
-          in
-          !(lib.hasSuffix "shaders-path.patch" patchPath)
-          && !(lib.hasInfix "54e844748029d4874e14d0c086d50092c04c8899" patchPath)
-        ) (old.patches or [ ]);
+        patches = builtins.filter
+          (
+            patch:
+            let
+              patchPath = toString patch;
+            in
+            !(lib.hasSuffix "shaders-path.patch" patchPath)
+            && !(lib.hasInfix "54e844748029d4874e14d0c086d50092c04c8899" patchPath)
+          )
+          (old.patches or [ ]);
         postPatch =
           lib.replaceStrings
             [ ''substituteInPlace src/reshade_effect_manager.cpp --replace-fail "@out@" "$out"'' ]
@@ -120,15 +120,10 @@
     trusted-public-keys = lib.mkBefore [ "lantian:EeAUQ+W+6r7EtwnmYjeVwx5kOGEBpjlBfPlzGlTNvHc=" ];
   };
 
-  # Let the root-owned nix-daemon reuse the user TPM-backed SSH agent for
-  # remote builds to microserver-gen10plus.
-  systemd.services.nix-daemon.environment.SSH_AUTH_SOCK = "/run/user/1000/ssh-tpm-agent.sock";
-
   # Lunar Lake uses the xe driver (not i915) — no i915 kernel params needed.
   # Jovian's SteamOS profile injects amdgpu.* / amd_iommu / ttm.* params for the
-  # Steam Deck APU — useless on Intel Arc. Override to a clean set; tpm-ssh's
-  # tpm_tis.interrupts=0 is re-added explicitly because mkForce wins over its
-  # contribution.
+  # Steam Deck APU — useless on Intel Arc. Override to a clean set while
+  # retaining the TPM interrupt workaround.
   hardware.enableRedistributableFirmware = true;
   boot.kernelParams = lib.mkForce [
     "splash"
@@ -337,7 +332,4 @@
 
   programs.firefox.enable = true;
 
-  # Keep SSH default socket on TPM-backed agent for this host,
-  # with explicit helper functions to switch to gpg-agent/YubiKey when needed.
-  home-manager.users.beacon.imports = [ ../../../modules/home/tpm-ssh.nix ];
 }
