@@ -90,7 +90,7 @@ physical nodes at the tail (.201/.202/.203):
 
 | | |
 |---|---|
-| CSI | Longhorn 1.11.x (chart from upstream `https://charts.longhorn.io`, see [ADR talos-ii/0002](decisions/talos-ii/0002-longhorn-csi.md)) |
+| CSI | Longhorn 1.12.x (chart from upstream `https://charts.longhorn.io`, see [ADR talos-ii/0002](decisions/talos-ii/0002-longhorn-csi.md)) |
 | Namespace | `storage` |
 | StorageClass `longhorn` (cluster default) | `numberOfReplicas: 2`, `Delete` reclaim, `ext4` |
 | StorageClass `longhorn-r3` | `numberOfReplicas: 3`, opt-in via `storageClassName` for: forgejo / authentik / vaultwarden / matrix-synapse / syncthing |
