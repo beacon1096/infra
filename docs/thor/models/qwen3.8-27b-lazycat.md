@@ -788,11 +788,62 @@ active.
 
 This qualifies FA4 b31 as the managed default, with the tuned Triton kernel
 retained as the rollback backend. Removal or upstreaming of the single-split
-workaround and an exercised closure rollback remain follow-up work. Upstream
+workaround remains follow-up work; exercising the retained closure is optional
+rather than a qualification blocker. Upstream
 [FlashAttention #2810](https://github.com/Dao-AILab/flash-attention/pull/2810)
 and [#2880](https://github.com/Dao-AILab/flash-attention/pull/2880) supplied the
 relevant paged-KV and alignment fixes; their published validation did not cover
 this Thor service configuration.
+
+### Long-context DFlash screen
+
+With FA4 qualified, a matched 32K screen compared DFlash K16, K8, K4 and no
+draft. Every variant used the same input-token hashes, target, BF16 KV, target
+backend and service capacity; all DFlash variants used the same draft weights
+and backend. Each ran one exact three-fact retrieval plus two 512-token counting
+and code generations. All
+retrievals were correct, all capped generations completed, and each 32K repeat
+was internally stable in time and output hash.
+
+| Variant | Retrieval TTFC | Counting decode | Accepted length / verifies | Code decode | Accepted length / verifies | Minimum `MemAvailable` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| K16 | 9.627 s | 126.70 tok/s | 14.63 / 35 | 59.08 tok/s | 6.83 / 75 | 62.01 GiB |
+| K8 | 9.615 s | 73.02 tok/s | 8.00 / 64 | 51.32 tok/s | 5.63 / 91 | 65.07 GiB |
+| K4 | 9.606 s | 37.31 tok/s | 4.00 / 128 | 33.15 tok/s | 3.56 / 144 | 66.56 GiB |
+| No draft | 9.398 s | 12.36 tok/s | n/a | 12.37 tok/s | n/a | 75.45 GiB |
+
+Acceptance rate alone again gave the wrong ordering: K4 and K8 accepted almost
+or exactly their whole shorter proposal but required many more target verifies.
+K16 was 73.5% faster than K8 on counting and 15.1% faster on code, while adding
+only about 0.23 seconds to the no-draft retrieval TTFC. All four counting paths
+produced the same hash. Code hashes differed between verify shapes, though each
+variant was stable across its two runs; the correctness gates do not equate
+those different code continuations with broad quality parity.
+
+Only K16 and the no-draft baseline continued to 64K and 128K:
+
+| Input | K16 retrieval TTFC | No-draft TTFC | K16 counting | No-draft counting | K16 code | No-draft code |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 32K | 9.627 s | 9.398 s | 126.70 tok/s | 12.36 tok/s | 59.08 tok/s | 12.37 tok/s |
+| 64K | 21.360 s | 20.797 s | 111.07 tok/s | 10.34 tok/s | 53.89 tok/s | 10.34 tok/s |
+| 128K | 51.778 s | 49.765 s | 83.43 tok/s | 7.83 tok/s | 38.39 tok/s | 7.83 tok/s |
+
+K16 therefore retained a 10.3--10.7x counting advantage and a 4.8--5.2x code
+advantage across the tested lengths. Its accepted length stayed at 14.63--15.06
+for counting and 6.74--7.31 for code; context growth, rather than an acceptance
+collapse, explains most of the decode decline. K16's 64K/128K combined run
+peaked at 93.41 degrees Celsius, versus 98.22 degrees for the much longer
+no-draft run. Both retained 1,385--1,386 MHz GPU clocks under the fleet-owned
+Performance curve, and neither triggered the memory guard.
+
+A final 128K single-variable screen set `speculative_draft_window_size` to
+32,768 and 8,192. Both variants reproduced the full-window retrieval result,
+output hashes, accepted lengths and verify counts. TTFC stayed within 0.08
+seconds, counting within 0.3%, and code within 0.3%. The option enabled the
+runtime's compact-cache behavior but did not shrink allocation: all three
+paths still allocated draft KV for 270,336 tokens, 2.58 GiB each for K and V,
+and reached essentially the same 62.03--62.09 GiB minimum `MemAvailable`.
+There is no measured reason to set a draft window in the managed profile.
 
 ### SM110 Triton tuning
 
@@ -1063,18 +1114,20 @@ rejected FlashInfer 0.6.17 and 0.6.18 on identical wrong 16K output, then
 qualified FA4 b31 through operator parity, repeated 16K/64K/128K service
 correctness, representative workloads, cancellation, 1/2/3-stream mixed load,
 an isolated declarative dependency package, a second two-hour managed soak and
-cold reboot recovery.
+cold reboot recovery. A subsequent matched 32K DFlash K16/K8/K4/no-draft
+screen retained K16, extended it and the no-draft baseline through 128K, and
+rejected 32K/8K draft windows as allocation- and performance-neutral.
 Resume in this order:
 
-1. Exercise the retained Triton closure as a real rollback, then return to and
-   recheck the FA4 closure. Remove or upstream the narrow single-split
-   workaround when upstream accepts the SM110 head-dimension-256 verify shape.
-2. Observe broader real coding/agent workloads during normal use. Preserve
+1. Observe broader real coding/agent workloads during normal use. Preserve
    strict-schema, tool, cancellation, short-latency and 1/2/3-stream 128K checks
    as regression gates.
-3. Keep FlashInfer rejected unless a source-level correctness fix explains and
+2. Keep FlashInfer rejected unless a source-level correctness fix explains and
    removes the repeated wrong output. MLP fusion, KV-only draft projection and
    draft calibration remain lower priority than the full-attention backend.
+3. Treat a real Triton-closure rollback as an optional pre-production exercise,
+   not a qualification blocker. Remove or upstream the narrow FA4 single-split
+   workaround when upstream accepts the SM110 head-dimension-256 verify shape.
 
 Current state on 2026-09-19 after the backend experiments: the qualified FA4
 managed closure is installed, but the inference service, memory watcher and
