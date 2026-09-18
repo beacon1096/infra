@@ -72,6 +72,74 @@ The target weight file is 18.39 GiB, its grafted MTP file is 0.79 GiB and the
 DFlash2 draft is 1.44 GiB. Both target and draft use ModelOpt NVFP4, with
 CUTLASS selected as the target linear backend.
 
+### Checkpoint provenance and layout
+
+Both image checkpoints are public, ungated Apache-2.0 Hugging Face artifacts.
+The image pins exact revisions rather than mutable branch names:
+
+- [joshebbs/qwen3.8-27b-uncensored-nvfp4-modelopt](https://huggingface.co/joshebbs/qwen3.8-27b-uncensored-nvfp4-modelopt/tree/e5ff4986938dcd0dd05ab4cce89da1b052be6ce3),
+  revision `e5ff4986938dcd0dd05ab4cce89da1b052be6ce3`;
+- [maurienne-ai/Qwen3.8-27B-DFlash2-NVFP4-RTNcal](https://huggingface.co/maurienne-ai/Qwen3.8-27B-DFlash2-NVFP4-RTNcal/tree/bd7a934213c47a9e7ef69eef36bb3325f47fd1f1),
+  revision `bd7a934213c47a9e7ef69eef36bb3325f47fd1f1`.
+
+The target's 19,743,750,248-byte main weight has Hugging Face LFS SHA-256
+`5db0ff93ebdf68034770a6acec123971e618928684bd2d5f3f51346990254911`.
+The 849,400,424-byte grafted MTP weight has SHA-256
+`90fa0e3eed5a647c035c6df9ecabc416c0f8d573ff84ac12485b085f00a7cdf2`.
+The 1,550,153,248-byte draft has SHA-256
+`2228b9b22e93a88d84556419c879448ab6c490ae65c4c0b166f4962190ddbf26`.
+The main target and draft hashes match both the runtime image labels and the
+files extracted from that image. The official deployment therefore uses the
+published artifacts byte for byte; no Lazycat-only weight delta was found.
+
+This target is not a differently packaged copy of the resident production
+checkpoint. Its source is
+[JonathanColetti/Qwen3.8-27B-Uncensored](https://huggingface.co/JonathanColetti/Qwen3.8-27B-Uncensored),
+an abliterated variant of Qwen3.8-27B. The repository quantizes 400 main
+language-model linear layers as calibrated NVFP4 W4A4 with K16 blocks and FP8
+scales. DeltaNet `in_proj_a`, `in_proj_b` and `conv1d`, plus the output head,
+vision tower and MTP head, remain BF16. Calibration used 256 Open-Platypus
+samples at up to 1,024 tokens without subsequent fine-tuning. Because the
+checkpoint stores two packed 4-bit values per byte, ordinary Transformers
+loading is not valid; the runtime must understand the ModelOpt FP4 layout.
+
+The five-layer DFlash2 draft quantizes its 35 linear projections as calibrated
+NVFP4 W4A4 K16. Its target-feature `fc` and dynamic convolution projections
+remain BF16. Its model card reports on-policy calibration on 460 conversations
+and an accepted length of 3.60/8, compared with 3.26/8 for uncalibrated
+round-to-nearest NVFP4 and 3.71/8 for the BF16 source draft. Target verification
+still determines which tokens are emitted; draft quantization primarily changes
+draft cost, memory use and acceptance behavior.
+
+The resident production pair has a different lineage and precision allocation:
+
+| Checkpoint pair | Target layout | Draft layout | Weight bytes |
+| --- | --- | --- | ---: |
+| Resident production | Stock Qwen target; 208 attention/DeltaNet projections in FP8, 192 MLP projections in NVFP4, BF16 output head | BF16 z-lab DFlash2; local INT8 output-head optimization is applied at runtime | 27,598,150,584 |
+| Lazycat | Uncensored target; 400 main projections in NVFP4 with precision-sensitive exclusions | Calibrated NVFP4 DFlash2 | 22,143,303,920 |
+
+The Lazycat pair is about 5.08 GiB smaller. This leaves more unified memory for
+KV cache, but it also means throughput and generated-token differences cannot
+be attributed to the serving engine alone. The target semantic weights, target
+quantization and draft quantization all changed.
+
+The two target directories have the same chat template, vocabulary, added
+tokens and semantic BPE merge table. Their tokenizer serialization is not
+identical: the pad token, combining-mark pre-tokenization expression and
+ByteLevel flags differ. Common benchmark text is expected to tokenize similarly,
+but edge-case Unicode and batch padding remain additional variables.
+
+The exact pair can be downloaded independently of the Lazycat image with:
+
+```console
+hf download joshebbs/qwen3.8-27b-uncensored-nvfp4-modelopt \
+  --revision e5ff4986938dcd0dd05ab4cce89da1b052be6ce3 \
+  --local-dir ./qwen38-lazycat-target
+hf download maurienne-ai/Qwen3.8-27B-DFlash2-NVFP4-RTNcal \
+  --revision bd7a934213c47a9e7ef69eef36bb3325f47fd1f1 \
+  --local-dir ./qwen38-lazycat-draft
+```
+
 Principal serving configuration:
 
 | Setting | Observed value |
@@ -271,20 +339,40 @@ the existing Thor GDN verification patches. This differs materially from the
 official 512K YaRN, eight-sequence, eager vLLM profile, so cross-runtime numbers
 are not a checkpoint-only A/B comparison.
 
-Three local configurations were compared with the resident production SGLang
-configuration. The production row used the RadixArk target, unquantized z-lab
-draft and the local INT8 draft-head optimization. The Lazycat target-only row
-disabled speculative decoding. The other two rows used the copied ModelOpt
-NVFP4 target and draft. Every request flushed the SGLang prefix cache; the
-single-stream prompts, caps, temperature, seed and three measured repetitions
-were the same as the official benchmark above.
+The resident configuration and five experimental configurations were compared,
+including a complete two-target by two-draft K16 matrix and a Lazycat
+target-only control. The production row used the RadixArk target, unquantized
+z-lab draft and the local INT8 draft-head optimization. The same optimization
+remained enabled when that draft was paired with the Lazycat target. The
+Lazycat target-only row disabled speculative decoding. Every request flushed
+the SGLang prefix cache; the single-stream prompts, caps, temperature, seed and
+three measured repetitions were the same as the official benchmark above.
 
 | Local SGLang configuration | Chinese | Short code | Long code | Median first-content range |
 | --- | ---: | ---: | ---: | ---: |
 | Resident production, DFlash K16 | 19.62 tok/s | 72.99 tok/s | 75.09 tok/s | 0.153–0.154 s |
+| RadixArk target + Lazycat NVFP4 draft, K16 | 19.86 tok/s | 73.48 tok/s | 73.08 tok/s | 0.186–0.189 s |
 | Lazycat target only | 15.31 tok/s | 15.32 tok/s | 15.28 tok/s | 0.168–0.175 s |
+| Lazycat target + z-lab BF16 draft/INT8 head, K16 | 21.77 tok/s | 61.75 tok/s | 78.66 tok/s | 0.200–0.203 s |
 | Lazycat target + draft, K16 | 21.87 tok/s | 70.26 tok/s | 89.95 tok/s | 0.166–0.168 s |
 | Lazycat target + draft, K8 | 23.14 tok/s | 52.63 tok/s | 66.16 tok/s | 0.161–0.164 s |
+
+On the RadixArk target, replacing the BF16/INT8-head draft with the Lazycat
+NVFP4 draft changed the three rates by +1.2%, +0.7% and -2.7%. It saved about
+2.14 GiB of draft weights but did not reproduce the Lazycat target's long-code
+gain. On the Lazycat target, its native NVFP4 draft was 0.5%, 13.8% and 14.4%
+faster than the BF16/INT8-head draft. The latter logged accepted lengths near
+2.3, 6.2 and 10.2 for the three workloads, while the NVFP4 draft logged about
+2.0, 6.7 and 10.1. Similar long-code acceptance with lower throughput indicates
+that BF16 draft computation cost, not just acceptance, matters on this runtime.
+
+All four target/draft pairings produced different output hashes, though every
+configuration was stable across its own three runs and reached the same output
+cap. The matrix therefore separates checkpoint pairings, but it is not a
+fixed-generated-token kernel benchmark: changed output trajectories also change
+DFlash predictability. It nonetheless shows that neither draft substitution
+alone explains the full result. Target lineage/quantization and its interaction
+with the draft both matter.
 
 Against resident production, Lazycat K16 was 11.5% faster on Chinese and 19.8%
 faster on long code, but 3.7% slower on short code. K8 was 17.9% faster on the
