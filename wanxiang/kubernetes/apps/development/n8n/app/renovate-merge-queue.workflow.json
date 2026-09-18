@@ -574,7 +574,7 @@
             "parameters": [
               {
                 "name": "Do",
-              "value": "rebase"
+                "value": "rebase"
               },
               {
                 "name": "delete_branch_after_merge",
