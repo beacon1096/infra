@@ -53,7 +53,7 @@ The CNPG operator runs once cluster-wide in the `database` namespace; per-app `C
 
 What's deployed at `kubernetes/apps/database/cloudnative-pg/`:
 
-- **Chart:** `cloudnative-pg` v0.28.0 from `oci://ghcr.io/cloudnative-pg/charts/cloudnative-pg`
+- **Chart:** `cloudnative-pg` v0.29.0 (operator 1.30.0) from `oci://ghcr.io/cloudnative-pg/charts/cloudnative-pg`
 - **Namespace:** `database` (operator only; per-app `Cluster` CRs live in the app's own ns)
 - **`replicaCount: 1`** — operator is leader-election; extra replicas only elect among themselves
 - **CRDs:** the chart installs `clusters` / `backups` / `scheduledbackups` / `databases` / `imagecatalogs` / `clusterimagecatalogs` / `poolers` / `publications` / `subscriptions` / `failoverquorums`

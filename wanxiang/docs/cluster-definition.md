@@ -102,7 +102,7 @@ physical nodes at the tail (.201/.202/.203):
 
 | | |
 |---|---|
-| Operator | CloudNativePG 0.28.x ([ADR talos-ii/0007](decisions/talos-ii/0007-cloudnative-pg-operator.md)) |
+| Operator | CloudNativePG 1.30.x (chart 0.29.x; [ADR talos-ii/0007](decisions/talos-ii/0007-cloudnative-pg-operator.md)) |
 | Namespace | `database` (operator only; per-app `Cluster` CRs live with their app) |
 | Failover | automatic — primary + 2 replicas (or 0 replicas for non-critical apps) |
 | Backups | barman-cloud-format archives → (TBD: same target as Longhorn backups) |
