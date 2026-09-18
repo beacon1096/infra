@@ -412,6 +412,77 @@ zero and a fixed seed. Their visible content remained reasonable, but the
 speculative paths are not byte-for-byte equivalent to target-only generation.
 This needs correctness and quality qualification before replacing production.
 
+### Local long-context qualification
+
+The Lazycat K16 pair subsequently passed bounded 32K, 64K and 128K retrieval
+checks under the same local SGLang configuration. Each synthetic archive placed
+the exact values `cobalt-7319`, `willow-4826` and `silver-9053` near 5%, 50% and
+95% of its filler. Prompt sizes were calibrated through the running server's
+`/tokenize` route, not inferred solely from the offline tokenizer. Every case
+flushed the prefix cache first.
+
+Two independent cold requests ran at each length. The schema request disabled
+tool choice and required an object with exactly the three string fields. The
+tool request exposed `record_vault` and required exactly one automatic call
+with those fields as arguments. Qwen places tool definitions before the user
+archive, so the two prompt types have different leading tokens and cannot reuse
+one another's radix-cache prefix.
+
+| Path | Input tokens | First content | Complete | Output tokens | Finish | Retrieval |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| Strict JSON schema | 32,767 | 30.906 s | 32.077 s | 36 | `stop` | 3/3 |
+| Automatic tool call | 32,767 | 31.337 s | 32.753 s | 69 | `tool_calls` | 3/3 |
+| Strict JSON schema | 65,535 | 107.390 s | 109.264 s | 45 | `stop` | 3/3 |
+| Automatic tool call | 65,537 | 108.475 s | 111.115 s | 69 | `tool_calls` | 3/3 |
+| Strict JSON schema | 131,072 | 396.082 s | 401.321 s | 36 | `stop` | 3/3 |
+| Automatic tool call | 131,073 | 397.953 s | 402.557 s | 69 | `tool_calls` | 3/3 |
+
+All schema responses parsed to the exact required object. All tool cases emitted
+one `record_vault` call whose parsed arguments exactly matched it. The 128K
+schema TTFC is within 0.3% of the resident checkpoint's earlier 397.149-second
+cold archive result, although the prompts and structured-output constraint are
+not identical. The checkpoint change therefore did not materially improve the
+dominant 128K cold-prefill cost. TTFC also grew much faster than input length:
+about 31, 107 and 396 seconds as context doubled, making long-prefill work a
+more important optimization target than short decode for this workload.
+
+After another cache flush, a cold 128K schema request was disconnected after
+15.011 seconds, before first output. Five seconds later a short request returned
+`THOR_CANCEL_OK` in 0.665 seconds. Logs showed the long prefill cease with about
+108K tokens still pending before the short 18-token prefill ran, confirming that
+the patched disconnect path released the execution slot.
+
+An experiment-side monitor sampled host memory once per second and applied the
+production guard thresholds throughout the trial. Across 1,440 samples, minimum
+`MemAvailable` was 61.13 GiB, minimum `MemFree` was 15.20 GiB and minimum free
+swap was 30.71 GiB. No threshold fired. This establishes comfortable headroom
+for these single-request 128K cases, not arbitrary concurrent long prompts.
+The normal production SGLang service, memory monitor and health timer were
+restored afterward with HTTP health 200 and no memory-stop lock.
+
+These checks qualify synthetic deep retrieval, schema enforcement, tool
+argument construction and client cancellation through 128K. They do not
+measure broad long-context reasoning, repository-scale coding quality or
+multiple simultaneous cold prefills.
+
+### Optimization research targets
+
+The measured priorities for further source-level research are:
+
+1. Add a fused DFlash KV-materialization path for the draft's ModelOpt NVFP4
+   QKV projection; the current SGLang path disables this fusion and falls back
+   to separate materialization.
+2. Investigate SM110-native NVFP4 and Gated DeltaNet/linear-attention prefill
+   kernels. The 128K result shows that cold prefill, rather than short decode,
+   dominates long agent requests.
+3. Determine whether an uncensored-target on-policy K16 draft calibration can
+   improve acceptance without losing the current quantized draft's memory and
+   compute advantage. The published draft declares K8 even though K16 was the
+   stronger general serving choice.
+4. Evaluate chunked-prefill size, prefill scheduling and graph support one
+   variable at a time before changing KV precision or enabling YaRN. Preserve
+   retrieval, schema, tool and cancellation checks as correctness gates.
+
 SGLang loaded the quantized draft directly in 1.7–1.9 seconds. It disabled its
 fused DFlash KV-materialization path because that path does not support the
 draft's ModelOpt FP4 QKV projection; the unfused fallback still produced the
@@ -430,9 +501,29 @@ SGLang service active with HTTP health 200, no memory-stop lock, the official
 container stopped and no experiment container remaining.
 
 These results justify retaining Lazycat K16 as a replacement candidate, not
-switching it into production yet. The next gate is fixed-context retrieval and
-tool/structured-output quality at 32K, 64K and 128K, followed by the existing
-memory-guard and cancellation tests.
+switching it into production yet. It has now passed bounded fixed-context
+retrieval, tool/structured-output, memory-headroom and cancellation checks
+through 128K. The remaining replacement gate is broader quality evaluation on
+representative coding and agent workloads, especially because target lineage
+and speculative paths changed the deterministic output trajectories.
+
+The completed qualification used this staged order:
+
+1. At each context length, place three exact-value facts near 5%, 50% and 95%
+   of a synthetic archive, flush the prefix cache and require all three values
+   in a strict JSON-schema response. Record exact input/output tokens,
+   first-content latency, completion time, finish reason and sampled memory.
+2. Independently construct a service-counted prompt at each length and require
+   one automatic tool call whose arguments contain the three retrieved values.
+   The Qwen template places tool definitions ahead of the archive, so the
+   schema and tool prompts do not share a reusable leading prefix; flush both
+   and report their cold latencies separately rather than claiming cache reuse.
+3. Abort a cold 128K streaming request before first output, then require a short
+   request to complete promptly. Confirm that the scheduler slot and temporary
+   request state were released.
+4. Preserve the existing host-memory thresholds throughout the trial and verify
+   normal production recovery afterward. A passing bounded run establishes
+   headroom for these cases, not safety for arbitrary concurrent long prompts.
 
 ## References
 
