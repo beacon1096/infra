@@ -762,10 +762,33 @@ warned that its auxiliary data should use a constant-expression or custom JIT
 adapter; it did not fail these operator or service requests, but remains a
 compatibility risk.
 
-This is now the leading performance candidate, not yet the managed default.
-It still needs declarative dependency packaging, removal or upstreaming of the
-single-split workaround, the same sustained-operation and reboot gates used by
-the Triton candidate, and an explicit rollback path. Upstream
+The FA4 path was then packaged as the managed NixOS default. The two wheels are
+fetched by hash into an immutable, service-local Python layer, so the TVM FFI
+0.1.14.post0 override does not replace the image's global 0.1.11 dependency.
+Activation verifies the original and patched backend hashes before mounting the
+narrow single-split workaround. A clean complete system build, deployment and
+service restart all succeeded. The managed closure reproduced 64K TTFC of
+21.893 seconds and 128K schema/tool TTFC of 52.302/52.779 seconds. Its
+one/two/three-stream 128K matrix completed correctly at 65.652, 66.754 and
+68.431 seconds, with maximum decode gaps of 1.156--1.233 seconds.
+
+A guarded two-hour managed-service soak ran 60 rounds without a bad round,
+probe or health check. It executed 60 representative suites, 60 additional
+workload suites and 12 long-context qualifications; all 120 before/after
+health checks returned HTTP 200. Representative-suite time stayed within
+15.301--15.374 seconds, `MemAvailable` never fell below 60.99 GiB, GPU clocks
+stayed at 1,385--1,386 MHz, and peak GPU/TJ temperature was 82.25 degrees
+Celsius. No memory-stop condition occurred. A subsequent cold reboot restored
+the same system closure and all managed units without intervention; the model
+became healthy after about 80 seconds. The post-reboot representative suite,
+64K schema/tool retrieval at 21.846/22.204 seconds and 128K cancellation
+recovery all passed. The inference, watcher and health timer were then stopped
+because there was no production demand, while performance fan control remained
+active.
+
+This qualifies FA4 b31 as the managed default, with the tuned Triton kernel
+retained as the rollback backend. Removal or upstreaming of the single-split
+workaround and an exercised closure rollback remain follow-up work. Upstream
 [FlashAttention #2810](https://github.com/Dao-AILab/flash-attention/pull/2810)
 and [#2880](https://github.com/Dao-AILab/flash-attention/pull/2880) supplied the
 relevant paged-KV and alignment fixes; their published validation did not cover
@@ -966,17 +989,17 @@ The combined evidence changes the order of work:
    exactly the same wrong output at 16K. Reject both versions for service use.
    FlashInfer 0.6.17's separate CUTLASS FMHA prefill dispatcher also does not
    accept this model's `(256,256)` QK/V head dimensions.
-3. FA4 b31 with page size 128 is the leading backend candidate. The isolated
-   operator check, repeated schema/tool/cancellation suite, 12 representative
-   requests and 1/2/3-stream mixed-load matrices all passed. It reduced 64K
-   TTFC by 68.5% and 128K TTFC by about 78% versus tuned Triton. Package its
-   Python/TVM-FFI dependency boundary declaratively, retain the exact SM110
-   head-dimension-256 single-split guard, and run the sustained-operation and
-   reboot gates before promotion. Do not carry the experimental global
-   deterministic mode or assume the current dependency overlay is generally
-   compatible.
+3. FA4 b31 with page size 128 is the qualified managed prefill backend. The
+   isolated operator check, repeated schema/tool/cancellation suite, 12
+   representative requests and 1/2/3-stream mixed-load matrices all passed. It
+   reduced 64K TTFC by 68.5% and 128K TTFC by about 78% versus tuned Triton.
+   Its isolated, hash-pinned Python/TVM-FFI layer, exact SM110
+   head-dimension-256 single-split
+   guard, two-hour managed soak and cold reboot recovery all passed. Do not
+   carry the experimental global deterministic mode or assume the service-local
+   dependency overlay is generally compatible.
 4. The Triton `128x64`, eight-warp, two-stage conditional remains the qualified
-   and deployed fallback. It passed the sustained-operation, mixed-load and
+   rollback backend. It passed the sustained-operation, mixed-load and
    reboot gates and reduced 128K TTFC by about 39% over the pinned path. Do not
    generalize the tile to other architectures, head dimensions or short verify
    batches.
@@ -1038,14 +1061,14 @@ two-hour sustained-operation gate, the post-soak mixed matrix and reboot
 recovery of the promoted managed service. The separate backend screen also
 rejected FlashInfer 0.6.17 and 0.6.18 on identical wrong 16K output, then
 qualified FA4 b31 through operator parity, repeated 16K/64K/128K service
-correctness, representative workloads, cancellation and 1/2/3-stream mixed
-load.
+correctness, representative workloads, cancellation, 1/2/3-stream mixed load,
+an isolated declarative dependency package, a second two-hour managed soak and
+cold reboot recovery.
 Resume in this order:
 
-1. Package FA4 b31, TVM FFI and the narrow single-split workaround
-   declaratively, resolving the pinned 0.1.11 dependency conflict. Then repeat
-   the two-hour soak, reboot recovery and rollback checks before considering it
-   for the managed default.
+1. Exercise the retained Triton closure as a real rollback, then return to and
+   recheck the FA4 closure. Remove or upstream the narrow single-split
+   workaround when upstream accepts the SM110 head-dimension-256 verify shape.
 2. Observe broader real coding/agent workloads during normal use. Preserve
    strict-schema, tool, cancellation, short-latency and 1/2/3-stream 128K checks
    as regression gates.
@@ -1053,11 +1076,11 @@ Resume in this order:
    removes the repeated wrong output. MLP fusion, KV-only draft projection and
    draft calibration remain lower priority than the full-attention backend.
 
-Current state on 2026-09-19 after the backend experiments: the qualified
-Triton managed closure remains installed, but the inference service, memory
-watcher and health timer are intentionally stopped because the operator stated
-that there is no production demand. The performance fan controller remains
-active, and the official and experimental containers are stopped.
+Current state on 2026-09-19 after the backend experiments: the qualified FA4
+managed closure is installed, but the inference service, memory watcher and
+health timer are intentionally stopped because the operator stated that there
+is no production demand. The performance fan controller remains active, and
+the official and experimental containers are stopped.
 
 The completed qualification used this staged order:
 
