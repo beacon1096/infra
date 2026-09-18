@@ -634,6 +634,53 @@ interactive service this is the qualified scheduling candidate; interval 0 is
 appropriate only when isolated-prefill latency is deliberately prioritized.
 No tuned kernel or scheduler option was installed into the managed service.
 
+Direct operator testing then compared the pinned and tuned kernels with BF16,
+GQA 24:4, head dimension 256 and a 1,024-token query at prefix lengths 0, 32K,
+64K and 128K. Each kernel was bitwise stable across repeated runs. Of 6,291,456
+output elements, only 31--38 differed between kernels. The maximum absolute
+difference was `2.44e-4` with no prefix and at most `1.53e-5` with a non-empty
+prefix (`7.63e-6` at 64K and 128K); there were no NaNs or infinities. All cases
+passed `atol=2e-2, rtol=1e-2`. Nine sampled query/head positions at each length
+also had identical error bounds against an independent FP32 reference.
+
+An additional 26-case boundary matrix used query lengths 1, 17, 63, 64, 65,
+127, 128, 129, 255, 256, 257, 511 and 1,023 at prefixes 0 and 128K. It exposed
+an important scope correction: applying the 128-row tile to query lengths up
+to 64 made long-prefix calls 34--36% slower. That range includes speculative
+verify batches. The final candidate therefore retains the pinned `64x64`, one
+stage path when `max_len_extend <= 64`; only regular `_fwd_kernel` calls on
+SM110 with QK/V head dimensions 256 and `max_len_extend > 64` use `128x64`,
+eight warps and two stages. The guarded candidate passed the full matrix, and
+the short-query outputs became bitwise identical to the pinned path.
+
+A service-level suite ran six fixed workloads twice against both the pinned
+and guarded kernels: exact short output, Python repair, an operations-agent
+plan, Chinese synthesis, strict JSON and a tool call. Both configurations
+passed 6/6 and each was internally deterministic. The exact short output,
+Python and tool-call responses matched byte for byte. The other three followed
+different greedy trajectories but completed successfully and passed their
+semantic or structural checks; the JSON difference was formatting only. The
+operator tolerance therefore does not imply identical generated text, so
+deployment qualification must retain task-level quality checks.
+
+Finally, the guarded kernel and `prefill_decode_interval=1` were exercised with
+a cold 128K retrieval while one, two and three 1,024-token decode streams were
+already active:
+
+| Decode streams | 128K TTFC | Complete | Median decode gap | p95 gap | Maximum gap |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 256.677 s | 260.708 s | 1.953 s | 3.456 s | 3.627 s |
+| 2 | 257.934 s | 262.060 s | 1.976 s | 3.461 s | 3.747 s |
+| 3 | 260.084 s | 264.256 s | 2.019--2.031 s | 3.483--3.508 s | 3.888--3.940 s |
+
+All retrieval and decode requests completed correctly. Moving from one to
+three decode streams added only 1.3% to prefill TTFC. At 128K the later
+1,024-token chunks themselves take longer, so interval 1 prevents whole-prefill
+starvation but does not impose the sub-2.5-second maximum observed at 64K. The
+matrix retained at least 60.2 GiB `MemAvailable`, peaked at 70.8 degrees
+Celsius, held the active GPU clock at 1,385--1,386 MHz and did not create the
+memory-stop lock.
+
 ### Independent review provenance
 
 This investigation used several model-assisted passes whose roles are recorded
@@ -746,27 +793,25 @@ These results justify retaining Lazycat K16 as a replacement candidate, not
 switching it into production yet. It has now passed bounded fixed-context
 retrieval, tool/structured-output, memory-headroom and cancellation checks
 through 128K. The remaining replacement gate is broader quality evaluation on
-representative coding and agent workloads, especially because target lineage
-and speculative paths changed the deterministic output trajectories.
+additional real workloads plus sustained operation, especially because target
+lineage and speculative paths changed the deterministic output trajectories.
 
 ### Experiment handoff TODO
 
-The next session should resume from the tuned Triton candidate, in this order:
+Completed on 2026-09-18: direct operator parity, the guarded short-query
+fallback, representative service workloads and the 1/2/3-stream 128K mixed
+matrix described above. Resume in this order:
 
-1. Run direct operator-level numerical parity between the pinned and tuned
-   kernels at prefix lengths 0, 32K, 64K and 128K using BF16, GQA 24:4,
-   head dimension 256 and a 1024-token query chunk. Record exact equality,
-   maximum absolute/relative error and NaN/Inf counts; use a sampled independent
-   reference where a full 128K reference would consume excessive memory.
-2. If parity passes, package only the measured SM110 and `Lq=Lv=256` change:
-   `BLOCK_M=128`, `BLOCK_N=64`, eight warps and two stages on the regular
-   `_fwd_kernel` path. Do not change the unified kernel or generalize it to
-   other architectures/shapes. Keep an explicit source-level rollback.
-3. Build the service candidate with the existing 1024-token chunk and
-   `prefill_decode_interval=1`. Re-run 1/2/3 concurrent decode streams during
-   128K prefill, strict-schema and tool calls, disconnect cancellation, short
-   latency, representative coding/agent workloads and a multi-hour stability
-   run. Only then enable the managed service and verify recovery after reboot.
+1. Package the guarded SM110/head-dimension-256/`max_len_extend > 64` change as
+   a hash-pinned runtime patch. Keep an explicit source-level rollback and do
+   not change the unified kernel or other architectures/shapes.
+2. Build the Lazycat target/K16 draft service candidate with the existing
+   1,024-token chunk and `prefill_decode_interval=1`. Do not carry over the old
+   BF16-draft-only INT8-head flag to the ModelOpt-FP4 draft.
+3. Run additional real coding/agent workloads and a multi-hour stability test.
+   Preserve strict-schema, tool, cancellation, short-latency and 1/2/3-stream
+   128K checks as regression gates. Only then enable the managed service and
+   verify recovery after reboot.
 4. Keep FlashInfer 0.6.18 and updated FA4 as separate backend experiments.
    MLP fusion, KV-only draft projection and draft calibration remain lower
    priority until the Triton candidate is qualified.
