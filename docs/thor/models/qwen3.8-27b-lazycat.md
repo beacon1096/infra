@@ -465,23 +465,59 @@ argument construction and client cancellation through 128K. They do not
 measure broad long-context reasoning, repository-scale coding quality or
 multiple simultaneous cold prefills.
 
+### Chunked-prefill screening
+
+A follow-up single-variable screen kept the Lazycat K16 pair, Triton
+attention backends, BF16 caches, disabled prefill graphs and the exact 65,535
+token schema fixture unchanged. Candidate runs first completed a 16K warm-up,
+then flushed the radix cache before the measured request. The earlier 1024
+result used the same fixture hash but came from the preceding long-context
+qualification rather than this screening harness.
+
+| Chunk size | Cold 64K first content | Complete | Repeats | Retrieval |
+| ---: | ---: | ---: | ---: | --- |
+| 1024 | 107.390 s | 109.264 s | 1 earlier baseline | 3/3 |
+| 2048 | 104.139, 104.194 s | 106.016, 106.071 s | 2 | 3/3 |
+| 4096 | 104.214 s | 107.223 s | 1 | 3/3 |
+| 8192 | 105.628 s | 108.259 s | 1 | 3/3 |
+
+The 2048 repeats differed by only 0.055 seconds and improved first-content
+latency by about 3.0% relative to 1024. Increasing the chunk to 4096 produced
+no further first-content gain, while 8192 regressed toward the baseline. This
+supports treating chunk sizing as a modest constant-factor optimization, not
+a fix for the observed near-quadratic context scaling. A 128K confirmation and
+a mixed prefill/decode latency check remain required before changing the
+production value.
+
+The same startups exposed two useful implementation facts. Each target load
+logged exactly 48 successful SiLU+mul+FP4-quant fusions, matching the 48 Gated
+DeltaNet layers; source inspection showed that the 16 full-attention dense
+MLPs do not call the same fusion initializer. FlashInfer FP4 autotuning was
+already enabled on SM110 and loaded architecture- and environment-specific
+caches for both target and draft. Further tactic work must therefore establish
+missing real serving shapes rather than assume that the deployment is using a
+single untuned CUTLASS tactic.
+
 ### Optimization research targets
 
 The measured priorities for further source-level research are:
 
-1. Add a fused DFlash KV-materialization path for the draft's ModelOpt NVFP4
-   QKV projection; the current SGLang path disables this fusion and falls back
-   to separate materialization.
-2. Investigate SM110-native NVFP4 and Gated DeltaNet/linear-attention prefill
-   kernels. The 128K result shows that cold prefill, rather than short decode,
-   dominates long agent requests.
+1. Profile the 16 full-attention layers separately from the 48 Gated DeltaNet
+   layers, then qualify the missing full-attention MLP SiLU+NVFP4 fusion. The
+   128K result shows that cold prefill, rather than short decode, dominates
+   long agent requests.
+2. Add a packed KV-only DFlash projection for the draft's ModelOpt NVFP4 QKV
+   weights. The current path computes full QKV and discards Q; this is primarily
+   a speculative/materialization optimization and is not expected to remove
+   the full-attention quadratic prefill term.
 3. Determine whether an uncensored-target on-policy K16 draft calibration can
    improve acceptance without losing the current quantized draft's memory and
    compute advantage. The published draft declares K8 even though K16 was the
    stronger general serving choice.
-4. Evaluate chunked-prefill size, prefill scheduling and graph support one
-   variable at a time before changing KV precision or enabling YaRN. Preserve
-   retrieval, schema, tool and cancellation checks as correctness gates.
+4. Confirm chunk size 2048 at 128K and under mixed prefill/decode load, then
+   evaluate prefill scheduling and graph support one variable at a time before
+   changing KV precision or enabling YaRN. Preserve retrieval, schema, tool and
+   cancellation checks as correctness gates.
 
 SGLang loaded the quantized draft directly in 1.7–1.9 seconds. It disabled its
 fused DFlash KV-materialization path because that path does not support the
