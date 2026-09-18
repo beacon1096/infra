@@ -446,6 +446,14 @@ dominant 128K cold-prefill cost. TTFC also grew much faster than input length:
 about 31, 107 and 396 seconds as context doubled, making long-prefill work a
 more important optimization target than short decode for this workload.
 
+The service-reported prompt lengths also explain an apparent tool-path cost.
+The 32K pair had identical input length, while the tool cases added only two
+tokens at 64K and one at 128K. With the tested 1024-token prefill chunk those
+small additions cross an exact chunk boundary: 65,535 versus 65,537 requires
+64 versus 65 chunks, and 131,072 versus 131,073 requires 128 versus 129. The
+observed tool/JSON TTFC gaps therefore cannot be attributed to the parser or
+grammar engine; the extra short tail chunk is a direct confounder.
+
 After another cache flush, a cold 128K schema request was disconnected after
 15.011 seconds, before first output. Five seconds later a short request returned
 `THOR_CANCEL_OK` in 0.665 seconds. Logs showed the long prefill cease with about
@@ -484,10 +492,20 @@ qualification rather than this screening harness.
 The 2048 repeats differed by only 0.055 seconds and improved first-content
 latency by about 3.0% relative to 1024. Increasing the chunk to 4096 produced
 no further first-content gain, while 8192 regressed toward the baseline. This
-supports treating chunk sizing as a modest constant-factor optimization, not
-a fix for the observed near-quadratic context scaling. A 128K confirmation and
-a mixed prefill/decode latency check remain required before changing the
-production value.
+shows only a modest gain from the values screened in this implementation; it
+does not establish that chunk size can affect only a constant or linear term.
+Exact causal attention preserves the same total token-pair count for every
+chunk size, but kernel efficiency or repeated prefix preparation can still
+change the measured quadratic coefficient.
+
+Regression over complete chunks from the measured runs reinforces that
+distinction. The fitted per-chunk slope against prior-prefix length was
+76.6 microseconds per prefix token at chunk 2048, 145.2 at 4096 and 255.9 at
+8192. Dividing each slope by its chunk size gives similar values, while total
+complete-chunk time stayed near 106.0, 106.1 and 107.5 seconds. The current
+screen therefore found no evidence that a larger service chunk removes the
+dominant prefix-dependent work. A 128K confirmation and mixed prefill/decode
+latency check remain required before changing the production value.
 
 The same startups exposed two useful implementation facts. Each target load
 logged exactly 48 successful SiLU+mul+FP4-quant fusions, matching the 48 Gated
@@ -498,26 +516,92 @@ caches for both target and draft. Further tactic work must therefore establish
 missing real serving shapes rather than assume that the deployment is using a
 single untuned CUTLASS tactic.
 
-### Optimization research targets
+### Independent review provenance
 
-The measured priorities for further source-level research are:
+This investigation used several model-assisted passes whose roles are recorded
+so that their suggestions are not mistaken for measurements:
 
-1. Profile the 16 full-attention layers separately from the 48 Gated DeltaNet
-   layers, then qualify the missing full-attention MLP SiLU+NVFP4 fusion. The
-   128K result shows that cold prefill, rather than short decode, dominates
-   long agent requests.
-2. Add a packed KV-only DFlash projection for the draft's ModelOpt NVFP4 QKV
-   weights. The current path computes full QKV and discards Q; this is primarily
-   a speculative/materialization optimization and is not expected to remove
-   the full-attention quadratic prefill term.
-3. Determine whether an uncensored-target on-policy K16 draft calibration can
-   improve acceptance without losing the current quantized draft's memory and
-   compute advantage. The published draft declares K8 even though K16 was the
-   stronger general serving choice.
-4. Confirm chunk size 2048 at 128K and under mixed prefill/decode load, then
-   evaluate prefill scheduling and graph support one variable at a time before
-   changing KV precision or enabling YaRN. Preserve retrieval, schema, tool and
-   cancellation checks as correctness gates.
+- **GPT-6-Astra Medium** performed the earlier deployment inspection,
+  benchmark construction and initial analysis recorded in this document.
+- **GPT-5.6-Sol xhigh** performed the current local/source verification,
+  re-analysis of the per-chunk logs and synthesis with the measured results.
+- **Claude Opus Max** supplied an independent source-level critique through an
+  operator-provided transcript. It reviewed the pinned SGLang, FlashInfer and
+  Triton code and challenged the initial optimization ordering.
+- **GPT-6-Pro WebChat** supplied a second independent review through the
+  [shared response](https://chatgpt.com/s/t_6aacfb01d0cc8191b647e1c2ee48a113).
+  The final answer and its embedded research report were both inspected.
+
+Model reviews are leads, not benchmark evidence. Claims below are either tied
+to the local measurements above, verified against the pinned source/runtime,
+or explicitly retained as experiments. The two external reviews independently
+agreed that a three-point, three-parameter quadratic fit is interpolation rather
+than proof: it strongly motivates investigating full attention, but cannot by
+itself assign the fitted quadratic percentage to attention kernels.
+
+The target config has 16 full-attention and 48 Gated DeltaNet layers. Full
+attention is the model's intrinsic quadratic GPU operation; GDN, MLP and normal
+incremental draft materialization are linear in new tokens. That makes the
+full-attention prefill path the leading hypothesis, not a completed attribution.
+Thermal throttling, scheduler work or accidentally repeated cumulative-prefix
+preparation must still be excluded with a timeline. The observed 61.13 GiB
+minimum `MemAvailable` rules out capacity pressure in these tests, but it does
+not rule out memory-bandwidth or cache-efficiency limits.
+
+### Revised optimization research targets
+
+The combined evidence changes the order of work:
+
+1. Profile one cold 64K request by chunk and stage, with clocks and temperature
+   sampled throughout. Separate full-attention QK/softmax/PV, GDN, MLP and
+   projections, draft context materialization, CPU preparation and GPU idle
+   gaps. Compare equal-length chunks near 8K, 32K and 60K prior prefix, then use
+   a light 128K trace to confirm which stage explains the length increment.
+2. If full attention dominates, change only the target prefill backend. As of
+   2026-09-18, open [SGLang PR #39811](https://github.com/sgl-project/sglang/pull/39811)
+   at `5705691f4c3cdcc669cca04c7d19e14da8d607b9` admits FlashInfer full
+   attention for hybrid-GDN models on SM110. Its Thor evidence uses FlashInfer
+   0.6.18 and reports shared-prefix output throughput, not cold-prefill TTFC;
+   accuracy parity was not established. Backport the gate separately from any
+   dependency upgrade, keep decode and linear attention on Triton, print the
+   resolved target/draft/verify backends and treat this as an experimental FA2
+   path. FlashInfer 0.6.17's separate CUTLASS FMHA prefill dispatcher does not
+   accept this model's `(256,256)` QK/V head dimensions.
+3. Test FA4 only after an operator-level BF16, GQA 24:4, head-dimension-256,
+   paged-KV and unequal-Q/K correctness check. Upstream
+   [FlashAttention #2810](https://github.com/Dao-AILab/flash-attention/pull/2810)
+   and [#2880](https://github.com/Dao-AILab/flash-attention/pull/2880), merged
+   2026-09-11, remove relevant `seqused_q/k`, paged-KV and output-alignment
+   obstacles. Their published performance validation is on SM103, not Thor;
+   first confirm that the installed FA4 source contains both changes.
+4. If Triton remains the reliable backend, locally sweep its SM110/D=256
+   extend-attention configuration. The pinned code selects 64-by-64 tiles,
+   eight warps and one stage; service chunk growth does not automatically grow
+   those kernel tiles. Test block size, stages and warps one variable at a time
+   on real early and late prefix shapes before a service-level A/B.
+5. Keep the full-attention MLP SiLU+NVFP4 fusion and packed KV-only DFlash
+   projection as secondary linear/decode experiments. The former can save MLP
+   intermediates but not attention pairs; the latter normally affects only
+   newly materialized draft rows. If profiling instead finds repeated processing
+   of the entire prefix, remove that repetition before merely reducing its
+   projection width. FlashInfer cuDNN FP4 GEMM is also an experimental linear
+   path: the installed backend accepts SM110, while SGLang `auto` currently
+   resolves to FlashInfer CUTLASS on this device.
+6. Retain 2048 only as the current chunk candidate and confirm it at 128K plus
+   mixed prefill/decode and cancellation load before production use. Larger
+   chunks reduce scheduling opportunities and can improve isolated TTFC while
+   worsening other requests' inter-token or cancellation latency. Preserve
+   retrieval, schema, tool and cancellation checks as correctness gates.
+7. Independently determine whether an uncensored-target on-policy K16 draft
+   calibration improves acceptance without losing the quantized draft's memory
+   and compute advantage. This remains a quality/decode investigation rather
+   than a remedy for the 396-second prefill.
+
+FlashInfer PR
+[#5302](https://github.com/flashinfer-ai/flashinfer/pull/5302) is explicitly
+excluded from this long-prefill track: it is an experimental prepared SM110 GQA
+decode path, not a causal prefill implementation for `q_len=1024–8192` and
+head dimension 256.
 
 SGLang loaded the quantized draft directly in 1.7–1.9 seconds. It disabled its
 fused DFlash KV-materialization path because that path does not support the
