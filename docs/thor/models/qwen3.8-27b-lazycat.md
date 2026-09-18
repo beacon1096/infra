@@ -253,6 +253,99 @@ near-limit capacity and active process layout. Useful follow-ups are:
 Raw requests, counters, telemetry and process inventories remain outside the
 public repository.
 
+## Local SGLang with the Lazycat checkpoints
+
+After rebooting the same machine into NixOS, the target and draft embedded in
+the official image were copied into the local model store. The copied
+`model.safetensors` files matched the image labels exactly:
+
+- target SHA-256
+  `5db0ff93ebdf68034770a6acec123971e618928684bd2d5f3f51346990254911`;
+- draft SHA-256
+  `2228b9b22e93a88d84556419c879448ab6c490ae65c4c0b166f4962190ddbf26`.
+
+The local runtime was SGLang `0.0.0.dev1+g5f55db35e`. It used native 262,144
+context, four running requests, 270,336 total tokens, BF16 KV, Triton attention
+and linear attention, FlashInfer CUTLASS FP4 GEMM, full decode CUDA Graph and
+the existing Thor GDN verification patches. This differs materially from the
+official 512K YaRN, eight-sequence, eager vLLM profile, so cross-runtime numbers
+are not a checkpoint-only A/B comparison.
+
+Three local configurations were compared with the resident production SGLang
+configuration. The production row used the RadixArk target, unquantized z-lab
+draft and the local INT8 draft-head optimization. The Lazycat target-only row
+disabled speculative decoding. The other two rows used the copied ModelOpt
+NVFP4 target and draft. Every request flushed the SGLang prefix cache; the
+single-stream prompts, caps, temperature, seed and three measured repetitions
+were the same as the official benchmark above.
+
+| Local SGLang configuration | Chinese | Short code | Long code | Median first-content range |
+| --- | ---: | ---: | ---: | ---: |
+| Resident production, DFlash K16 | 19.62 tok/s | 72.99 tok/s | 75.09 tok/s | 0.153–0.154 s |
+| Lazycat target only | 15.31 tok/s | 15.32 tok/s | 15.28 tok/s | 0.168–0.175 s |
+| Lazycat target + draft, K16 | 21.87 tok/s | 70.26 tok/s | 89.95 tok/s | 0.166–0.168 s |
+| Lazycat target + draft, K8 | 23.14 tok/s | 52.63 tok/s | 66.16 tok/s | 0.161–0.164 s |
+
+Against resident production, Lazycat K16 was 11.5% faster on Chinese and 19.8%
+faster on long code, but 3.7% slower on short code. K8 was 17.9% faster on the
+low-acceptance Chinese workload, but 27.9% slower on short code and 11.9%
+slower on long code. K16 is therefore the stronger general candidate; K8 only
+won when K16 spent most of its verify window on rejected tokens.
+
+The draft checkpoint declares `block_size=8`. SGLang used that without warning
+for K8, while K16 deliberately overrode it and logged a mismatch. K16 matches
+the official vLLM deployment and was valid in SGLang, but the distinction must
+be explicit. K16 logged acceptance length/rate near 2.0/7–8% for Chinese,
+6.65/38% for short code and up to 10.07/60% for long code. K8 logged about
+2.2/17%, 4.88/55% and up to 6.35/76%, respectively. Acceptance-rate
+percentages have different denominators across the two windows and should not
+be compared without the accepted length.
+
+Four-request and 5K-prompt measurements further favored Lazycat K16:
+
+| Case | Resident production | Lazycat K16 | Difference |
+| --- | ---: | ---: | ---: |
+| Four-request aggregate decode | 135.03 tok/s | 172.50 tok/s | +27.8% |
+| Four-request end-to-end output | 126.15 tok/s | 157.76 tok/s | +25.1% |
+| Four-request median per-request decode | 38.52 tok/s | 56.54 tok/s | +46.8% |
+| Exact 5,001-token prompt TTFC | 1.804 s | 1.689 s | 6.4% lower |
+
+The local K16 short-prompt results were also faster than the official vLLM
+profile on this test set: 21.87 versus 17.37 tokens/s for Chinese, 70.26 versus
+62.37 for short code, 89.95 versus 79.49 for long code, and 1.689 versus 2.612
+seconds at 5K. The different context, scheduler, KV and graph settings prevent
+attributing these deltas to SGLang alone.
+
+Both resident production and Lazycat K16 correctly emitted an automatic
+`get_weather` call with JSON arguments `{"city":"上海"}`. Within each tested
+configuration, all three measured outputs had identical hashes. However, the
+target-only, K8 and K16 outputs differed from one another despite temperature
+zero and a fixed seed. Their visible content remained reasonable, but the
+speculative paths are not byte-for-byte equivalent to target-only generation.
+This needs correctness and quality qualification before replacing production.
+
+SGLang loaded the quantized draft directly in 1.7–1.9 seconds. It disabled its
+fused DFlash KV-materialization path because that path does not support the
+draft's ModelOpt FP4 QKV projection; the unfused fallback still produced the
+measurements above. A process snapshot taken during K16 inference contained
+405 host processes. The container included the API process, multiprocessing
+resource tracker, scheduler, detokenizer, Torch Inductor compile pool and the
+benchmark client. Complete root-visible process and cgroup snapshots remain in
+private raw evidence because they include unrelated host details.
+
+One dual-boot operational hazard was confirmed: the official container shares
+the NixOS Docker store and had `unless-stopped` restart policy, so it started
+automatically alongside the managed SGLang service after reboot. It was stopped
+before testing to avoid unified-memory contention. Experiments used bounded
+systemd units with independent cleanup. Final state was the normal managed
+SGLang service active with HTTP health 200, no memory-stop lock, the official
+container stopped and no experiment container remaining.
+
+These results justify retaining Lazycat K16 as a replacement candidate, not
+switching it into production yet. The next gate is fixed-context retrieval and
+tool/structured-output quality at 32K, 64K and 128K, followed by the existing
+memory-guard and cancellation tests.
+
 ## References
 
 - [Earlier local Qwen3.8-27B experiments](qwen3.8-27b.md)
