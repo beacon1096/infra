@@ -708,15 +708,17 @@ jobs:
             skopeo_args+=(--dest-tls-verify=false)
           fi
 
-          nix shell nixpkgs#skopeo -c skopeo --authfile "$auth_file" --tmpdir "$PWD/.skopeo-tmp" copy \
+          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
             "${skopeo_args[@]}" \
+            --dest-authfile "$auth_file" \
             docker-archive:result \
             docker://$registry_host/$IMAGE_PATH:latest
 
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             tag=${GITHUB_REF#refs/tags/}
-            nix shell nixpkgs#skopeo -c skopeo --authfile "$auth_file" --tmpdir "$PWD/.skopeo-tmp" copy \
+            nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
               "${skopeo_args[@]}" \
+              --dest-authfile "$auth_file" \
               docker-archive:result \
               docker://$registry_host/$IMAGE_PATH:$tag
           fi
@@ -764,8 +766,9 @@ jobs:
           printf '%s' "$REGISTRY_TOKEN" | nix shell nixpkgs#skopeo -c \
             skopeo login --authfile "$auth_file" --username "$REGISTRY_USER" \
             --password-stdin "$registry_host"
-          nix shell nixpkgs#skopeo -c skopeo --authfile "$auth_file" --tmpdir "$PWD/.skopeo-tmp" copy \
+          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
             --retry-times 5 --retry-delay 10s \
+            --dest-authfile "$auth_file" \
             docker-archive:result-multica \
             "docker://$registry_host/$IMAGE_PATH:$IMAGE_TAG"
 
