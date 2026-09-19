@@ -129,6 +129,15 @@ CloudNativePG primary serving SQL with two streaming replicas. Static Pod,
 CSI registration, and volume-mount warnings seen during kubelet restarts were
 transient and had cleared at the final observation point.
 
+A later read-only observation on 2026-09-19 again found all three nodes Ready
+on the same versions, the API and every Flux object Ready, no non-ready Pod,
+Deployment, StatefulSet, or DaemonSet, and all eight CloudNativePG clusters at
+three ready instances. Longhorn still reported 38 attached healthy volumes and
+two intentionally detached volumes, with all 40 on engine 1.12.1; system backup
+`pre-k8s-1-36-20260918-retry1` remained Ready. Talos reported all three
+control-plane members. This closes the 1.36 execution stage, but one successful
+observation does not by itself authorize the 1.37 stage.
+
 ### Stage 3: Talos/Kubernetes 1.37
 
 Only after a stable observation period on 1.36, repeat the same process for
