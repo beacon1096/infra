@@ -31,7 +31,7 @@ jobs:
           nix shell nixpkgs#nodejs_24 --command node utils/test-n8n-infra-ci.mjs
           nix shell nixpkgs#nodejs_24 --command node utils/test-renovate-merge-queue.mjs
       - name: Build OCI images
-        if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/prod')
+        if: github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/prod')
         run: |
           set -euo pipefail
           nix build --print-out-paths --out-link result-ci-coding-agent \
@@ -39,7 +39,7 @@ jobs:
           nix build --print-out-paths --out-link result-ci-multica \
             .#multica-backend-oci | tee multica-store-path.txt
       - name: Push OCI smoke-test images
-        if: github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/prod'
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/prod'
         env:
           REGISTRY_USER: ${{ secrets.CI_REGISTRY_USER }}
           REGISTRY_TOKEN: ${{ secrets.CI_REGISTRY_TOKEN }}

@@ -49,6 +49,21 @@ a version label. Failed or partial release builds must leave `prod` unchanged.
 
 ## Pull request and branch OCI validation
 
+The public repository applies the following validation by event:
+
+| Event | Static and policy checks | OCI archive build | Registry publication | Credentials |
+| --- | --- | --- | --- | --- |
+| Pull request | Flake evaluation, n8n policy tests, and the `skopeo` command regression guard | Build `coding-agent-oci` and `multica-backend-oci` | None | No Attic or Registry write credentials |
+| Push to a branch other than `main` or `prod` | Same checks as a pull request | Build both OCI archives | Overwrite both `ci-scratch` tags | Package-only `CI_REGISTRY_*` credential |
+| Push to `main` | Validation workflow plus the complete `build-and-push.yaml` graph | Complete release-oriented build graph | Publish normal image tags | Production credentials, scoped to publication steps |
+| Tag push | Complete `build-and-push.yaml` graph | Complete release-oriented build graph | Publish normal and release tags | Production credentials, scoped to publication steps |
+| Manual full build | Operator-selected ref through `build-and-push.yaml` | Complete release-oriented build graph | Publish normal image tags | Privileged operator action using production credentials |
+
+The container-publication regression guard rejects the invalid
+`skopeo --authfile ... copy` argument ordering and verifies that the installed
+`skopeo copy` supports `--dest-authfile`. This catches command-line failures
+before any credentials or large image archives are involved.
+
 The required `Nix Validation / nix-evaluation (pull_request)` check builds both
 `coding-agent-oci` and `multica-backend-oci`. Pull request jobs receive neither
 Attic write credentials nor Registry credentials: they prove that the OCI
@@ -64,8 +79,18 @@ these shared disposable tags:
 The tags have no retention guarantee and must never be used by production or
 promotion automation. A shared tag avoids a cleanup scheduler; concurrent runs
 are last-writer-wins, while each successful job still proves its own upload
-completed. `main`, release tags, and manually authorized full builds continue
-to publish only through `build-and-push.yaml`.
+completed. Only `refs/heads/*` push events are eligible for this smoke
+publication, so tag events cannot write the scratch tags. `main`, release tags,
+and manually authorized full builds continue to publish only through
+`build-and-push.yaml`.
+
+A pull request is not mergeable merely because evaluation succeeds. The OCI
+builds execute inside the existing required
+`Nix Validation / nix-evaluation (pull_request)` context; a failure in either
+archive therefore leaves that protected-branch check red. The branch-push
+check additionally distinguishes Registry authentication or transport failures
+from pull-request build failures without exposing its credential to the pull
+request event.
 
 Branch push workflows execute branch-controlled code, so access to the scratch
 publisher credential is granted only to principals already trusted to push
