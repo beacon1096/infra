@@ -74,7 +74,7 @@ spec:
           ENABLED: true
           DEFAULT_INTERVAL: 8h
         repository:
-          DEFAULT_MERGE_STYLE: rebase
+          DEFAULT_MERGE_STYLE: fast-forward-only
           DEFAULT_UPDATE_STYLE: rebase
       # OAuth via authentik is intentionally NOT defined here. The
       # restored forgejo.db already has the OIDC provider rows from
