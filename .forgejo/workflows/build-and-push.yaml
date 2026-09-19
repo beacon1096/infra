@@ -11,7 +11,6 @@ on:
   push:
     branches:
       - main
-      - migration/**
     tags:
       - '*'
 
@@ -24,8 +23,6 @@ env:
   ATTIC_CACHE: ${{ secrets.ATTIC_CACHE }}
   ATTIC_TOKEN: ${{ secrets.ATTIC_TOKEN }}
   REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT || 'https://forgejo.beaco.works' }}
-  REGISTRY_USER: ${{ secrets.REPO_TOKEN_OWNER }}
-  REGISTRY_TOKEN: ${{ secrets.REPO_TOKEN }}
   # Runner GC can delete derivations referenced only by a persistent eval cache.
   NIX_CONFIG: |
     eval-cache = false
@@ -684,6 +681,8 @@ jobs:
       - name: Push to Forgejo Registry
         env:
           IMAGE_PATH: infrastructure/nix-fleet/coding-agent
+          REGISTRY_USER: ${{ secrets.REPO_TOKEN_OWNER }}
+          REGISTRY_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           set -euo pipefail
           test -n "$REGISTRY_ENDPOINT" || {
@@ -754,6 +753,8 @@ jobs:
         env:
           IMAGE_PATH: infrastructure/nix-fleet/multica-backend
           IMAGE_TAG: 0.4.24-beacon.1
+          REGISTRY_USER: ${{ secrets.REPO_TOKEN_OWNER }}
+          REGISTRY_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           set -euo pipefail
           registry_host="${REGISTRY_ENDPOINT#http://}"
