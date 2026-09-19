@@ -75,14 +75,15 @@
 
 ## Wanxiang cluster upgrade
 
-- [x] Complete the Talos 1.13.10 / Kubernetes 1.36.3 stage described in
+- [x] Complete the Talos 1.13.10 / Kubernetes 1.36 stage described in
   [`wanxiang/docs/cluster-upgrade.md`](wanxiang/docs/cluster-upgrade.md),
-  including the Cilium, CloudNativePG, and Longhorn prerequisites.
+  including the Cilium, CloudNativePG, and Longhorn prerequisites, the 1.36.3
+  minor transition, and the separate 1.36.4 patch update.
 - [ ] After a stable 1.36 observation period, prepare the Talos/Kubernetes 1.37
   stage as a separate reviewed rollout.
   - Keep Renovate PR #36 (kubectl 1.37) and PR #37 (talosctl 1.14) open until
     the Stage 3 client/control-plane ordering is decided.
-  - Apply the Kubernetes 1.36 patch update separately from the 1.37 minor
-    transition.
+  - Keep the completed Kubernetes 1.36.4 patch separate from the 1.37 minor
+    transition and retain its independent rollout evidence.
   - Re-evaluate the open Flux, Cilium, CoreDNS, Envoy Gateway, and related
     chart PRs against each target Kubernetes minor before approval.
