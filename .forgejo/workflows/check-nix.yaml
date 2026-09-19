@@ -8,12 +8,65 @@ on:
 jobs:
   nix-evaluation:
     runs-on: nix-builder
-    timeout-minutes: 45
+    timeout-minutes: 720
+    env:
+      REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT || 'https://forgejo.beaco.works' }}
+      NIX_CONFIG: |
+        eval-cache = false
+      NIX_CURL_FLAGS: --ipv4
     steps:
       - uses: actions/checkout@v4
+      - name: Validate container publication commands
+        run: |
+          if grep -En 'skopeo[[:space:]]+--authfile.*[[:space:]]copy' .forgejo/workflows/*.yaml; then
+            echo '::error::skopeo copy authentication must use copy --dest-authfile' >&2
+            exit 1
+          fi
+          nix shell nixpkgs#skopeo --command sh -c \
+            'skopeo copy --help | grep -q -- --dest-authfile'
       - name: Evaluate flake outputs
         run: nix flake show --all-systems --no-write-lock-file
       - name: Test n8n CI policy
         run: |
           nix shell nixpkgs#nodejs_24 --command node utils/test-n8n-infra-ci.mjs
           nix shell nixpkgs#nodejs_24 --command node utils/test-renovate-merge-queue.mjs
+      - name: Build OCI images
+        if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/prod')
+        run: |
+          set -euo pipefail
+          nix build --print-out-paths --out-link result-ci-coding-agent \
+            .#coding-agent-oci | tee coding-agent-store-path.txt
+          nix build --print-out-paths --out-link result-ci-multica \
+            .#multica-backend-oci | tee multica-store-path.txt
+      - name: Push OCI smoke-test images
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/prod'
+        env:
+          REGISTRY_USER: ${{ secrets.CI_REGISTRY_USER }}
+          REGISTRY_TOKEN: ${{ secrets.CI_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$REGISTRY_USER"
+          test -n "$REGISTRY_TOKEN"
+
+          registry_host="${REGISTRY_ENDPOINT#http://}"
+          registry_host="${registry_host#https://}"
+          auth_file="$PWD/.skopeo-ci-auth.json"
+          trap 'rm -f "$auth_file"' EXIT
+          mkdir -p "$PWD/.skopeo-ci-tmp" "$HOME/.config/containers"
+          echo '{"default": [{"type": "insecureAcceptAnything"}]}' \
+            > "$HOME/.config/containers/policy.json"
+
+          printf '%s' "$REGISTRY_TOKEN" | nix shell nixpkgs#skopeo -c \
+            skopeo login --authfile "$auth_file" --username "$REGISTRY_USER" \
+            --password-stdin "$registry_host"
+
+          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-ci-tmp" copy \
+            --retry-times 5 --retry-delay 10s \
+            --dest-authfile "$auth_file" \
+            docker-archive:result-ci-coding-agent \
+            "docker://$registry_host/ci-publisher/nix-fleet/coding-agent:ci-scratch"
+          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-ci-tmp" copy \
+            --retry-times 5 --retry-delay 10s \
+            --dest-authfile "$auth_file" \
+            docker-archive:result-ci-multica \
+            "docker://$registry_host/ci-publisher/nix-fleet/multica-backend:ci-scratch"

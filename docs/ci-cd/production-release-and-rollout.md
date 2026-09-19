@@ -47,6 +47,32 @@ infra-private/main ── full validation ── n8n approval
 Never push `prod` directly. A release tag is an authorization record, not just
 a version label. Failed or partial release builds must leave `prod` unchanged.
 
+## Pull request and branch OCI validation
+
+The required `Nix Validation / nix-evaluation (pull_request)` check builds both
+`coding-agent-oci` and `multica-backend-oci`. Pull request jobs receive neither
+Attic write credentials nor Registry credentials: they prove that the OCI
+archives can be evaluated and built, but cannot publish anything.
+
+A direct push to a branch other than `main` or `prod` repeats those builds and
+then performs a real Forgejo Registry login and `skopeo copy`. It overwrites
+these shared disposable tags:
+
+- `ci-publisher/nix-fleet/coding-agent:ci-scratch`
+- `ci-publisher/nix-fleet/multica-backend:ci-scratch`
+
+The tags have no retention guarantee and must never be used by production or
+promotion automation. A shared tag avoids a cleanup scheduler; concurrent runs
+are last-writer-wins, while each successful job still proves its own upload
+completed. `main`, release tags, and manually authorized full builds continue
+to publish only through `build-and-push.yaml`.
+
+Branch push workflows execute branch-controlled code, so access to the scratch
+publisher credential is granted only to principals already trusted to push
+directly to this repository. The credential is still isolated: `ci-publisher`
+has package write access only in its own namespace and has no repository or
+`infrastructure` organization access. Pull request events never receive it.
+
 ## Trust and rollback
 
 n8n is part of the trusted release control plane: it already holds the ability
@@ -58,4 +84,3 @@ Rollback means selecting a reviewed, known-good `infra-private` revision,
 running the same release process, and advancing `prod` through a successful
 tag build. Do not repair a broken rollout by moving `prod` around the release
 workflow.
-

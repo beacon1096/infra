@@ -8,6 +8,7 @@ policy decisions, and merging do not share credentials.
 | `renovate` | `renovate@noreply.forgejo.beaco.works` | Discover dependency updates and open pull requests | Write collaborator on `infrastructure/infra` and `infrastructure/infra-private` |
 | `multica-gate` | `multica-gate.no-reply@beacoworks.xyz` | Read Renovate pull requests and write the `policy/merge-gate` commit status | Write collaborator on `infrastructure/infra` and `infrastructure/infra-private` |
 | `multica-merger` | `multica-merger.no-reply@beacoworks.xyz` | Merge a pull request after all protected-branch requirements pass | Write collaborator on `infrastructure/infra` and `infrastructure/infra-private` |
+| `ci-publisher` | `ci-publisher.no-reply@beacoworks.xyz` | Publish disposable OCI smoke-test images | No repository or organization membership; owns only packages below `ci-publisher/` |
 
 `multica-gate` cannot merge through the automation workflow. Its PAT has only
 the `write:repository` and `read:issue` scopes and is stored encrypted in the
@@ -20,6 +21,12 @@ to n8n and never receives a Forgejo PAT.
 `Forgejo Multica Merger Token` n8n credential. It is attached only to the fixed
 Forgejo merge request node; it is not exposed as an environment variable or to
 Renovate, Multica agents, or general review nodes.
+
+`ci-publisher` has only a `write:package` PAT, stored in Forgejo Actions as
+`CI_REGISTRY_USER` and `CI_REGISTRY_TOKEN`. It is deliberately not a member of
+the `infrastructure` organization, so branch CI can overwrite its disposable
+packages without gaining the ability to publish production images or modify a
+repository.
 
 ## Protected branches
 
