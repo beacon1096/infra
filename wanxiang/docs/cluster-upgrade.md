@@ -65,10 +65,10 @@ Before changing a node:
 - Cilium: 1.20.2, qualified on the existing Kubernetes 1.35.4 cluster before
   the control-plane upgrade.
 
-Kubernetes 1.36.4 is newer, but it is intentionally deferred to a separate
-patch update after the 1.36.3 minor transition is stable. This keeps the
-first 1.35 to 1.36 rollout aligned with the exact component set published and
-tested together by Talos.
+Kubernetes 1.36.4 was intentionally deferred to a separate patch update after
+the 1.36.3 minor transition was stable. This kept the first 1.35 to 1.36
+rollout aligned with the exact component set published and tested together by
+Talos; the later patch execution is recorded below.
 
 ### Stage 1: platform prerequisites
 
@@ -137,6 +137,29 @@ two intentionally detached volumes, with all 40 on engine 1.12.1; system backup
 `pre-k8s-1-36-20260918-retry1` remained Ready. Talos reported all three
 control-plane members. This closes the 1.36 execution stage, but one successful
 observation does not by itself authorize the 1.37 stage.
+
+### 2026-09-19 Kubernetes 1.36.4 patch record
+
+PR #87 updated only the rendered and template Kubernetes pins from 1.36.3 to
+1.36.4 while retaining Talos 1.13.10. Its final commit
+`6dd52c30237589616e18f6fea429d7a2998e6f4f` passed the pull-request and branch
+Secrets/Nix checks, including the branch OCI build and registry smoke push,
+before an exact-SHA approval and fast-forward merge.
+
+Before execution, `talosctl upgrade-k8s --dry-run` discovered all three
+control-plane nodes and reported Talos 1.13.10 compatible with Kubernetes
+1.36.4. The API, nodes, Flux objects, workloads, eight CloudNativePG clusters,
+Longhorn volumes, latest Longhorn system backup, Talos membership, and three
+etcd voting members were healthy. The real upgrade completed the API server,
+controller manager, scheduler, kube-proxy, kubelet, and manifest reconciliation
+without an error.
+
+The immediate post-upgrade observation found the API and all three kubelets at
+1.36.4, all nine control-plane static Pods ready on 1.36.4 images, no non-ready
+Pod, Flux object, Deployment, StatefulSet, or DaemonSet, and all eight
+CloudNativePG clusters at three ready instances. Longhorn remained at 38
+attached healthy and two intentionally detached volumes, and etcd retained
+three voting members. Keep an observation interval before authorizing Stage 3.
 
 ### Stage 3: Talos/Kubernetes 1.37
 
