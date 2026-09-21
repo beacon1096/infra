@@ -13,6 +13,9 @@ releases:
     namespace: network
     chart: oci://ghcr.io/home-operations/charts-mirror/external-dns
     version: 1.22.0
+    values:
+      # Chart 1.22.0 schema requires policy (matches the live HelmRelease values).
+      - policy: sync
 
   - name: envoy-gateway
     namespace: network
