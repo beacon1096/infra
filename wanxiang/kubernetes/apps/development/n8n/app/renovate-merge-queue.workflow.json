@@ -220,7 +220,7 @@
         ],
         "parameters": {
           "method": "POST",
-          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $('Decide Queue Action').item.json.repo + '/pulls/' + $('Decide Queue Action').item.json.pr_number + '/update' }}",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $('Decide Queue Action').item.json.repo + '/pulls/' + $('Decide Queue Action').item.json.pr_number + '/update?style=rebase' }}",
           "authentication": "genericCredentialType",
           "genericAuthType": "httpHeaderAuth",
           "options": {
