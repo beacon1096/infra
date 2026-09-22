@@ -57,3 +57,9 @@ overall goal.
 Do **not** execute these end-to-end yourself: the intermediate steps
 (spec drafts, scratch files, repeated greps) crowd out the global picture
 and reduce the quality of subsequent decisions.
+
+## Output Limits
+
+- Output per turn may be capped, and reasoning counts toward the cap. Do not
+  draft whole files or long code in reasoning; decide briefly, then write
+  with tools, splitting large files across several writes or edits.
