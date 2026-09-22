@@ -1,5 +1,26 @@
 # TODO
 
+## Documentation i18n sync check
+
+- [x] Adopt markdown naming convention: `{NAME}.md` is the canonical
+  source of truth, written in Chinese; translations are
+  `{NAME}_{VARIETY}.md` (first variety: `en`). `NAME` must not contain an
+  underscore.
+- [x] Implement `utils/check-docs-i18n.py` (+ `utils/test-check-docs-i18n.py`):
+  within a commit range, a family with more than one member must change all
+  members together; single-member families pass, so a family opts in when
+  its first translation lands. Waive per family with a
+  `doc-i18n-skip: <NAME>` line in the PR body.
+- [x] Add `.forgejo/workflows/check-docs-i18n.yaml` on push + pull_request,
+  following the `check-secrets.yaml` pattern.
+- [ ] Mark `Check Docs i18n` as a required status in the Forgejo branch
+  protection for `main`.
+- [ ] Migrate the repo entrypoint: `README.md` becomes the Chinese version
+  and `README_en.md` is added, both with a language-toggle header link;
+  fix the stale `scripts/deploy-nix-darwin.sh` reference in
+  `docs/deploy-nix-darwin.md` (script actually lives in `utils/`) while
+  migrating.
+
 ## Multica upstream
 
 - [ ] Prepare and submit the durable-webhook Issue deduplication fix upstream.
