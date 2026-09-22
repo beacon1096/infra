@@ -31,6 +31,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    beacon-nur-packages = {
+      url = "github:beacon1096/nur-packages";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     nix-openclaw = {
       url = "github:openclaw/nix-openclaw";
       inputs.nixpkgs.follows = "nixpkgs";

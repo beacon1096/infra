@@ -1,4 +1,4 @@
-{ pkgs, lib, ... }:
+{ inputs, pkgs, lib, ... }:
 
 {
   imports = [
@@ -11,6 +11,21 @@
 
   # The Hybrid Tab can leave the i915 eDP link stuck in PSR2 after returning from Android.
   boot.kernelParams = [ "i915.enable_psr=0" ];
+  beacoworks.remoteBuilder.sshKey = lib.mkDefault "/etc/ssh/ssh_host_ed25519_key";
+
+  boot.kernelPatches = [
+    {
+      name = "thinkbook-plus-g5-hybrid-txnw2781";
+      patch = pkgs.writeText "thinkbook-plus-g5-hybrid-txnw2781.patch" ''
+        diff --git a/sound/hda/codecs/realtek/alc269.c b/sound/hda/codecs/realtek/alc269.c
+        --- a/sound/hda/codecs/realtek/alc269.c
+        +++ b/sound/hda/codecs/realtek/alc269.c
+        @@ -7484 +7484 @@ static const struct hda_quirk alc269_fixup_tbl[] = {
+        -	SND_PCI_QUIRK(0x17aa, 0x38fd, "ThinkBook plus Gen5 Hybrid", ALC287_FIXUP_TAS2781_I2C),
+        +	SND_PCI_QUIRK(0x17aa, 0x38fd, "ThinkBook plus Gen5 Hybrid", ALC287_FIXUP_TXNW2781_I2C),
+      '';
+    }
+  ];
 
   hardware.graphics = {
     enable = true;
@@ -18,11 +33,18 @@
   };
   environment.sessionVariables.LIBVA_DRIVER_NAME = "iHD";
 
+  programs.steam.enable = true;
+
   services.fprintd.enable = true;
   services.thermald.enable = true;
   services.power-profiles-daemon.enable = true;
 
-  environment.systemPackages = with pkgs; [ wvkbd ];
+  environment.systemPackages = [
+    (inputs.beacon-nur-packages.packages.${pkgs.system}.bakaxl-bunny.override {
+      wrapGAppsHook = pkgs.wrapGAppsHook3;
+    })
+    pkgs.wvkbd
+  ];
 
   services.logind.settings.Login = {
     HandleLidSwitch = "suspend";
@@ -35,7 +57,7 @@
   ];
 
   services.udev.extraRules = ''
-    ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="17ef", ATTR{idProduct}=="7ebf", TAG+="systemd", ENV{SYSTEMD_WANTS}+="hybrid-display-resume.service"
+    ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="04f3", ATTR{idProduct}=="42ea", TAG+="systemd", ENV{SYSTEMD_WANTS}+="hybrid-display-resume.service"
   '';
 
   systemd.services.hybrid-display-resume = {

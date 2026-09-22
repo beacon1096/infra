@@ -25,6 +25,10 @@ in
 
   networking.hostName = "microserver-gen10plus";
 
+  users.users.beacon.openssh.authorizedKeys.keys = [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILq9pqxaMiRkshacs8JO2wxH28QfoxbgXoosDgvnyLVE root@thinkbook-plus-hybrid"
+  ];
+
   users.users.beacon.linger = true;
 
   nixpkgs.overlays = [ inputs.nix-cachyos-kernel.overlays.pinned ];

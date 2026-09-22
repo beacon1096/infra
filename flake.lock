@@ -1,5 +1,25 @@
 {
   "nodes": {
+    "beacon-nur-packages": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1787329454,
+        "narHash": "sha256-icA6ZU2y4jwXpGzXWtIuGPy4KrWGbaOhdI6zbsO1iGU=",
+        "owner": "beacon1096",
+        "repo": "nur-packages",
+        "rev": "08a9c3802136a862182e125d7278801b023a168d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "beacon1096",
+        "repo": "nur-packages",
+        "type": "github"
+      }
+    },
     "bun2nix": {
       "inputs": {
         "flake-parts": [
@@ -719,6 +739,7 @@
     },
     "root": {
       "inputs": {
+        "beacon-nur-packages": "beacon-nur-packages",
         "codex-desktop-linux": "codex-desktop-linux",
         "comin": "comin",
         "disko": "disko",
