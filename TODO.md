@@ -1,110 +1,93 @@
+[中文](TODO.md) | [English](TODO_en.md)
+
 # TODO
 
-## Documentation i18n sync check
+## 文档 i18n 同步检查
 
-- [x] Adopt markdown naming convention: `{NAME}.md` is the canonical
-  source of truth, written in Chinese; translations are
-  `{NAME}_{VARIETY}.md` (first variety: `en`). `NAME` must not contain an
-  underscore.
-- [x] Implement `utils/check-docs-i18n.py` (+ `utils/test-check-docs-i18n.py`):
-  within a commit range, a family with more than one member must change all
-  members together; single-member families pass, so a family opts in when
-  its first translation lands. Waive per family with a
-  `doc-i18n-skip: <NAME>` line in the PR body.
-- [x] Add `.forgejo/workflows/check-docs-i18n.yaml` on push + pull_request,
-  following the `check-secrets.yaml` pattern.
-- [ ] Mark `Check Docs i18n` as a required status in the Forgejo branch
-  protection for `main`.
-- [ ] Migrate the repo entrypoint: `README.md` becomes the Chinese version
-  and `README_en.md` is added, both with a language-toggle header link;
-  fix the stale `scripts/deploy-nix-darwin.sh` reference in
-  `docs/deploy-nix-darwin.md` (script actually lives in `utils/`) while
-  migrating.
+- [x] 采纳 markdown 命名约定：`{NAME}.md` 为权威来源，使用中文书写；
+  翻译为 `{NAME}_{VARIETY}.md`（首个语言变体：`en`）。`NAME` 不得包含下划线。
+- [x] 实现 `utils/check-docs-i18n.py`（+ `utils/test-check-docs-i18n.py`）：
+  在提交范围内，含多个成员的文档族必须整体变更；单成员族通过，即文档族在
+  首个翻译落地时加入检查。可在 PR 正文中以 `doc-i18n-skip: <NAME>` 行按族豁免。
+- [x] 按 `check-secrets.yaml` 的模式，在 push + pull_request 上添加
+  `.forgejo/workflows/check-docs-i18n.yaml`。
+- [ ] 在 `main` 的 Forgejo 分支保护中将 `Check Docs i18n` 标记为必需状态。
+- [x] 迁移仓库入口：`README.md` 成为中文版，新增 `README_en.md`，
+  两者均带语言切换头部链接。
+- [x] 迁移 `AGENTS.md` 与 `TODO.md` 本身：中文为权威来源，新增
+  `AGENTS_en.md` / `TODO_en.md` 翻译，均带语言切换头部链接。
+- [ ] 迁移 `docs/deploy-nix-darwin.md` 时，修复其中过时的
+  `scripts/deploy-nix-darwin.sh` 引用（脚本实际位于 `utils/`）。
 
-## Multica upstream
+## Multica 上游
 
-- [ ] Prepare and submit the durable-webhook Issue deduplication fix upstream.
-  - Rebase [`multica-webhook-issue-dedup.patch`](docs/ci-cd/patches/multica-webhook-issue-dedup.patch)
-    onto the current Multica default branch.
-  - Re-run the focused PostgreSQL-backed regression tests.
-  - Write an upstream-facing issue or pull request description without Beacon
-    deployment details or credentials.
-  - Follow the upstream review and replace any temporary downstream build with
-    an official fixed release.
+- [ ] 准备并向上游提交 durable-webhook 的 Issue 去重修复。
+  - 将 [`multica-webhook-issue-dedup.patch`](docs/ci-cd/patches/multica-webhook-issue-dedup.patch)
+    变基到 Multica 当前默认分支。
+  - 重新运行聚焦的 PostgreSQL 后端回归测试。
+  - 编写面向上游的 issue 或 PR 描述，不带 Beacon 部署细节或凭据。
+  - 跟进上游评审，并用官方修复版本替换临时的下游构建。
 
-- [x] Build and validate a temporary patched Multica backend image for the
-  durable-webhook deduplication fix.
-  - Production smoke test on 2026-09-16 confirmed two distinct deliveries
-    create two Issues while a retry of one delivery remains idempotent.
-  - The reproducible `multica-backend-oci` flake output and Forgejo publish job
-    carry `0.4.24-beacon.1` until an official fixed release replaces it.
+- [x] 为 durable-webhook 去重修复构建并验证临时的打过补丁的 Multica 后端镜像。
+  - 2026-09-16 的生产冒烟测试确认：两条不同投递创建两个 Issue，而同一条
+    投递的重试保持幂等。
+  - 可复现的 `multica-backend-oci` flake 输出与 Forgejo 发布 job 使用
+    `0.4.24-beacon.1`，直到官方修复版本替换它。
 
-## Automation ingress
+## Automation 入口
 
-- [ ] Move Forgejo, n8n, and Multica machine-to-machine webhooks onto
-  self-hosted ingress or private service discovery.
-  - Keep the public Cloudflare path as a compatibility layer while migration
-    is incomplete.
-  - Preserve scoped, single-use callback capabilities and fixed destination
-    allowlists; private routing must not replace application-layer
-    authorization.
-  - Remove the callback-specific User-Agent workaround only after agents no
-    longer traverse Cloudflare and the private path has equivalent
-    observability and availability.
+- [ ] 将 Forgejo、n8n 与 Multica 的机器间 webhook 迁移到自托管入口或
+  私有服务发现。
+  - 迁移完成前，保留公开的 Cloudflare 路径作为兼容层。
+  - 保留范围受限、一次性的回调权限与固定的目标允许列表；私有路由不得
+    替代应用层授权。
+  - 只有在 agent 不再经过 Cloudflare、且私有路径具备同等可观测性与
+    可用性之后，才移除回调专用的 User-Agent 变通措施。
 
-## Renovate review continuation
+## Renovate 评审续期
 
-- [ ] Add a first-class continuation path after a Renovate review returns
-  `human_required`.
-  - The signed review capability is single-use and is consumed by the
-    `human_required` callback, so a later human approval currently cannot
-    submit `approve` for the same PR head.
-  - After an allowlisted human approves the exact reviewed SHA, mint a new
-    short-lived capability bound to the same repository, PR, head SHA, review
-    evidence, and Multica Issue instead of replaying the consumed capability.
-  - Re-read Forgejo and the human approval at continuation time, reject stale
-    or changed heads, and retain the existing merge-queue and branch-protection
-    checks.
-  - Add regression coverage for approve, reject, expiry, replay, concurrent
-    head changes, and duplicate human-approval events.
-  - Until implemented, refreshing the PR with a signed empty commit is an
-    audited fail-closed workaround only when its Git tree is proven identical;
-    it is not the intended steady-state workflow.
+- [ ] 为 Renovate 评审返回 `human_required` 后添加一等续期路径。
+  - 签名评审权限是一次性的，且已被 `human_required` 回调消费，因此之后
+    的人工批准目前无法对同一 PR head 提交 `approve`。
+  - 在允许列表内的人工批准了被评审的确切 SHA 后，签发新的短期权限，
+    绑定同一仓库、PR、head SHA、评审证据与 Multica Issue，而不是
+    重放已消费的权限。
+  - 在续期时重新读取 Forgejo 与人工批准，拒绝过期或已变更的 head，并保留
+    现有的合并队列与分支保护检查。
+  - 为 approve、reject、过期、重放、并发 head 变更与重复人工批准事件
+    添加回归覆盖。
+  - 实现之前，以签名空提交刷新 PR 仅是被审计的 fail-closed 变通措施，
+    且仅在其 Git tree 被证明相同时使用；它不是预期的稳态工作流。
 
-## Agent validation tools
+## Agent 验证工具
 
-- [ ] Prototype bounded n8n MCP tools for agent-requested validation.
-  - Reuse existing Forgejo validation implementations; do not create a second
-    set of test commands with different semantics.
-  - Start with exact-SHA Nix evaluation and Helm rendering tools.
-  - Allowlist repositories and targets, keep credentials inside n8n/runner,
-    and return structured results plus immutable evidence URLs.
-  - Test authorization, malicious inputs, replay, timeout, cancellation,
-    unavailable capacity, and result-to-SHA binding.
-  - Keep MCP validation separate from approval and merge authority.
+- [ ] 为 agent 请求的验证原型化有界的 n8n MCP 工具。
+  - 复用现有的 Forgejo 验证实现；不要创建语义不同的第二套测试命令。
+  - 从精确 SHA 的 Nix 求值与 Helm 渲染工具开始。
+  - 允许列表限制仓库与目标，凭据保留在 n8n/runner 内，返回结构化结果与
+    不可变的证据 URL。
+  - 测试授权、恶意输入、重放、超时、取消、容量不可用以及结果到 SHA 的绑定。
+  - 将 MCP 验证与审批及合并权限分开。
 
-## GitOps validation migration
+## GitOps 验证迁移
 
-- [ ] Replace the sunsetted `flux-local` workflow with `flate` validation.
-  - Preserve the current test and rendered-diff coverage before changing the
-    required status name.
-  - Pin the executable or container by immutable digest and test Forgejo
-    Actions compatibility.
-  - Evaluate `konflate` separately as a read-only Forgejo PR review service;
-    do not make a new service a prerequisite for the initial CLI migration.
-  - Keep `flux-local` 8.4.0 only as a short-term compatibility bridge.
+- [ ] 用 `flate` 验证替换已停用的 `flux-local` workflow。
+  - 在更改必需状态名称之前，保留当前的测试与渲染 diff 覆盖。
+  - 以不可变摘要固定可执行文件或容器，并测试 Forgejo Actions 兼容性。
+  - 单独评估 `konflate` 作为只读的 Forgejo PR 评审服务；不要使新服务
+    成为初始 CLI 迁移的前置条件。
+  - `flux-local` 8.4.0 仅保留为短期兼容桥。
 
-## Wanxiang cluster upgrade
+## Wanxiang 集群升级
 
-- [x] Complete the Talos 1.13.10 / Kubernetes 1.36 stage described in
-  [`wanxiang/docs/cluster-upgrade.md`](wanxiang/docs/cluster-upgrade.md),
-  including the Cilium, CloudNativePG, and Longhorn prerequisites, the 1.36.3
-  minor transition, and the separate 1.36.4 patch update.
-- [ ] After a stable 1.36 observation period, prepare the Talos/Kubernetes 1.37
-  stage as a separate reviewed rollout.
-  - Keep Renovate PR #36 (kubectl 1.37) and PR #37 (talosctl 1.14) open until
-    the Stage 3 client/control-plane ordering is decided.
-  - Keep the completed Kubernetes 1.36.4 patch separate from the 1.37 minor
-    transition and retain its independent rollout evidence.
-  - Re-evaluate the open Flux, Cilium, CoreDNS, Envoy Gateway, and related
-    chart PRs against each target Kubernetes minor before approval.
+- [x] 完成 [`wanxiang/docs/cluster-upgrade.md`](wanxiang/docs/cluster-upgrade.md)
+  中描述的 Talos 1.13.10 / Kubernetes 1.36 阶段，包括 Cilium、CloudNativePG
+  与 Longhorn 前置条件、1.36.3 小版本过渡，以及独立的 1.36.4 补丁更新。
+- [ ] 在 1.36 稳定观察期后，将 Talos/Kubernetes 1.37 阶段作为一次独立的
+  受评审滚动进行准备。
+  - 在 Stage 3 客户端/控制面顺序决定之前，保持 Renovate PR #36（kubectl 1.37）
+    与 PR #37（talosctl 1.14）开放。
+  - 将已完成的 Kubernetes 1.36.4 补丁与 1.37 小版本过渡分开，并保留其
+    独立的滚动证据。
+  - 在批准前，针对每个目标 Kubernetes 小版本，重新评估开放的 Flux、Cilium、
+    CoreDNS、Envoy Gateway 及相关 chart PR。
