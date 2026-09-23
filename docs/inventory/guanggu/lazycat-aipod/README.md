@@ -15,4 +15,4 @@
 | 无线网络 | Realtek RTL8852CE 802.11ax 控制器 |
 | 当前系统 | NixOS 26.05，hostname `thor`，Linux `6.8.12`，aarch64 |
 
-2026-09-23 使用 `dmidecode` 采集 SMBIOS：type 16 报告内存阵列上限 128 GiB 和 `Single-bit ECC`，但没有 type 17 内存设备记录；因此 LPDDR5X 类型来自 NVIDIA T5000 官方规格，而非 SMBIOS 核实，SMBIOS 的 ECC 字段也不代表已验证运行时纠错。NVIDIA 的 [Jetson Thor 规格](https://www.nvidia.com/en-au/autonomous-machines/embedded-systems/jetson-thor/)列明 T5000 为 128 GB LPDDR5X、开发套件有 QSFP28（4×25GbE）；设备树、PCI、CPU、内存、NVMe 和网卡数据由本机采集。设备序列号及 SSH 访问信息保留在 private 仓 `infra-private/docs/inventory/guanggu/lazycat-aipod.md`。
+2026-09-23 使用 `dmidecode` 采集 SMBIOS：type 16 报告内存阵列上限 128 GiB 和 `Single-bit ECC`，但没有 type 17 内存设备记录；因此 LPDDR5X 类型来自 NVIDIA T5000 官方规格，而非 SMBIOS 核实，SMBIOS 的 ECC 字段也不代表已验证运行时纠错。NVIDIA 的 [Jetson Thor 规格](https://www.nvidia.com/en-au/autonomous-machines/embedded-systems/jetson-thor/)列明 T5000 为 128 GB LPDDR5X、开发套件有 QSFP28（4×25GbE）；设备树、PCI、CPU、内存、NVMe 和网卡数据由本机采集。设备序列号及 SSH 访问信息保留在 private 仓 `infra-private/docs/inventory/guanggu/lazycat-aipod/README.md`。

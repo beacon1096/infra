@@ -14,6 +14,7 @@ in
 
   networking.hostName = "thor";
   networking.networkmanager.enable = true;
+  networking.networkmanager.ethernet.macAddress = "permanent";
   networking.useDHCP = lib.mkDefault true;
   # Ethernet and Wi-Fi on the same subnet can receive replies over different interfaces.
   networking.firewall.checkReversePath = "loose";
