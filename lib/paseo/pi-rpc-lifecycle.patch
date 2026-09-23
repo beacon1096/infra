@@ -1,0 +1,134 @@
+--- a/packages/server/src/server/agent/agent-manager.ts
++++ b/packages/server/src/server/agent/agent-manager.ts
+@@ -76,6 +76,11 @@ import {
+ 
+ const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
+ const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
++// Pi acks `abort` only after the run settles, which can legitimately take a
++// few seconds (in-flight tool kill, compaction, provider round-trip). Give
++// the ack a wider window than the post-ack settle wait so a slow-but-healthy
++// interrupt is not reported as a refused cancellation.
++const INTERRUPT_SESSION_ACK_TIMEOUT_MS = 15_000;
+ const STORED_AGENT_CAPABILITIES: AgentCapabilityFlags = {
+   supportsStreaming: false,
+   supportsSessionPersistence: true,
+@@ -659,7 +664,7 @@ export class AgentManager {
+       reloadSessionCloseMs:
+         options.rescueTimeouts?.reloadSessionCloseMs ?? RELOAD_SESSION_CLOSE_TIMEOUT_MS,
+       interruptSessionMs:
+-        options.rescueTimeouts?.interruptSessionMs ?? INTERRUPT_SESSION_TIMEOUT_MS,
++        options.rescueTimeouts?.interruptSessionMs ?? INTERRUPT_SESSION_ACK_TIMEOUT_MS,
+     };
+     this.agentStreamCoalescer = new AgentStreamCoalescer({
+       windowMs: options.agentStreamCoalesceWindowMs ?? AGENT_STREAM_COALESCE_DEFAULT_WINDOW_MS,
+--- a/packages/server/src/server/agent/providers/pi/agent.ts
++++ b/packages/server/src/server/agent/providers/pi/agent.ts
+@@ -1029,6 +1029,7 @@ function isPiAgentSessionEvent(event: PiRuntimeEvent): event is PiAgentSessionEv
+     case "compaction_start":
+     case "compaction_end":
+     case "agent_end":
++    case "agent_settled":
+       return true;
+     default:
+       return false;
+@@ -1227,6 +1228,7 @@ export class PiRpcAgentSession implements AgentSession {
+   private activeAskUserDialog: ActiveAskUserDialog | null = null;
+   private pendingCombinedAskUserResponse: PendingCombinedAskUserResponse | null = null;
+   private activeTurnId: string | null = null;
++  private pendingEndMessages: PiAgentMessage[] = [];
+   private activeClientMessageId: string | null = null;
+   private activeAssistantMessageId: string | null = null;
+   private activeTurnStarted = false;
+@@ -1300,6 +1302,7 @@ export class PiRpcAgentSession implements AgentSession {
+     const payload = convertPromptInput(prompt, { model: this.state.model });
+     const turnId = randomUUID();
+     this.activeTurnId = turnId;
++    this.pendingEndMessages = [];
+     this.lastInterruptedTurnId = null;
+     this.activeClientMessageId = options?.clientMessageId ?? null;
+     this.activeAssistantMessageId = null;
+@@ -2059,6 +2062,9 @@ export class PiRpcAgentSession implements AgentSession {
+   }
+ 
+   private handleSessionEvent(event: PiAgentSessionEvent): void {
++    if (event.type === "agent_start" && !this.activeTurnId) {
++      this.activeTurnId = randomUUID();
++    }
+     const turnId = this.currentTurnIdForEvent();
+ 
+     switch (event.type) {
+@@ -2131,8 +2137,14 @@ export class PiRpcAgentSession implements AgentSession {
+         });
+         return;
+       case "agent_end":
+-        this.completeTurn(turnId, event.messages ?? []);
++        this.pendingEndMessages = event.messages ?? [];
++        return;
++      case "agent_settled": {
++        const messages = this.pendingEndMessages;
++        this.pendingEndMessages = [];
++        this.completeTurn(turnId, messages);
+         return;
++      }
+       default:
+         return;
+     }
+@@ -2246,7 +2258,9 @@ export class PiRpcAgentSession implements AgentSession {
+           item: { type: "assistant_message", text },
+         });
+       }
+-      this.completeTurn(turnId, []);
++      if (!this.activeTurnStarted) {
++        this.completeTurn(turnId, []);
++      }
+       return;
+     }
+   }
+--- a/packages/server/src/server/agent/providers/pi/cli-runtime.ts
++++ b/packages/server/src/server/agent/providers/pi/cli-runtime.ts
+@@ -111,6 +111,7 @@ class PiCliRuntimeSession implements PiRuntimeSession {
+     const { id: requestId, promise } = this.process.startRequest({
+       type: "prompt",
+       message,
++      streamingBehavior: "followUp",
+       ...(images?.length ? { images } : {}),
+     });
+     const data = await promise;
+@@ -141,6 +142,16 @@ class PiCliRuntimeSession implements PiRuntimeSession {
+   }
+ 
+   async abort(): Promise<void> {
++    // Pi only acks `abort` once the whole run has settled, and Agent.abort()
++    // leaves the steering/follow-up queues untouched. A queued exec-completion
++    // wake (deliverAs "followUp" + triggerTurn) therefore opens a fresh LLM
++    // turn right after the abort, pushing the ack past the interrupt window in
++    // AgentManager. Drain the queues first so the aborted run settles at once.
++    try {
++      await this.request({ type: "clear_queue" });
++    } catch {
++      // Pi builds without `clear_queue`: fall through to a plain abort.
++    }
+     await this.request({ type: "abort" });
+   }
+ 
+--- a/packages/server/src/server/agent/providers/pi/rpc-types.ts
++++ b/packages/server/src/server/agent/providers/pi/rpc-types.ts
+@@ -127,7 +127,7 @@ export interface PiRpcSlashCommand {
+ }
+ 
+ export type PiRpcCommand =
+-  | { id?: string; type: "prompt"; message: string; images?: PiImageContent[] }
++  | { id?: string; type: "prompt"; message: string; images?: PiImageContent[]; streamingBehavior?: "steer" | "followUp" }
+   | { id?: string; type: "compact"; customInstructions?: string }
+   | { id?: string; type: "set_auto_compaction"; enabled: boolean }
+   | { id?: string; type: "abort" }
+@@ -187,7 +187,8 @@ export type PiAgentSessionEvent =
+     }
+   | { type: "compaction_start"; reason?: "manual" | "threshold" | "overflow" | string }
+   | { type: "compaction_end"; reason?: string; errorMessage?: string; aborted?: boolean }
+-  | { type: "agent_end"; messages?: PiAgentMessage[] };
++  | { type: "agent_end"; messages?: PiAgentMessage[] }
++  | { type: "agent_settled" };
+ 
+ export type PiRuntimeEvent =
+   | PiAgentSessionEvent
