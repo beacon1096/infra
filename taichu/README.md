@@ -1,33 +1,26 @@
-# 太初 (taichu)
+# 太初（taichu）
 
-太初 is the new name for the original `swarm-01` environment, formerly called Ember. This directory is a first, read-only inventory of the Harvester cluster, its dedicated RB5009 network, and the workloads observed during onboarding.
+太初是原 `swarm-01` 环境（更早称 Ember）的新名称。本目录保存 Harvester/RKE2 集群的公开配置与结构化清单；[设备库存](../docs/inventory/taichu/README.md)记录逐台硬件及最新核验结果，[双集群设计思路](../docs/inventory/cluster-design.md)说明它与万象的职责边界。访问方式与带外管理见私有仓对应目录。
 
-## Scope and observation
+## 历史采集边界
 
-- Observation date: 2026-08-13.
-- The cluster was queried through the existing SSH access. The Harvester kubeconfig was not copied out of the node; queries used `sudo` on `mc5-01` with `/etc/rancher/rke2/rke2.yaml`.
-- The Harvester/RKE2 kubeconfig location is documented in the repository root inventory; 太初 has no Talos client config.
-- RouterOS was queried read-only. No raw RouterOS export, kubeconfig, key, token, or other credential belongs in this repository.
-- This is documentation and inventory only. No Terraform, RouterOS, Harvester, Kubernetes, or Flux change was made, and no backup or restore was run.
-- The structured facts are in [`inventory.yaml`](./inventory.yaml). Transient health and lease observations are intentionally marked as observations and need revalidation before an automation change.
+`inventory.yaml` 最初来自 2026-08-13 的只读调查。调查通过既有 SSH 入口查询 Harvester，没有把 kubeconfig 复制出节点；RouterOS 也仅作只读查询。原始导出、密钥、令牌和其他凭据不属于本仓。历史健康及租约记录不能代替当前集群状态，更不能作为删除配置的依据。
 
-## Environment
+## 环境
 
-The three-node Harvester installation is on the dedicated network behind `172.16.100.254` (the RB5009). The router's upstream is DHCP on `inbound`, so the dedicated network can be uplinked to another home network or directly to an optical modem as described by the owner.
+三台 Harvester 节点 `mc5-01`、`mc4-01`、`mc4-02` 位于 RB5009 后的 `172.16.100.0/24` 管理网。路由器上联 `inbound` 使用 DHCP；太初可接入另一处局域网或光猫。平台版本、其他网段和当前设备硬件见清单，避免在多处复制。
 
-The Harvester nodes are `mc5-01` (`172.16.100.201`), `mc4-01` (`172.16.100.202`), and `mc4-02` (`172.16.100.203`). All three were `Ready` control-plane/etcd/master nodes at observation time. The platform versions and network ranges are recorded in `inventory.yaml` rather than duplicated in multiple documents.
+旧 `swarm-01` 的 `172.16.107.0/24` / VLAN 1116 仍可在路由配置中看到。2026-08-13 调查时，`.201`、`.202`、`.203` 租约处于等待状态，约 14 周未活动且没有对应 ARP 项；这只说明当时旧端点未见在线，不是删除记录，也不证明今天仍未使用。
 
-The old `swarm-01` VLAN remains represented in the router configuration as `172.16.107.0/24` / VLAN 1116. Its `.201`, `.202`, and `.203` DHCP leases were waiting and had last been seen roughly 14 weeks earlier; there were no corresponding ARP entries during collection. This supports the conclusion that the old swarm endpoints were inactive at that time, but it is not a deletion record.
+## 当时的工作负载与健康
 
-## Workloads and health
+2026-08-13 观察到运行中的用户虚拟机为 `identity/service-keycloak`，VMI 地址 `172.16.101.6`，位于 `mc5-01`；`development/service-gitlab` 和 `routine/service-nextcloud-aio` 当时停止。Longhorn 仍有这些应用及 Grafana、Alertmanager、Prometheus 的卷；Nextcloud 卷当时已分离且状态未知。
 
-At observation time, `identity/service-keycloak` was the only running user VM, with VMI address `172.16.101.6` on `mc5-01`. `development/service-gitlab` and `routine/service-nextcloud-aio` were stopped. Longhorn still contained volumes for all three application areas plus Grafana, Alertmanager, and Prometheus; the Nextcloud volume was detached and unknown.
+当时 `kube-system/ovn-central` 有 3 个 CrashLoopBackOff Pod，`0/3 Ready`；初次查看的 `kube-ovn-cni` 为 `2/3 Ready`。这些是历史观察，后续调查与最新运行状态见私有库存。此轮采集没有修改 Terraform、RouterOS、Harvester、Kubernetes 或 Flux，也没有执行备份恢复。
 
-`kube-system/ovn-central` had three `CrashLoopBackOff` pods and was `0/3 Ready`, with probes reporting that `ovn-northd` was not running. The initial DaemonSet view also showed `kube-ovn-cni` at `2/3 Ready`. Longhorn's default backup target was unavailable and no Backup objects were found. These are follow-up items, not changes made by this inventory.
+## 后续采用前的核对
 
-## Follow-up before adoption
-
-1. Recheck the OVN and Longhorn health observations and establish a tested backup target before any workload or storage change.
-2. Confirm the intended RB5009 trust boundary and review the firewall/service exposure and UPnP/NAT-PMP settings recorded in the inventory.
-3. Decide the desired Terraform/GitOps ownership boundary, then add only the declarative configuration that is safe to manage from this repository.
-4. Capture an approved recovery and out-of-band access path before changes that could cut off the agent or the cluster.
+1. 重新核验 OVN、Longhorn、备份目标与恢复能力。
+2. 确认 RB5009 的信任边界，审查私有网络记录。
+3. 明确 Terraform/GitOps 的资源所有权，只纳管安全且可验证的配置。
+4. 在可能切断集群访问的变更前，确认带外入口与恢复顺序。

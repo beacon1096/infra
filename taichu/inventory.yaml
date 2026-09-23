@@ -13,27 +13,6 @@ management_status:
   gitops: not_yet_defined
   changes_made_during_collection: false
 
-access:
-  ssh:
-    harvester_nodes:
-      - rancher@172.16.100.201
-      - rancher@172.16.100.202
-      - rancher@172.16.100.203
-    router: admin@172.16.100.254
-    adjacent_host: beacon@172.16.100.250
-  harvester_kubeconfig:
-    kind: RKE2 kubeconfig
-    host: mc5-01
-    path_on_node: /etc/rancher/rke2/rke2.yaml
-    owner: root:root
-    file_mode: '0600'
-    access_method: read_directly_with_sudo_on_mc5-01
-    copied_to_repository: false
-  talconfig: not_applicable_for_this_cluster
-  sensitive_material_policy:
-    - Do not commit kubeconfig contents, private keys, tokens, passwords, or raw RouterOS exports.
-    - Do not treat this inventory as a source of credentials.
-
 harvester:
   distribution: Harvester
   version: v1.7.1
@@ -145,10 +124,6 @@ harvester:
       - name: nextcloud
         size_gib: 64
         observed_state: detached_unknown
-    backup:
-      default_target_available: false
-      backup_objects_found: false
-      restore_tested: false
   workloads:
     - namespace: identity
       name: service-keycloak
@@ -265,13 +240,6 @@ router:
         state: waiting
         last_seen: approximately 14 weeks before observation
         arp_seen_at_observation: false
-  review_items:
-    - An unconditional input-chain accept rule appeared before the default drop rules.
-    - FTP, Telnet, HTTP, Winbox, API, and API-SSL service entries did not show address restrictions in the captured listing.
-    - UPnP and NAT-PMP were enabled.
-    - A disabled Tailscale auth-key environment variable was present; its value was not recorded. Rotate it if it was ever used.
-    - IPv6 configuration referenced the missing address pool frontline_cmcc during export.
-
 adjacent_hosts:
   - name: m920x
     address: 172.16.100.250
@@ -281,9 +249,3 @@ adjacent_hosts:
     disk: 1 TB KIOXIA NVMe
     storage_address: 172.16.105.249
     gateway: 172.16.105.254
-
-recovery:
-  backup_recovery_verified: false
-  out_of_band_access_documented: false
-  restore_order: not yet established
-  note: Confirm backups and an independent recovery path before high-impact changes.
