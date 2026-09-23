@@ -5,3 +5,4 @@
 - [截断与中断回合的重放](turn-replay.md)
 - [Agent 记忆](memory.md)
 - [Pi harness 调查与试用记录](research.md)
+- [Codex Spark 的 Git 指令排查](notes/codex-spark-git-instructions.md)

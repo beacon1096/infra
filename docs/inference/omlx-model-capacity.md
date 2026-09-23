@@ -1,6 +1,6 @@
 # oMLX 自部署模型容量
 
-> **已退役（2026-09）：** M4 上的 oMLX 模型（Qwen3.8-27B-4bit，此前的 Gemma 4 系列）已全部下线，`beacon-mac-mini-m4` 系统配置已移除 oMLX 服务与 `iogpuWiredLimit`。食堂食品卫生事件筛查流程（含 `image-verifier` agent）整体废弃，算力分配见 infra-private `docs/ai-compute-inventory.md`。下文容量规划与复核 Agent 细节仅作历史参考；“Nix 管理”一节对后续 oMLX 模型部署仍然适用。磁盘上的权重（`~/.exo/models`）需手动清理。
+> **已退役（2026-09）：** M4 上的 oMLX 模型（Qwen3.8-27B-4bit，此前的 Gemma 4 系列）已全部下线，`beacon-mac-mini-m4` 系统配置已移除 oMLX 服务与 `iogpuWiredLimit`。食品卫生事件筛查流程（含 `image-verifier` agent）整体废弃，算力分配见 [AI 算力设备盘点](ai-compute-inventory.md)。下文容量规划与复核 Agent 细节仅作历史参考；“Nix 管理”一节对后续 oMLX 模型部署仍然适用。磁盘上的权重（`~/.exo/models`）需手动清理。
 
 ## Nix 管理
 
@@ -16,7 +16,7 @@ sudo darwin-rebuild switch --flake .#beacon-mac-mini-m4
 
 下载会验证固定 revision 的文件大小及内容哈希，完成后才发布模型目录。服务启动前只合并受管的每模型参数，保留其他模型和认证配置；不会自动下载或删除权重。`settings.json` 与 `model_settings.json` 保持可写，不链接到只读 store。
 
-## 当前容量规划
+## 历史容量规划
 
 下表记录 Mac mini M4 上的模型容量规划。AGX Thor 的替代部署待确认，暂不列入可用模型。常用请求是日常建议范围；oMLX 硬上限用于拒绝超过本机容量的请求，不代表该长度适合日常使用。
 

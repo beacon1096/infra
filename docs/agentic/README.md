@@ -29,6 +29,10 @@ Multica Agent 按任务情况转交、提交审查、合入后完成，或在暂
 
 Pi 的职责、exec 交互和记忆问题见 [harness/](harness/README.md)。
 
+Multica、Coder 与 Paseo 的任务派发和运行位置见 [dispatcher/](dispatcher/readme.md)。
+
+模型接入、本地推理现状与算力规划见 [models/](models/README.md)。
+
 Forgejo CI/CD、n8n 与 Multica 的现有工作流见 [infra-ops/](workflow/infra-ops/README.md)。
 
 ## 层级

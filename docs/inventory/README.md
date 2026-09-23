@@ -5,6 +5,8 @@
 
 [太初与万象：双集群设计思路](cluster-design.md)
 
+不按站点固定部署的设备见 [移动设备](mobile/README.md)。
+
 | 站点 | 网段 | 说明 | 私有运维记录 |
 | --- | --- | --- | --- |
 | [武汉金银潭](jinyintan/) | 172.16.10.0/24 | 独立网络；TrueNAS 备份节点 | 私有仓 `infra-private/docs/inventory/jinyintan/` |
