@@ -118,7 +118,14 @@ in
   imports = [
     inputs.codex-desktop-linux.homeManagerModules.default
     ./mcp.nix
+    ./pi.nix
   ];
+
+  beacon.pi = {
+    enable = true;
+    models = beacoworksModels;
+    searchBaseURL = "https://search.beaco.works";
+  };
 
   programs.claude-code = {
     enable = true;
