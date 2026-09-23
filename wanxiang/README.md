@@ -1,32 +1,15 @@
-# 万象 (wanxiang)
+# 万象（wanxiang）
 
-This directory records the second independent environment collected during onboarding. 万象 is the new name for the cluster formerly called `talos-ii`. The owner refers to its gateway as `UDR-Pro`; the live device identifies itself as a `UniFi Dream Machine Pro (UDM-Pro)`. Keep that hardware naming discrepancy visible until the physical model is confirmed.
+万象是原 `talos-ii` 集群的新名称。本目录保存 Talos、Kubernetes 和 Flux 的公开声明配置；[设备库存](../docs/inventory/wanxiang/README.md)记录逐台硬件与最新核验，[双集群设计思路](../docs/inventory/cluster-design.md)说明它与太初的分工。结构化历史与当前观察见 [`inventory.yaml`](inventory.yaml)。
 
-## Observation
+## 网络与集群
 
-- Observation date: 2026-08-14.
-- The source Talos configuration remains `swarm/talos/talconfig.yaml`; the live Talos client context is the runtime-mounted `kubernetes` context.
-- The runtime credential locations are `/run/coder-infra/talosconfig` (`TALOSCONFIG`) and `/run/coder-infra/kubeconfig` (`KUBECONFIG`); local ignored convenience links are documented in the repository root inventory.
-- The UDM-Pro was queried over SSH as root using read-only commands. Generated dnsmasq and FRR state was read only to identify current networks and routing.
-- The cluster was queried with `talosctl` and `kubectl`; no Talos, Kubernetes, UDM-Pro, or routing change was made.
-- No kubeconfig, Talos client config, private key, token, serial number, MAC address, or raw device export is stored here.
+万象由三台 MS-01 裸机 Talos 控制平面节点组成，地址为 `172.16.87.201`、`.202`、`.203`。每台通过双口 X710 LACP bond 接入 VLAN 87；UDM-Pro 在 `172.16.87.254` 提供网关，Kubernetes API VIP 为 `172.16.87.1`。显示名称的更改不自动改变技术上的 `clusterName: kubernetes` 或既有证书 SAN `talos-ii.beaco.works`。
 
-## Topology
+2026-09-23 只读核验：UDM-Pro 上联为 `172.16.20.253/24`；到 `1.1.1.1` 的路由经 OSPF 邻居 `ms-r1`（`172.16.80.240`）。三台节点均为 Ready、可调度，Talos 为 `v1.13.10`，Kubernetes 为 `v1.36.4`。旧记录中的 `.20.216`、Talos `v1.12.7`、Kubernetes `v1.35.4` 和 `ms01-c` cordon 状态均非本次实测现状。硬件差异见逐台设备文档。
 
-The gateway is designed as a standalone cluster router: it may uplink to a home network, sit below another cluster network, or be connected directly to an optical modem. At observation time its active upstream-facing interface was `eth8` on `172.16.20.216/24`. Its current public-route lookup went through the OSPF peer `ms-r1` (`172.16.80.240`) on `br0`, which is the observed in-place topology rather than proof of the intended final uplink.
+集群声明配置在 `talos/` 与 `kubernetes/`；公私两套 Flux 来源、运行工作负载和备份状态须分别核对，不能仅凭仓库存在清单就认定已部署或恢复可用。私有应用与操作入口见 `infra-private/wanxiang/`，明文凭据、kubeconfig、Talos 客户端配置、序列号和原始设备导出不进入本仓。
 
-The UDM-Pro exposes the 万象 VLAN on `br87` / `172.16.87.0/24`. The Talos cluster uses a bonded pair on each MS-01, VLAN 87, API VIP `172.16.87.1`, and gateway `172.16.87.254`.
+## 来源迁移
 
-The display rename does not alter the live technical `clusterName: kubernetes` or the existing `talos-ii.beaco.works` certificate SAN. Those are configuration changes, not naming-only documentation.
-
-## Migration staging
-
-The functional source tree from `swarm` is staged below this directory for the second onboarding phase. The migration status, target mirror, path changes, validation gates, and rollback sequence are recorded in [`MIGRATION.md`](./MIGRATION.md). This branch is not the live Flux source; the existing `swarm` source remains authoritative until an explicit bridge cutover is applied.
-
-## Current cluster state
-
-All three control-plane members were reachable and `Ready`: `ms01-a` (`172.16.87.201`), `ms01-b` (`172.16.87.202`), and `ms01-c` (`172.16.87.203`). `ms01-c` was also `SchedulingDisabled`, so it is ready but cordoned. The cluster API and Kubernetes versions were `v1.35.4`; Talos was `v1.12.7` on all three nodes.
-
-The live user workload groups included LiteLLM and SearXNG; Element, Firefox Sync, Matrix, and Syncthing; Coder, Forgejo, Kasm Browser, Multica, n8n, Paseo Relay, and Steel Browser; Authentik and Vaultwarden; Attic; Zot; Cloudflare DNS/tunnel, Envoy, k8s-gateway, and Tailscale endpoints; OpenStatus; and Longhorn storage. Cilium, CoreDNS, Spegel, and the control-plane components were also running. One old `default/node-debugger` pod was `Error`; this was the only non-Running/non-Completed pod in the bounded check.
-
-See [`inventory.yaml`](./inventory.yaml) for the structured, non-secret record and the follow-up items.
+本目录由旧 `swarm` 树迁入。源切换的门禁与回滚步骤见 [`MIGRATION.md`](MIGRATION.md)；文件已迁入 `infra` 不代表运行中的 Flux 一定已切换来源。实际 GitRepository 与 Kustomization 状态需从集群核验，迁移不能仅靠改动这里的 README 完成。

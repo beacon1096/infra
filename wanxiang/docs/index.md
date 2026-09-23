@@ -1,15 +1,15 @@
-# swarm — documentation index
+# 万象：文档索引
 
-This repo manages **multiple Talos clusters**:
+本目录保存万象的 Talos/Kubernetes 文档；旧 `talos-i` 方案与太初现状应分开阅读：
 
-| cluster | role | status in this repo |
+| 集群 | 角色 | 当前说明 |
 |---|---|---|
-| **talos-ii** | bare-metal MS-01, primary workloads | **active build (2026-04-27)** |
-| **talos-i** | Harvester KubeVirt on NEC8, observability + shared services | not yet adopted (lives in `swarm-01`) |
+| **万象（旧 talos-ii）** | MS-01 裸机 Talos，主要业务 | 已运行；实测状态见[万象清单](../../docs/inventory/wanxiang/README.md) |
+| **旧 talos-i 方案** | 太初 Harvester/KubeVirt 上的辅助 Talos | 历史设计，不等于当前运行集群；见[双集群设计](../../docs/inventory/cluster-design.md) |
 
-## Cluster definitions
+## 设计与配置
 
-- [Cluster definitions](cluster-definition.md) — current truth: nodes, network, storage, what runs where (sectioned per cluster)
+- [双集群设计思路](../../docs/inventory/cluster-design.md) — 万象与太初的职责和技术取舍；当前状态见各集群清单
 - [Talos image factory](talos-image-factory.md) — **schematic ID ↔ extension reverse map** (sectioned per cluster — must update in same commit as any image change)
 
 ## Decisions (ADR-style, append-only, organized per cluster)

@@ -225,7 +225,7 @@ Trade-offs accepted:
   `docs/talos-image-factory.md` (constitution requirement).
 - Per cluster: choose subnet-router node(s) — likely a worker, not a
   control-plane, to avoid co-tenancy with etcd. Document in
-  `docs/cluster-definition.md`.
+  对应集群的网络设计与运行手册。
 - Per cluster: ExtensionServiceConfig or machine-config patch with
   `tailscaled` auth key (SOPS-managed).
 - CoreDNS: forward `ts.net` → `100.100.100.100` (one Corefile patch

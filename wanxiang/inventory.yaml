@@ -6,6 +6,38 @@ observed_at: '2026-08-14'
 source_repository: swarm
 source_talconfig: talos/talconfig.yaml
 observation_mode: read_only
+latest_router_check:
+  observed_at: '2026-09-23'
+  method: read_only_ssh
+  model: UniFi Dream Machine Pro
+  firmware: 5.1.33
+  upstream_address: 172.16.20.253/24
+  public_route_to_1_1_1_1: via 172.16.80.240 dev br0
+  ospf_neighbor: 172.16.80.240 Full/Backup
+current_declarative_source:
+  repository: infra
+  talconfig: wanxiang/talos/talconfig.yaml
+  talenv: wanxiang/talos/talenv.yaml
+  configured_talos_version: v1.13.10
+  configured_kubernetes_version: v1.36.4
+  configured_bond_and_vlan_mtu: 1500
+  live_cluster_version_verified: true
+  live_flux_cutover_verified: false
+latest_cluster_check:
+  observed_at: '2026-09-23'
+  method: read_only_talos_api_and_kubernetes_api
+  talos_version: v1.13.10
+  kubernetes_version: v1.36.4
+  nodes:
+    ms01-a: {ready: true, schedulable: true}
+    ms01-b: {ready: true, schedulable: true}
+    ms01-c: {ready: true, schedulable: true}
+managed_network_devices:
+  observed_at: '2026-09-23'
+  source: read_only_unifi_network_api
+  devices:
+    - {name: UAP-AC-Lite, model_code: U7LT, firmware: 6.8.2.15592, address: 172.16.80.104}
+    - {name: USW-Aggregation, model_code: USL8A, firmware: 7.5.15.17146, address: 172.16.80.116, ports: 8 x 10GbE SFP+}
 
 access:
   talconfig_source:
@@ -38,7 +70,7 @@ router:
   owner_label: UDR-Pro
   observed_model: UniFi Dream Machine Pro (UDM-Pro)
   vendor: Ubiquiti
-  firmware: 5.1.26
+  firmware: 5.1.33
   architecture: aarch64
   memory_gib_approx: 3.9
   cpu_temperature_c: 40.0
@@ -49,7 +81,7 @@ router:
     directly to a broadband optical modem.
   upstream:
     interface: eth8
-    address: 172.16.20.216/24
+    address: 172.16.20.253/24
     current_public_route_observation: 1.1.1.1 via 172.16.80.240 dev br0
   networks:
     - name: entrance
@@ -123,8 +155,8 @@ talos:
     - 127.0.0.1
     - 172.16.87.1
     - talos-ii.beaco.works
-  talos_version: v1.12.7
-  kubernetes_version: v1.35.4
+  talos_version_at_observation: v1.12.7
+  kubernetes_version_at_observation: v1.35.4
   kernel: 6.18.24-talos
   container_runtime: containerd://2.1.7
   cni_configured_in_talconfig: none
@@ -153,6 +185,14 @@ talos:
         live_manufacturer: Micro Computer (HK) Tech Limited
         live_product: Venus Series
         system_disk: approximately 4.1 TB KIOXIA NVMe
+        checked_at: '2026-09-23'
+        bios: AHWSA.1.22 (2024-03-12)
+        cpu: Intel Core i9-12900H (14 cores, 20 threads)
+        memory_gb_nominal: 64
+        memory_modules: [CT64G56C46S5.M16B1]
+        memory_speed_mt_s: 5600
+        nvme_model: KXG80ZN84T09
+        network: [Intel X710 dual-port 10GbE, Intel I226-V, Intel I226-LM, MediaTek MT7922]
     - name: ms01-b
       address: 172.16.87.202
       role: controlplane
@@ -164,11 +204,19 @@ talos:
         live_manufacturer: Micro Computer (HK) Tech Limited
         live_product: Venus Series
         system_disk: approximately 4.1 TB KIOXIA NVMe
+        checked_at: '2026-09-23'
+        bios: AHWSA.1.22 (2024-03-12)
+        cpu: Intel Core i9-12900H (14 cores, 20 threads)
+        memory_gb_nominal: 32
+        memory_modules: [CT24G56C46S5.M8C1, M425R1GB4BB0-CWMOD]
+        memory_speed_mt_s: 5600
+        nvme_model: KXG80ZN84T09
+        network: [Intel X710 dual-port 10GbE, Intel I226-V, Intel I226-LM, MediaTek MT7922]
     - name: ms01-c
       address: 172.16.87.203
       role: controlplane
       status_at_observation: Ready
-      scheduling: disabled
+      scheduling_at_observation: disabled
       secureboot: true
       install_disk: /dev/nvme0n1
       hardware:
@@ -176,6 +224,14 @@ talos:
         live_manufacturer: Micro Computer (HK) Tech Limited
         live_product: Venus Series
         system_disk: approximately 4.1 TB KIOXIA NVMe
+        checked_at: '2026-09-23'
+        bios: 1.27 (2025-04-03)
+        cpu: Intel Core i9-12900H (14 cores, 20 threads)
+        memory_gb_nominal: 56
+        memory_modules: [CT48G56C46S5.M16B1, M425R1GB4BB0-CWMOD]
+        memory_speed_mt_s: 5600
+        nvme_model: KXG80ZN84T09
+        network: [Intel X710 dual-port 10GbE, Intel I226-V, Intel I226-LM, MediaTek MT7922]
   storage:
     default_storage_class: longhorn
     storage_classes:
@@ -232,6 +288,12 @@ adjacent_hosts:
     memory_gib_approx: 62.5
     swap_gib: 0
     disk: 953.9 GiB Kingston OM8PGP41024Q-A0 NVMe
+    hardware_checked_at: '2026-09-23'
+    live_product: MS-R1
+    bios: 1.0 (2025-10-02)
+    memory_modules: 4 x 16 GiB LPDDR5 at 5500 MT/s
+    smbios_error_correction_type: Single-bit ECC (runtime unverified)
+    network: [2 x Realtek RTL8127 10GbE, MediaTek MT7922]
     interface: enp49s0
     default_gateway: 172.16.80.254
     observed_services:

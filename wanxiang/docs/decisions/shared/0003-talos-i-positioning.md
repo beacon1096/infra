@@ -224,5 +224,5 @@ written against a stable premise.
 - [shared/0002 — Mesh integration modes](0002-mesh-integration-modes.md) — accepted; Option C is the cluster fabric this ADR depends on
 - [shared/0001 — Spec-Driven Development](0001-spec-driven-development.md) — applies to the implementation work this ADR queues up
 - [`docs/index.md`](../../index.md) — current cluster table; "talos-i not yet adopted" line will update when this ADR + adoption land
-- [`docs/cluster-definition.md`](../../cluster-definition.md) — current truth on talos-ii; talos-i section to be added at adoption time
+- [双集群设计思路](../../../../docs/inventory/cluster-design.md) — 说明两集群的职责边界；运行状态见各自清单
 - 2026-05-04 conversation — origin of this re-framing; recorded in session log only

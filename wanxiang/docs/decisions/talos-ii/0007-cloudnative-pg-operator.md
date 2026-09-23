@@ -6,7 +6,7 @@
 
 ## Context
 
-Multiple workloads in the keep-list (`docs/cluster-definition.md`) use postgres as their primary store:
+当时保留的多个工作负载使用 PostgreSQL 作为主存储：
 
 | ns | app | db role |
 |---|---|---|

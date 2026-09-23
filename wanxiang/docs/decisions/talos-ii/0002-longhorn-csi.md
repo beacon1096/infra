@@ -32,7 +32,7 @@ Block device given to Longhorn directly — **no LVM / ZFS / btrfs at the host l
 
 ## How to add capacity later
 
-Per the design in `docs/cluster-definition.md`:
+按本 ADR 当时的扩容设想：
 
 1. Insert a second NVMe in any MS-01 (the M.2 slot is open)
 2. Format and mount under `/var/lib/longhorn-disk2`
@@ -70,7 +70,7 @@ What's actually deployed at `kubernetes/apps/storage/longhorn/`:
     (forgejo / authentik / vaultwarden / matrix-synapse). Apps opt in by
     setting `storageClassName: longhorn-r3` on their PVC.
 - **Data path:** `/var/lib/longhorn` (Talos partitions ~3.5 TB to this
-  mount per disk layout in `docs/cluster-definition.md`).
+  mount per the original disk layout plan).
 - **`replicaSoftAntiAffinity: false`** — replicas must land on different
   nodes. With exactly 3 nodes a 2-replica volume must keep 1 healthy
   copy on a different host.

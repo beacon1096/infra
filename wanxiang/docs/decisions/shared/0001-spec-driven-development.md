@@ -40,7 +40,7 @@ Specifically:
 
 4. **Decisions outlive specs** — when a spec is complete, the durable lessons get distilled into:
    - `docs/decisions/<scope>/NNNN-<title>.md` — ADRs (this very file is one), where `<scope>` is `shared`, `talos-ii`, or `talos-i`
-   - `docs/cluster-definition.md` updates (per-cluster section)
+   - `docs/inventory/cluster-design.md` updates (per-cluster section)
    - `docs/talos-image-factory.md` updates (per-cluster section)
 
 ## Scope
