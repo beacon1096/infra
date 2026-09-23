@@ -51,7 +51,7 @@ ADRs are organized by their scope:
 
 ## Operations
 
-- [Repository CI/CD and fleet delivery](../../docs/ci-cd/README.md) — release
+- [Repository CI/CD and fleet delivery](../../docs/agentic/workflow/infra-ops/README.md) — release
   approval, protected merging, Forgejo service accounts, and Nix rollout.
 - [Wanxiang off-site backups](operations/offsite-backup.md) — TrueNAS,
   routed NFS, Longhorn SystemBackup, and restore verification.

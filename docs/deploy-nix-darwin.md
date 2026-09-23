@@ -1,7 +1,7 @@
 # nix-darwin 远程部署脚本
 
 
-> 另见：[CI/CD and fleet delivery](ci-cd/README.md)，其中定义了 Forgejo runner、发布审批、`prod` 晋升和 Nix rollout。
+> 另见：[CI/CD 与机群交付](agentic/workflow/infra-ops/README.md)，其中定义了 Forgejo runner、发布审批、`prod` 晋升和 Nix 部署。
 > 当前 CI 工作流仅构建 Linux Nix 目标；nix-darwin 目标已暂时从自动构建矩阵中移除，因为目前没有可用的 macOS runner。
 
 新增脚本：`scripts/deploy-nix-darwin.sh`

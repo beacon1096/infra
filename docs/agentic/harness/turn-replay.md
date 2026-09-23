@@ -1,4 +1,4 @@
-# 截断与中断回合的重放：一次 Qwen3.8 在 pi 中“迷失”的排查
+# 截断与中断回合的重放：一次 Qwen3.8 在 Pi 中“迷失”的排查
 
 日期：2026-09-22。环境：pi 0.85.1，经 LiteLLM 调用 Thor 上 SGLang 部署的
 Qwen3.8-27B；对照 opencode 1.18.3、DeepSeek Harness 0.1.7-alpha.1 与 Codex

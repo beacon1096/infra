@@ -60,4 +60,4 @@ CI 在上传后才检测已提交的问题，因此不能替代本地 hook，也
 `infra/main` 是公开集成分支。`infra-private` 固定已评审的公开版本，
 并负责生产审批、发布 tag、`prod` 晋级与 Comin 滚动发布。
 完整的发布流程、依赖评审门禁、服务账号与 runner 维护，
-请先阅读 [CI/CD 文档](docs/ci-cd/README.md)。
+请先阅读 [CI/CD 文档](docs/agentic/workflow/infra-ops/README.md)。

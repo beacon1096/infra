@@ -1,4 +1,4 @@
-# Pi harness：需求与选型讨论
+# Pi harness：需求、选型与试用记录
 
 日期：2026-09-14。状态：架构边界已明确，exec 继续选型；pi-web-access 已部署。
 已完成固定版本的隔离 exec/drain 概念验证；2026-09-15 开始在 msi-claw 试用独立异步 Bash 扩展。

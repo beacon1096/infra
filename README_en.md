@@ -64,6 +64,6 @@ and released only from the private repository.
 
 `infra/main` is the public integration branch. `infra-private` pins reviewed
 public revisions and owns production approval, release tags, `prod` promotion,
-and Comin rollout. Start with the [CI/CD documentation](docs/ci-cd/README.md)
+and Comin rollout. Start with the [CI/CD documentation](docs/agentic/workflow/infra-ops/README.md)
 for the complete release flow, dependency-review gate, service accounts, and
 runner maintenance.
