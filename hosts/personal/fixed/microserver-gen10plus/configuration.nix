@@ -30,11 +30,16 @@ in
   nixpkgs.overlays = [ inputs.nix-cachyos-kernel.overlays.pinned ];
   boot.kernelPackages = pkgs.cachyosKernels.linuxPackages-cachyos-server-lto;
   # CachyOS is built with Clang, while VMware's external Kbuild defaults to gcc.
-  boot.extraModulePackages = lib.mkForce [
-    (config.boot.kernelPackages.vmware.overrideAttrs (old: {
-      makeFlags = (old.makeFlags or [ ]) ++ [ "CC=cc" ];
-    }))
-  ];
+  boot.extraModulePackages = lib.mkForce (
+    [
+      (config.boot.kernelPackages.vmware.overrideAttrs (old: {
+        makeFlags = (old.makeFlags or [ ]) ++ [ "CC=cc" ];
+      }))
+    ]
+    ++ lib.optionals (builtins.elem "nvidia" config.services.xserver.videoDrivers) [
+      (if config.hardware.nvidia.open then config.hardware.nvidia.package.open else config.hardware.nvidia.package.bin)
+    ]
+  );
 
   users.groups.nixremote = { };
   users.users.nixremote = {
