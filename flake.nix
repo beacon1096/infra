@@ -68,7 +68,7 @@
     };
 
     paseo = {
-      url = "github:getpaseo/paseo/v0.3.1";
+      url = "github:getpaseo/paseo/v0.9.2";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -324,12 +324,7 @@
     packages.x86_64-linux =
       let
         pkgs = import nixpkgs { system = "x86_64-linux"; };
-        paseoPackage = inputs.paseo.packages.x86_64-linux.default.override {
-          npmDepsHash = "sha256-oXz8hMk+5DlTYK8OndUAjB+RJMDbPqobVGXLFeoH++o=";
-        };
-        paseoDesktop = inputs.paseo.packages.x86_64-linux.desktop.override {
-          paseo = paseoPackage;
-        };
+        paseoPackages = import ./lib/paseo { inherit inputs pkgs; };
       in {
       # nix build .#installer-iso
       installer-iso = self.nixosConfigurations.installer.config.system.build.isoImage;
@@ -338,7 +333,9 @@
 
       multica-backend-oci = pkgs.callPackage ./packages/multica-backend { };
 
-      paseo-desktop = paseoDesktop;
+      paseo = paseoPackages.paseo;
+
+      paseo-desktop = paseoPackages.desktop;
 
       # Coder workspace base image for interactive coding and autonomous agents.
       # Build: nix build .#coding-agent-oci
@@ -373,25 +370,7 @@
             }}
             install -m 0755 coder $out/bin/coder-agent
           '';
-          nodePtyPrebuild = pkgs.runCommand "node-pty-1.2.0-beta.15-linux-x64" {
-            nativeBuildInputs = [ pkgs.gnutar pkgs.gzip ];
-          } ''
-            mkdir -p $out
-            tar -xzf ${pkgs.fetchurl {
-              url = "https://registry.npmjs.org/node-pty/-/node-pty-1.2.0-beta.15.tgz";
-              hash = "sha256-EUrIDD/gde/3YhekEi0TVXZYJpX0nAOl2jg1zfwvicU=";
-            }}
-            cp -R package/prebuilds/linux-x64 $out/
-          '';
-          paseoPackage = (inputs.paseo.packages.x86_64-linux.default.override {
-            npmDepsHash = "sha256-oXz8hMk+5DlTYK8OndUAjB+RJMDbPqobVGXLFeoH++o=";
-          }).overrideAttrs (old: {
-            postInstall = (old.postInstall or "") + ''
-              ptyRoot=$out/lib/paseo/packages/server/node_modules/node-pty
-              mkdir -p "$ptyRoot/prebuilds"
-              cp -R ${nodePtyPrebuild}/linux-x64 "$ptyRoot/prebuilds/"
-            '';
-          });
+          paseoPackage = (import ./lib/paseo { inherit inputs pkgs; }).withNodePty;
           # nix-ld: lets foreign (downloaded, glibc/FHS-linked) binaries run in
           # this pure-Nix image — e.g. code-server from Coder's vscode-web
           # module, and any other tool a workspace curls in. The shim at the
