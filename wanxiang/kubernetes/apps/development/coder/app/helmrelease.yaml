@@ -46,8 +46,18 @@ spec:
           value: "openid,profile,email"
         - name: CODER_OIDC_USERNAME_FIELD
           value: "preferred_username"
+        # authentik 内置的 email scope 映射把 email_verified 写死为 False：
+        # authentik 不记录用户的邮箱验证状态，default-user-settings-flow
+        # 也允许用户自行修改邮箱。Coder 默认拒绝未验证的邮箱，因此在这里
+        # 忽略该 claim，把放宽限定在 Coder，而不是由 IdP 向所有 OIDC 客户端
+        # 声明一个不成立的“已验证”。账号均由管理员创建（未开放注册），
+        # 这是此处放宽可以接受的前提。
+        - name: CODER_OIDC_IGNORE_EMAIL_VERIFIED
+          value: "true"
+        # 用户可以自行修改邮箱，所以这里只是过滤，不是访问控制边界；
+        # 能否登录取决于是否拥有 authentik 账号。
         - name: CODER_OIDC_EMAIL_DOMAIN
-          value: "${SECRET_DOMAIN}"
+          value: "${SECRET_DOMAIN},${SECRET_MAIL_DOMAIN}"
       resources:
         requests:
           cpu: 100m
