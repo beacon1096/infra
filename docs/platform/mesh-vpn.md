@@ -18,7 +18,7 @@ Mesh 中间层至少要区分：
 
 ## 已有实现与现场试验
 
-截至 2026-09-24，私有仓 `main` 已有第一步 `beacoworks.mesh.socksProviders.<name>`，包含 `enable`、SOCKS 地址/端口、`routeCidrs`、`processNames`。启用的提供者会生成 sing-box SOCKS 出站、目的前缀路由和进程绕行；目前尚无主机启用这一配置，生产仍使用 Tailscale，NetBird 尚未承载流量。查配置时应以目标分支和实际部署的系统版本为准。
+截至 2026-09-25，私有仓 `main` 已有第一步 `beacoworks.mesh.socksProviders.<name>`，包含 `enable`、SOCKS 地址/端口、`routeCidrs`、`processNames`。启用的提供者会生成 sing-box SOCKS 出站、目的前缀路由和进程绕行；已有单机 Tailscale SOCKS 试点配置，站点路由仍依赖 Tailscale，NetBird 尚未承载流量。查配置时应以目标分支和实际部署的系统版本为准。
 
 这还不是完整迁移控制面：没有完整的站点归属模型、根据健康状态切换活动提供者的机制，也没有相应的 OSPF 发布与故障撤销。`routeCidrs` 能描述本地 sing-box 的选择，不等于整个站点已经通过 OSPF 使用新提供者。
 

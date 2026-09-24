@@ -1,35 +1,20 @@
-# Wanxiang off-site backups
+# 万象异地备份
 
-Wanxiang stores Longhorn volume backups and cluster metadata outside the
-cluster site. The endpoint, access paths, recovery keys, and host procedures
-are kept in `infra-private`.
+万象将 Longhorn 卷备份和集群元数据存放在集群站点之外。备份端点、访问路径、恢复密钥和主机操作步骤记录在 `infra-private`。
 
-## Overlay transport
+## 叠加网络传输
 
-An overlay peer can report a "direct" endpoint even when the route to that
-endpoint traverses another overlay subnet router. This nests the transport
-inside itself. Encapsulation then reduces the path MTU and can cause heavy
-fragmentation and retransmission during large backups.
+即使到某个叠加网络对端的路由实际经过另一台叠加网络子网路由器，对端仍可能显示为“直连”。这会让传输流量再次进入同一叠加网络。额外封装降低路径 MTU，大型备份可能因此出现严重分片和重传。
 
-A temporary reduction of the overlay interface MTU can help diagnose this
-failure mode, but it does not remove the recursive route. The durable fix is
-to prevent the overlay's own marked transport packets from selecting a
-confirmed recursive endpoint. Ordinary application traffic and genuine
-underlay routes must remain available. Private routing details, measurements,
-and rollout checks are recorded in the private infrastructure inventory.
+临时降低叠加网络接口的 MTU 有助于诊断，但不能消除递归路由。长期修复是阻止叠加网络自身带标记的传输包选择已确认会递归的端点，同时保留普通应用流量和真正可用的底层路由。私有路由细节、测量结果和上线检查记录在私有基础设施库存中。
 
-## Backup verification
+## 备份验证
 
-Before relying on an off-site target:
+依赖异地备份目标前，应完成以下检查：
 
-1. Confirm the encrypted storage is unlocked and its backup service is
-   reachable from the cluster.
-2. Confirm Longhorn reports the backup target as available.
-3. Create a `SystemBackup` with `volumeBackupPolicy: always` and wait for
-   all referenced volume backups to complete.
-4. Periodically restore a disposable volume and verify its contents. A backup
-   listing alone is not a restore test.
+1. 确认加密存储已解锁，集群可以访问其备份服务。
+2. 确认 Longhorn 将备份目标报告为可用。
+3. 使用 `volumeBackupPolicy: always` 创建 `SystemBackup`，等待其引用的所有卷备份完成。
+4. 定期恢复一个可丢弃的测试卷并核对内容。只有备份清单不等于完成恢复测试。
 
-Longhorn volume backups and `SystemBackup` objects cover volume data and
-cluster metadata. Applications that need point-in-time recovery also need
-their own backup strategy.
+Longhorn 卷备份和 `SystemBackup` 对象覆盖卷数据与集群元数据。需要时间点恢复的应用还应具备自身的备份方案。
