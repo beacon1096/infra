@@ -4,4 +4,4 @@
 
 `msi-claw` 的 `services.paseo.relay` 使用远端模式，连接 `paseo.beaco.works:443`，并设置 TLS 与对外 TLS；`PASEO_RELAY_PUBLIC_ENDPOINT` 指向同一地址。Coder 的 `coding-agent-oci` 则显式 `--no-relay`，只经 Tailscale Serve 暴露本地 daemon。不要把这两种连接方式混为一谈。
 
-上游 [Paseo 安全文档](https://github.com/getpaseo/paseo/blob/main/public-docs/security.md)将 relay 设计为端到端加密的转发节点，配对链接包含 daemon 的公钥；relay 本身不应取得会话内容。但当前部署使用第三方 relay 镜像，尚未在仓库中记录与固定的 Paseo `v0.3.1` 及移动端的互通验收。部署清单只能证明“已声明自建 relay”，不能证明手机配对、重连和断线恢复均已测试。后续见 [待办](TODO.md)。
+上游 [Paseo 安全文档](https://github.com/getpaseo/paseo/blob/main/public-docs/security.md)将 relay 设计为端到端加密的转发节点，配对链接包含 daemon 的公钥；relay 本身不应取得会话内容。但当前部署使用第三方 relay 镜像，尚未在仓库中记录与所固定 Paseo 版本及移动端的互通验收。部署清单只能证明“已声明自建 relay”，不能证明手机配对、重连和断线恢复均已测试。后续见 [待办](TODO.md)。
