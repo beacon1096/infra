@@ -68,7 +68,7 @@
         "parameters": {
           "mode": "runOnceForEachItem",
           "language": "javaScript",
-          "jsCode": "const incoming = $json;\nconst body = incoming.body ?? {};\nconst headers = Object.fromEntries(Object.entries(incoming.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]));\nconst eventHeader = String(headers['x-forgejo-event-type'] ?? headers['x-gitea-event-type'] ?? headers['x-forgejo-event'] ?? headers['x-gitea-event'] ?? '').toLowerCase();\nconst deliveryId = String(headers['x-forgejo-delivery'] ?? headers['x-gitea-delivery'] ?? body.delivery_id ?? $execution.id);\nconst actionRaw = String(body.action ?? '').toLowerCase();\nconst run = body.run ?? {};\nconst parseObject = (value) => {\n  if (value && typeof value === 'object') return value;\n  if (typeof value !== 'string' || value.length === 0) return {};\n  try {\n    const parsed = JSON.parse(value);\n    return parsed && typeof parsed === 'object' ? parsed : {};\n  } catch {\n    return {};\n  }\n};\nconst eventPayload = parseObject(run.event_payload);\nconst repository = body.repository ?? run.repository ?? eventPayload.repository ?? {};\nconst repo = String(repository.full_name ?? repository.name ?? 'unknown/unknown');\nconst actor = String(body.pusher?.username ?? body.pusher?.login ?? body.sender?.login ?? body.sender?.username ?? eventPayload.pusher?.username ?? eventPayload.pusher?.login ?? eventPayload.sender?.login ?? eventPayload.sender?.username ?? run.trigger_user?.login ?? run.trigger_user?.username ?? 'unknown');\nconst pullRequest = body.pull_request ?? {};\nconst issue = body.issue ?? {};\nconst comment = body.comment ?? {};\nconst commentBody = String(comment.body ?? '').trim();\nconst approvalCommand = commentBody.match(/^\\/approve\\s+([0-9a-f]{40})$/i);\nconst prAuthor = String(pullRequest.user?.login ?? pullRequest.user?.username ?? 'unknown');\nlet eventType = 'unsupported';\nif (body.executionMode === 'test' || incoming.executionMode === 'test') eventType = 'test';\nelse if ((eventHeader.includes('issue') || eventHeader.includes('comment')) && comment.id && issue.pull_request) eventType = 'pull_request_comment';\nelse if (eventHeader.includes('pull_request') || body.pull_request) eventType = 'pull_request';\nelse if (eventHeader === 'push' || body.head_commit || Array.isArray(body.commits)) eventType = 'push';\nelse if (eventHeader.includes('package') || body.package) eventType = 'package';\nelse if (eventHeader.includes('release') || body.release) eventType = 'release';\nelse if (eventHeader.includes('workflow') || eventHeader.includes('action') || body.run) eventType = 'action';\nconst ref = String(eventPayload.ref ?? run.ref ?? body.ref ?? '');\nconst workflowId = String(run.workflow_id ?? run.workflow_name ?? 'Forgejo Actions');\nconst workflowName = String(run.workflow_name ?? run.workflow_id ?? 'Forgejo Actions');\nconst runTitle = String(run.title ?? '');\nconst runId = String(run.id ?? run.run_number ?? run.commit_sha ?? body.after ?? body.head_commit?.id ?? body.package?.id ?? body.release?.id ?? deliveryId);\nconst statusCandidate = String(run.conclusion ?? run.status ?? actionRaw).toLowerCase();\nlet actionStatus = 'unknown';\nif (['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(actionRaw) || ['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(statusCandidate)) actionStatus = 'failure';\nelse if (['recovered', 'recovery'].includes(actionRaw) || ['recovered', 'recovery'].includes(statusCandidate)) actionStatus = 'recovery';\nelse if (['success', 'successful'].includes(actionRaw) || ['success', 'successful'].includes(statusCandidate)) actionStatus = 'success';\nconst packageInfo = body.package ?? {};\nconst releaseInfo = body.release ?? {};\nconst prNumber = String(pullRequest.number ?? pullRequest.index ?? issue.number ?? issue.index ?? body.number ?? '');\nconst prHeadSha = String(pullRequest.head?.sha ?? pullRequest.head?.id ?? '');\nconst objectId = eventType === 'pull_request'\n  ? [prNumber || deliveryId, prHeadSha || deliveryId].join(':')\n  : eventType === 'pull_request_comment'\n    ? [prNumber || deliveryId, String(comment.id ?? deliveryId)].join(':')\n  : eventType === 'push'\n    ? String(body.after ?? body.head_commit?.id ?? body.compare_url ?? deliveryId)\n    : eventType === 'package'\n      ? String(packageInfo.id ?? ((packageInfo.name ?? 'package') + '@' + (packageInfo.version ?? 'unknown')))\n      : eventType === 'release'\n        ? String(releaseInfo.id ?? releaseInfo.tag_name ?? releaseInfo.name ?? deliveryId)\n        : runId;\nconst eventVariant = eventType === 'package' || eventType === 'release' ? actionRaw : (eventHeader.startsWith('pull_request_review_') ? eventHeader + ':' + String(body.review?.id ?? body.commit_id ?? deliveryId) : '');\nconst eventKey = [repo, eventType, objectId, eventVariant].join('::');\nconst stateKey = eventType === 'action'\n  ? [repo, 'action', workflowId, ref].join('::')\n  : eventKey;\nconst reviewApprovalSignal = eventType === 'pull_request' && eventHeader === 'pull_request_review_approved' && actionRaw === 'reviewed';\nconst commentApprovalSignal = eventType === 'pull_request_comment' && actionRaw === 'created' && Boolean(approvalCommand);\nconst humanApprovalSignal = reviewApprovalSignal || commentApprovalSignal;\nconst prActionSupported = ['opened', 'synchronize', 'synchronized', 'reopened'].includes(actionRaw);\nconst supported = ['test', 'push', 'package', 'release'].includes(eventType) || (eventType === 'pull_request' && (prActionSupported || reviewApprovalSignal)) || commentApprovalSignal || (eventType === 'action' && actionStatus !== 'unknown');\nconst commits = Array.isArray(body.commits) ? body.commits.slice(0, 10).map((commit) => ({\n  id: String(commit.id ?? '').slice(0, 7),\n  message: String(commit.message ?? '').split('\\n')[0],\n  url: String(commit.url ?? ''),\n})) : [];\nreturn { json: {\n  SUPPORTED: supported,\n  EVENT_TYPE: eventType,\n  EVENT_HEADER: eventHeader,\n  EVENT_KEY: eventKey,\n  STATE_KEY: stateKey,\n  DELIVERY_ID: deliveryId,\n  ACTION_RAW: actionRaw,\n  ACTION_STATUS: actionStatus,\n  REPO: repo,\n  REPO_URL: String(repository.html_url ?? repository.url ?? ''),\n  ACTOR: actor,\n  PR_AUTHOR: prAuthor,\n  REF: ref,\n  SHA: String(run.commit_sha ?? body.after ?? body.head_commit?.id ?? prHeadSha),\n  RUN_ID: runId,\n  RUN_URL: String(run.html_url ?? run.url ?? ''),\n  RUN_TITLE: runTitle,\n  WORKFLOW_ID: workflowId,\n  WORKFLOW_NAME: workflowName,\n  TRIGGER_EVENT: String(run.trigger_event ?? run.event ?? ''),\n  PUSH_COMPARE_URL: String(body.compare_url ?? ''),\n  PUSH_COMMITS: commits,\n  PUSH_COMMIT_COUNT: Array.isArray(body.commits) ? body.commits.length : 0,\n  PACKAGE_NAME: String(packageInfo.name ?? ''),\n  PACKAGE_VERSION: String(packageInfo.version ?? ''),\n  PACKAGE_URL: String(packageInfo.html_url ?? packageInfo.url ?? ''),\n  RELEASE_NAME: String(releaseInfo.name ?? ''),\n  RELEASE_TAG: String(releaseInfo.tag_name ?? ''),\n  RELEASE_URL: String(releaseInfo.html_url ?? releaseInfo.url ?? ''),\n  PR_NUMBER: prNumber,\n  PR_TITLE: String(pullRequest.title ?? ''),\n  PR_BODY: String(pullRequest.body ?? ''),\n  PR_URL: String(pullRequest.html_url ?? pullRequest.url ?? ''),\n  PR_HEAD_REF: String(pullRequest.head?.ref ?? pullRequest.head?.label ?? ''),\n  PR_HEAD_SHA: prHeadSha || String(approvalCommand?.[1] ?? '').toLowerCase(),\n  APPROVAL_KIND: commentApprovalSignal ? 'comment' : (reviewApprovalSignal ? 'review' : ''),\n  APPROVAL_COMMENT_ID: commentApprovalSignal ? Number(comment.id) : 0,\n  PR_BASE_REF: String(pullRequest.base?.ref ?? pullRequest.base?.label ?? ''),\n  IS_ORDINARY_PR_UPDATE: eventType === 'pull_request' && prActionSupported && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) && pullRequest.base?.ref === 'main' && prAuthor !== 'renovate',\n  IS_HUMAN_APPROVAL_SIGNAL: humanApprovalSignal && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) && (commentApprovalSignal || pullRequest.base?.ref === 'main') && prAuthor !== 'renovate',\n  IS_RENOVATE_PR: eventType === 'pull_request' && prActionSupported && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) && pullRequest.base?.ref === 'main' && prAuthor === 'renovate',\n} };\n"
+          "jsCode": "const incoming = $json;\nconst body = incoming.body ?? {};\nconst headers = Object.fromEntries(Object.entries(incoming.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]));\nconst eventHeader = String(headers['x-forgejo-event-type'] ?? headers['x-gitea-event-type'] ?? headers['x-forgejo-event'] ?? headers['x-gitea-event'] ?? '').toLowerCase();\nconst deliveryId = String(headers['x-forgejo-delivery'] ?? headers['x-gitea-delivery'] ?? body.delivery_id ?? $execution.id);\nconst actionRaw = String(body.action ?? '').toLowerCase();\nconst run = body.run ?? {};\nconst parseObject = (value) => {\n  if (value && typeof value === 'object') return value;\n  if (typeof value !== 'string' || value.length === 0) return {};\n  try {\n    const parsed = JSON.parse(value);\n    return parsed && typeof parsed === 'object' ? parsed : {};\n  } catch {\n    return {};\n  }\n};\nconst eventPayload = parseObject(run.event_payload);\nconst repository = body.repository ?? run.repository ?? eventPayload.repository ?? {};\nconst repo = String(repository.full_name ?? repository.name ?? 'unknown/unknown');\nconst actor = String(body.pusher?.username ?? body.pusher?.login ?? body.sender?.login ?? body.sender?.username ?? eventPayload.pusher?.username ?? eventPayload.pusher?.login ?? eventPayload.sender?.login ?? eventPayload.sender?.username ?? run.trigger_user?.login ?? run.trigger_user?.username ?? 'unknown');\nconst pullRequest = body.pull_request ?? {};\nconst issue = body.issue ?? {};\nconst comment = body.comment ?? {};\nconst commentBody = String(comment.body ?? '').trim();\nconst approvalCommand = commentBody.match(/^\\/(approve|approve-prod)\\s+([0-9a-f]{40})$/i);\nconst approvalTarget = approvalCommand?.[1]?.toLowerCase() === 'approve-prod' ? 'prod' : 'main';\nconst prAuthor = String(pullRequest.user?.login ?? pullRequest.user?.username ?? 'unknown');\nlet eventType = 'unsupported';\nif (body.executionMode === 'test' || incoming.executionMode === 'test') eventType = 'test';\nelse if ((eventHeader.includes('issue') || eventHeader.includes('comment')) && comment.id && issue.pull_request) eventType = 'pull_request_comment';\nelse if (eventHeader.includes('pull_request') || body.pull_request) eventType = 'pull_request';\nelse if (eventHeader === 'push' || body.head_commit || Array.isArray(body.commits)) eventType = 'push';\nelse if (eventHeader.includes('package') || body.package) eventType = 'package';\nelse if (eventHeader.includes('release') || body.release) eventType = 'release';\nelse if (eventHeader.includes('workflow') || eventHeader.includes('action') || body.run) eventType = 'action';\nconst ref = String(eventPayload.ref ?? run.ref ?? body.ref ?? '');\nconst workflowId = String(run.workflow_id ?? run.workflow_name ?? 'Forgejo Actions');\nconst workflowName = String(run.workflow_name ?? run.workflow_id ?? 'Forgejo Actions');\nconst runTitle = String(run.title ?? '');\nconst runId = String(run.id ?? run.run_number ?? run.commit_sha ?? body.after ?? body.head_commit?.id ?? body.package?.id ?? body.release?.id ?? deliveryId);\nconst statusCandidate = String(run.conclusion ?? run.status ?? actionRaw).toLowerCase();\nlet actionStatus = 'unknown';\nif (['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(actionRaw) || ['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(statusCandidate)) actionStatus = 'failure';\nelse if (['recovered', 'recovery'].includes(actionRaw) || ['recovered', 'recovery'].includes(statusCandidate)) actionStatus = 'recovery';\nelse if (['success', 'successful'].includes(actionRaw) || ['success', 'successful'].includes(statusCandidate)) actionStatus = 'success';\nconst packageInfo = body.package ?? {};\nconst releaseInfo = body.release ?? {};\nconst prNumber = String(pullRequest.number ?? pullRequest.index ?? issue.number ?? issue.index ?? body.number ?? '');\nconst prHeadSha = String(pullRequest.head?.sha ?? pullRequest.head?.id ?? '');\nconst objectId = eventType === 'pull_request'\n  ? [prNumber || deliveryId, prHeadSha || deliveryId].join(':')\n  : eventType === 'pull_request_comment'\n    ? [prNumber || deliveryId, String(comment.id ?? deliveryId)].join(':')\n  : eventType === 'push'\n    ? String(body.after ?? body.head_commit?.id ?? body.compare_url ?? deliveryId)\n    : eventType === 'package'\n      ? String(packageInfo.id ?? ((packageInfo.name ?? 'package') + '@' + (packageInfo.version ?? 'unknown')))\n      : eventType === 'release'\n        ? String(releaseInfo.id ?? releaseInfo.tag_name ?? releaseInfo.name ?? deliveryId)\n        : runId;\nconst eventVariant = eventType === 'package' || eventType === 'release' ? actionRaw : (eventHeader.startsWith('pull_request_review_') ? eventHeader + ':' + String(body.review?.id ?? body.commit_id ?? deliveryId) : '');\nconst eventKey = [repo, eventType, objectId, eventVariant].join('::');\nconst stateKey = eventType === 'action'\n  ? [repo, 'action', workflowId, ref].join('::')\n  : eventKey;\nconst reviewApprovalSignal = eventType === 'pull_request' && eventHeader === 'pull_request_review_approved' && actionRaw === 'reviewed' && pullRequest.base?.ref === 'main';\nconst commentApprovalSignal = eventType === 'pull_request_comment' && actionRaw === 'created' && Boolean(approvalCommand);\nconst humanApprovalSignal = reviewApprovalSignal || commentApprovalSignal;\nconst prActionSupported = ['opened', 'synchronize', 'synchronized', 'reopened'].includes(actionRaw);\nconst ordinaryPrActionSupported = prActionSupported || actionRaw === 'edited';\nconst supported = ['test', 'push', 'package', 'release'].includes(eventType) || (eventType === 'pull_request' && (ordinaryPrActionSupported || reviewApprovalSignal)) || commentApprovalSignal || (eventType === 'action' && actionStatus !== 'unknown');\nconst commits = Array.isArray(body.commits) ? body.commits.slice(0, 10).map((commit) => ({\n  id: String(commit.id ?? '').slice(0, 7),\n  message: String(commit.message ?? '').split('\\n')[0],\n  url: String(commit.url ?? ''),\n})) : [];\nreturn { json: {\n  SUPPORTED: supported,\n  EVENT_TYPE: eventType,\n  EVENT_HEADER: eventHeader,\n  EVENT_KEY: eventKey,\n  STATE_KEY: stateKey,\n  DELIVERY_ID: deliveryId,\n  ACTION_RAW: actionRaw,\n  ACTION_STATUS: actionStatus,\n  REPO: repo,\n  REPO_URL: String(repository.html_url ?? repository.url ?? ''),\n  ACTOR: actor,\n  PR_AUTHOR: prAuthor,\n  REF: ref,\n  SHA: String(run.commit_sha ?? body.after ?? body.head_commit?.id ?? prHeadSha),\n  RUN_ID: runId,\n  RUN_URL: String(run.html_url ?? run.url ?? ''),\n  RUN_TITLE: runTitle,\n  WORKFLOW_ID: workflowId,\n  WORKFLOW_NAME: workflowName,\n  TRIGGER_EVENT: String(run.trigger_event ?? run.event ?? ''),\n  PUSH_COMPARE_URL: String(body.compare_url ?? ''),\n  PUSH_COMMITS: commits,\n  PUSH_COMMIT_COUNT: Array.isArray(body.commits) ? body.commits.length : 0,\n  PACKAGE_NAME: String(packageInfo.name ?? ''),\n  PACKAGE_VERSION: String(packageInfo.version ?? ''),\n  PACKAGE_URL: String(packageInfo.html_url ?? packageInfo.url ?? ''),\n  RELEASE_NAME: String(releaseInfo.name ?? ''),\n  RELEASE_TAG: String(releaseInfo.tag_name ?? ''),\n  RELEASE_URL: String(releaseInfo.html_url ?? releaseInfo.url ?? ''),\n  PR_NUMBER: prNumber,\n  PR_TITLE: String(pullRequest.title ?? ''),\n  PR_BODY: String(pullRequest.body ?? ''),\n  PR_URL: String(pullRequest.html_url ?? pullRequest.url ?? ''),\n  PR_HEAD_REF: String(pullRequest.head?.ref ?? pullRequest.head?.label ?? ''),\n  PR_HEAD_SHA: prHeadSha || String(approvalCommand?.[2] ?? '').toLowerCase(),\n  APPROVAL_TARGET: reviewApprovalSignal ? 'main' : (commentApprovalSignal ? approvalTarget : ''),\n  APPROVAL_KIND: commentApprovalSignal ? 'comment' : (reviewApprovalSignal ? 'review' : ''),\n  APPROVAL_COMMENT_ID: commentApprovalSignal ? Number(comment.id) : 0,\n  PR_BASE_REF: String(pullRequest.base?.ref ?? pullRequest.base?.label ?? ''),\n  IS_ORDINARY_PR_UPDATE: eventType === 'pull_request' && ordinaryPrActionSupported && ((['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) && pullRequest.base?.ref === 'main') || (repo === 'infrastructure/infra-private' && pullRequest.base?.ref === 'prod')) && prAuthor !== 'renovate',\n  IS_HUMAN_APPROVAL_SIGNAL: humanApprovalSignal && (approvalTarget === 'main' ? ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) : repo === 'infrastructure/infra-private') && (commentApprovalSignal || pullRequest.base?.ref === 'main') && prAuthor !== 'renovate',\n  IS_RENOVATE_PR: eventType === 'pull_request' && prActionSupported && ['infrastructure/infra', 'infrastructure/infra-private'].includes(repo) && pullRequest.base?.ref === 'main' && prAuthor === 'renovate',\n} };\n"
         }
       },
       {
@@ -187,7 +187,7 @@
         "parameters": {
           "mode": "runOnceForEachItem",
           "language": "javaScript",
-          "jsCode": "const current = $('Normalize Forgejo Event').first().json;\nconst previous = $json ?? {};\nconst duplicateDelivery = Boolean(previous.LAST_DELIVERY_ID) && String(previous.LAST_DELIVERY_ID) === String(current.DELIVERY_ID);\nconst duplicateObject = current.EVENT_TYPE !== 'action' && current.EVENT_TYPE !== 'test' && Boolean(previous.STATE_KEY);\nlet notifyStatus = current.ACTION_STATUS;\nif (current.EVENT_TYPE === 'action' && current.ACTION_STATUS === 'success' && previous.LAST_STATUS === 'failure') notifyStatus = 'recovery';\nif (current.ACTION_STATUS === 'recovery') notifyStatus = 'recovery';\nconst shouldNotify = current.EVENT_TYPE === 'test' || (current.IS_HUMAN_APPROVAL_SIGNAL && !duplicateDelivery) || !(duplicateDelivery || duplicateObject);\nconst storedStatus = current.EVENT_TYPE === 'action' ? (notifyStatus === 'recovery' ? 'success' : current.ACTION_STATUS) : current.EVENT_TYPE;\nconst icon = notifyStatus === 'failure' ? '❌' : notifyStatus === 'recovery' ? '♻️' : '✅';\nconst actor = current.ACTOR === 'unknown' ? 'unknown' : '@' + current.ACTOR + ':beaco.works';\nlet message = '';\nif (current.EVENT_TYPE === 'test') {\n  message = '## ✅ Forgejo webhook 测试成功\\n\\n事件标准化、状态表与 Matrix 通知链路可用。';\n} else if (current.EVENT_TYPE === 'pull_request') {\n  message = '## 🤖 ' + current.REPO + ' Renovate PR #' + current.PR_NUMBER + '\\n\\n| 项目 | 内容 |\\n| :--- | :--- |\\n| 动作 | ' + current.ACTION_RAW + ' |\\n| 标题 | ' + current.PR_TITLE + ' |\\n| 分支 | ' + current.PR_HEAD_REF + ' → ' + current.PR_BASE_REF + ' |\\n| SHA | ' + current.PR_HEAD_SHA + ' |\\n| 发起人 | ' + actor + ' |\\n| 链接 | [查看 PR](' + current.PR_URL + ') |';\n} else if (current.EVENT_TYPE === 'push') {\n  const commitLines = current.PUSH_COMMITS.map((commit) => '| ' + commit.id + ' | [' + commit.message + '](' + commit.url + ') |').join('\\n');\n  const remainder = current.PUSH_COMMIT_COUNT > current.PUSH_COMMITS.length ? '\\n\\n另有 ' + (current.PUSH_COMMIT_COUNT - current.PUSH_COMMITS.length) + ' 个提交未展开。' : '';\n  message = '## 🚀 ' + current.REPO + ' 检测到推送\\n\\n| 项目 | 内容 |\\n| :--- | :--- |\\n| 推送人 | ' + actor + ' |\\n| 分支 | ' + current.REF + ' |\\n| Diff | [查看差异](' + current.PUSH_COMPARE_URL + ') |\\n\\n| SHA | 提交 |\\n| :--- | :--- |\\n' + commitLines + remainder;\n} else if (current.EVENT_TYPE === 'package') {\n  message = '## 📦 ' + current.REPO + ' 软件包事件\\n\\n| 项目 | 内容 |\\n| :--- | :--- |\\n| 动作 | ' + current.ACTION_RAW + ' |\\n| 软件包 | ' + current.PACKAGE_NAME + ' |\\n| 版本 | ' + current.PACKAGE_VERSION + ' |\\n| 操作人 | ' + actor + ' |\\n| 链接 | [查看软件包](' + current.PACKAGE_URL + ') |';\n} else if (current.EVENT_TYPE === 'release') {\n  message = '## 🏷️ ' + current.REPO + ' 版本发布事件\\n\\n| 项目 | 内容 |\\n| :--- | :--- |\\n| 动作 | ' + current.ACTION_RAW + ' |\\n| 版本 | ' + (current.RELEASE_TAG || current.RELEASE_NAME) + ' |\\n| 操作人 | ' + actor + ' |\\n| 链接 | [查看版本](' + current.RELEASE_URL + ') |';\n} else {\n  const label = notifyStatus === 'failure' ? '失败' : notifyStatus === 'recovery' ? '恢复' : '成功';\n  const rows = [\n    '| 工作流 | ' + current.WORKFLOW_NAME + ' |',\n    current.RUN_TITLE ? '| 运行标题 | ' + current.RUN_TITLE + ' |' : '',\n    '| 状态 | ' + label + ' |',\n    '| 触发类型 | ' + current.TRIGGER_EVENT + ' |',\n    '| 来源 | ' + current.REF + ' |',\n    '| SHA | ' + current.SHA + ' |',\n    current.RUN_URL ? '| 执行 | [查看运行](' + current.RUN_URL + ') |' : '',\n    '| 发起人 | ' + actor + ' |',\n  ].filter(Boolean).join('\\n');\n  message = '## ' + icon + ' ' + current.REPO + ' Action ' + label + '\\n\\n| 项目 | 内容 |\\n| :--- | :--- |\\n' + rows;\n}\nconst successfulAction = current.EVENT_TYPE === 'action' && ['success', 'recovery'].includes(notifyStatus);\nconst releaseWorkflow = current.WORKFLOW_ID === 'build-and-push.yaml';\nconst releaseTagRun = releaseWorkflow && current.REPO === 'infrastructure/infra-private' && current.REF.startsWith('refs/tags/');\nreturn { json: {\n  ...current,\n  SHOULD_NOTIFY: shouldNotify,\n  NOTIFY_STATUS: notifyStatus,\n  STORED_STATUS: storedStatus,\n  NEEDS_APPROVAL: successfulAction && releaseWorkflow && current.REPO === 'infrastructure/infra-private' && current.TRIGGER_EVENT === 'workflow_dispatch',\n  COMPLETES_RELEASE: successfulAction && releaseTagRun,\n  MESSAGE_MARKDOWN: message,\n  UPDATED_AT: $now.toISO(),\n  RELEASE_UUID: $execution.id + '-' + current.SHA,\n  RELEASE_TAG_SUGGESTION: $now.setZone('Asia/Shanghai').toFormat('yyyyMMdd-HHmm'),\n} };\n"
+          "jsCode": "const current = $('Normalize Forgejo Event').first().json;\nconst previous = $json ?? {};\nconst duplicateDelivery = Boolean(previous.LAST_DELIVERY_ID) && String(previous.LAST_DELIVERY_ID) === String(current.DELIVERY_ID);\nconst duplicateObject = current.EVENT_TYPE !== 'action' && current.EVENT_TYPE !== 'test' && Boolean(previous.STATE_KEY);\nlet notifyStatus = current.ACTION_STATUS;\nif (current.EVENT_TYPE === 'action' && current.ACTION_STATUS === 'success' && previous.LAST_STATUS === 'failure') notifyStatus = 'recovery';\nif (current.ACTION_STATUS === 'recovery') notifyStatus = 'recovery';\nconst shouldNotify = current.EVENT_TYPE === 'test' || ((current.IS_HUMAN_APPROVAL_SIGNAL || current.IS_ORDINARY_PR_UPDATE) && !duplicateDelivery) || !(duplicateDelivery || duplicateObject);\nconst storedStatus = current.EVENT_TYPE === 'action' ? (notifyStatus === 'recovery' ? 'success' : current.ACTION_STATUS) : current.EVENT_TYPE;\nconst icon = notifyStatus === 'failure' ? '❌' : notifyStatus === 'recovery' ? '♻️' : '✅';\nconst actor = current.ACTOR === 'unknown' ? 'unknown' : '@' + current.ACTOR + ':beaco.works';\nlet message = '';\nif (current.EVENT_TYPE === 'test') {\n  message = '## ✅ Forgejo webhook 测试成功\\n\\n事件标准化、状态表与 Matrix 通知链路可用。';\n} else if (current.EVENT_TYPE === 'pull_request') {\n  message = '## 🤖 ' + current.REPO + ' Renovate PR #' + current.PR_NUMBER + '\\n\\n| 项目 | 内容 |\\n| :--- | :--- |\\n| 动作 | ' + current.ACTION_RAW + ' |\\n| 标题 | ' + current.PR_TITLE + ' |\\n| 分支 | ' + current.PR_HEAD_REF + ' → ' + current.PR_BASE_REF + ' |\\n| SHA | ' + current.PR_HEAD_SHA + ' |\\n| 发起人 | ' + actor + ' |\\n| 链接 | [查看 PR](' + current.PR_URL + ') |';\n} else if (current.EVENT_TYPE === 'push') {\n  const commitLines = current.PUSH_COMMITS.map((commit) => '| ' + commit.id + ' | [' + commit.message + '](' + commit.url + ') |').join('\\n');\n  const remainder = current.PUSH_COMMIT_COUNT > current.PUSH_COMMITS.length ? '\\n\\n另有 ' + (current.PUSH_COMMIT_COUNT - current.PUSH_COMMITS.length) + ' 个提交未展开。' : '';\n  message = '## 🚀 ' + current.REPO + ' 检测到推送\\n\\n| 项目 | 内容 |\\n| :--- | :--- |\\n| 推送人 | ' + actor + ' |\\n| 分支 | ' + current.REF + ' |\\n| Diff | [查看差异](' + current.PUSH_COMPARE_URL + ') |\\n\\n| SHA | 提交 |\\n| :--- | :--- |\\n' + commitLines + remainder;\n} else if (current.EVENT_TYPE === 'package') {\n  message = '## 📦 ' + current.REPO + ' 软件包事件\\n\\n| 项目 | 内容 |\\n| :--- | :--- |\\n| 动作 | ' + current.ACTION_RAW + ' |\\n| 软件包 | ' + current.PACKAGE_NAME + ' |\\n| 版本 | ' + current.PACKAGE_VERSION + ' |\\n| 操作人 | ' + actor + ' |\\n| 链接 | [查看软件包](' + current.PACKAGE_URL + ') |';\n} else if (current.EVENT_TYPE === 'release') {\n  message = '## 🏷️ ' + current.REPO + ' 版本发布事件\\n\\n| 项目 | 内容 |\\n| :--- | :--- |\\n| 动作 | ' + current.ACTION_RAW + ' |\\n| 版本 | ' + (current.RELEASE_TAG || current.RELEASE_NAME) + ' |\\n| 操作人 | ' + actor + ' |\\n| 链接 | [查看版本](' + current.RELEASE_URL + ') |';\n} else {\n  const label = notifyStatus === 'failure' ? '失败' : notifyStatus === 'recovery' ? '恢复' : '成功';\n  const rows = [\n    '| 工作流 | ' + current.WORKFLOW_NAME + ' |',\n    current.RUN_TITLE ? '| 运行标题 | ' + current.RUN_TITLE + ' |' : '',\n    '| 状态 | ' + label + ' |',\n    '| 触发类型 | ' + current.TRIGGER_EVENT + ' |',\n    '| 来源 | ' + current.REF + ' |',\n    '| SHA | ' + current.SHA + ' |',\n    current.RUN_URL ? '| 执行 | [查看运行](' + current.RUN_URL + ') |' : '',\n    '| 发起人 | ' + actor + ' |',\n  ].filter(Boolean).join('\\n');\n  message = '## ' + icon + ' ' + current.REPO + ' Action ' + label + '\\n\\n| 项目 | 内容 |\\n| :--- | :--- |\\n' + rows;\n}\nconst successfulAction = current.EVENT_TYPE === 'action' && ['success', 'recovery'].includes(notifyStatus);\nconst releaseWorkflow = current.WORKFLOW_ID === 'build-and-push.yaml';\nconst releaseTagRun = releaseWorkflow && current.REPO === 'infrastructure/infra-private' && current.REF.startsWith('refs/tags/');\nreturn { json: {\n  ...current,\n  SHOULD_NOTIFY: shouldNotify,\n  NOTIFY_STATUS: notifyStatus,\n  STORED_STATUS: storedStatus,\n  NEEDS_APPROVAL: successfulAction && releaseWorkflow && current.REPO === 'infrastructure/infra-private' && current.TRIGGER_EVENT === 'workflow_dispatch',\n  COMPLETES_RELEASE: successfulAction && releaseTagRun,\n  MESSAGE_MARKDOWN: message,\n  UPDATED_AT: $now.toISO(),\n  RELEASE_UUID: $execution.id + '-' + current.SHA,\n  RELEASE_TAG_SUGGESTION: $now.setZone('Asia/Shanghai').toFormat('yyyyMMdd-HHmm'),\n} };\n"
         }
       },
       {
@@ -1456,11 +1456,11 @@
               },
               {
                 "name": "context",
-                "value": "policy/merge-gate"
+                "value": "={{ $json.PR_BASE_REF === 'prod' ? 'policy/prod-merge-gate' : 'policy/merge-gate' }}"
               },
               {
                 "name": "description",
-                "value": "Waiting for an authorized Forgejo review of this exact commit"
+                "value": "={{ $json.PR_BASE_REF === 'prod' ? 'Waiting for /approve-prod on this exact commit targeting prod' : 'Waiting for /approve on this exact commit targeting main' }}"
               },
               {
                 "name": "target_url",
@@ -1562,7 +1562,7 @@
         "parameters": {
           "mode": "runOnceForEachItem",
           "language": "javaScript",
-          "jsCode": "const source = $(\"Decide Event Transition\").item.json;\nconst prResponse = $(\"Get Current Human PR\").item.json;\nconst evidenceResponse = $json;\nconst pr = prResponse.body ?? {};\nconst allowedReviewers = ['beacon1096'];\nconst currentHead = String(pr.head?.sha ?? pr.head?.id ?? '').toLowerCase();\nlet approval;\nif (source.APPROVAL_KIND === 'comment') {\n  const comment = evidenceResponse.body ?? {};\n  const match = String(comment.body ?? '').trim().match(/^\\/approve\\s+([0-9a-f]{40})$/i);\n  const reviewer = String(comment.user?.login ?? comment.user?.username ?? '');\n  if (evidenceResponse.statusCode === 200\n    && Number(comment.id) === Number(source.APPROVAL_COMMENT_ID)\n    && allowedReviewers.includes(reviewer)\n    && match && match[1].toLowerCase() === currentHead) {\n    approval = { id: comment.id, user: comment.user, method: 'comment' };\n  }\n} else {\n  const reviews = Array.isArray(evidenceResponse.body) ? evidenceResponse.body : [];\n  approval = reviews\n    .filter((review) => allowedReviewers.includes(String(review.user?.login ?? review.user?.username ?? ''))\n      && String(review.state ?? review.type ?? '').toLowerCase() === 'approved'\n      && review.dismissed !== true\n      && review.stale !== true\n      && String(review.commit_id ?? '').toLowerCase() === currentHead)\n    .sort((a, b) => Number(b.id ?? 0) - Number(a.id ?? 0))[0];\n  if (approval) approval.method = 'review';\n}\nconst valid = prResponse.statusCode === 200\n  && evidenceResponse.statusCode === 200\n  && pr.state === 'open'\n  && pr.base?.ref === 'main'\n  && String(pr.user?.login ?? pr.user?.username ?? '') !== 'renovate'\n  && ['infrastructure/infra', 'infrastructure/infra-private'].includes(source.REPO)\n  && currentHead === String(source.PR_HEAD_SHA ?? '').toLowerCase()\n  && Boolean(approval);\nreturn { json: { HUMAN_APPROVAL_VALID: valid, REPO: source.REPO, PR_NUMBER: Number(source.PR_NUMBER), HEAD_SHA: currentHead, PR_URL: String(pr.html_url ?? source.PR_URL ?? ''), REVIEWER: valid ? String(approval.user?.login ?? approval.user?.username) : '', REVIEW_ID: valid ? Number(approval.id) : 0, APPROVAL_METHOD: valid ? approval.method : '' } };"
+          "jsCode": "const source = $(\"Decide Event Transition\").item.json;\nconst prResponse = $(\"Get Current Human PR\").item.json;\nconst evidenceResponse = $(\"Get Human PR Reviews\").item.json;\nconst pr = prResponse.body ?? {};\nconst allowedReviewers = ['beacon1096'];\nconst currentHead = String(pr.head?.sha ?? pr.head?.id ?? '').toLowerCase();\nconst target = String(source.APPROVAL_TARGET ?? '');\nconst command = target === 'prod' ? 'approve-prod' : 'approve';\nlet approval;\nlet approvalCreatedAt = '';\nlet targetHistoryValid = target === 'main';\nif (source.APPROVAL_KIND === 'comment') {\n  const comment = evidenceResponse.body ?? {};\n  const match = String(comment.body ?? '').trim().match(/^\\/(approve|approve-prod)\\s+([0-9a-f]{40})$/i);\n  const reviewer = String(comment.user?.login ?? comment.user?.username ?? '');\n  if (evidenceResponse.statusCode === 200\n    && Number(comment.id) === Number(source.APPROVAL_COMMENT_ID)\n    && allowedReviewers.includes(reviewer)\n    && match && match[1].toLowerCase() === command && match[2].toLowerCase() === currentHead) {\n    approval = { id: comment.id, user: comment.user, method: 'comment' };\n    approvalCreatedAt = String(comment.created_at ?? '');\n    if (target === 'prod') {\n      const timelineResponse = $(\"Get Human PR Timeline\").item.json;\n      const nextPageResponse = $(\"Check Human Timeline Completeness\").item.json;\n      const timeline = timelineResponse.body === null ? [] : timelineResponse.body;\n      const nextPage = nextPageResponse.body === null ? [] : nextPageResponse.body;\n      const createdAt = Date.parse(String(comment.created_at ?? ''));\n      targetHistoryValid = Number.isFinite(createdAt)\n        && timelineResponse.statusCode === 200\n        && nextPageResponse.statusCode === 200\n        && Array.isArray(timeline)\n        && Array.isArray(nextPage)\n        && nextPage.length === 0\n        && timeline.every((entry) => typeof entry.type === 'string'\n          && (entry.type !== 'change_target_branch' || Number.isFinite(Date.parse(String(entry.created_at ?? '')))))\n        && !timeline.some((entry) => entry.type === 'change_target_branch'\n          && Date.parse(String(entry.created_at)) >= createdAt);\n    }\n  }\n} else {\n  const reviews = Array.isArray(evidenceResponse.body) ? evidenceResponse.body : [];\n  approval = reviews\n    .filter((review) => allowedReviewers.includes(String(review.user?.login ?? review.user?.username ?? ''))\n      && String(review.state ?? review.type ?? '').toLowerCase() === 'approved'\n      && review.dismissed !== true\n      && review.stale !== true\n      && String(review.commit_id ?? '').toLowerCase() === currentHead)\n    .sort((a, b) => Number(b.id ?? 0) - Number(a.id ?? 0))[0];\n  if (approval) approval.method = 'review';\n}\nconst valid = prResponse.statusCode === 200\n  && evidenceResponse.statusCode === 200\n  && pr.state === 'open'\n  && ((target === 'main' && ['infrastructure/infra', 'infrastructure/infra-private'].includes(source.REPO)) || (target === 'prod' && source.REPO === 'infrastructure/infra-private'))\n  && pr.base?.ref === target\n  && Number(pr.number) === Number(source.PR_NUMBER)\n  && String(pr.base?.repo?.full_name ?? '') === source.REPO\n  && String(pr.user?.login ?? pr.user?.username ?? '') !== 'renovate'\n  && (source.APPROVAL_KIND === 'comment' || target === 'main')\n  && /^[0-9a-f]{40}$/.test(currentHead)\n  && currentHead === String(source.PR_HEAD_SHA ?? '').toLowerCase()\n  && targetHistoryValid\n  && Boolean(approval);\nreturn { json: { HUMAN_APPROVAL_VALID: valid, REPO: source.REPO, PR_NUMBER: Number(source.PR_NUMBER), HEAD_SHA: currentHead, BASE_REF: target, STATUS_CONTEXT: target === 'prod' ? 'policy/prod-merge-gate' : 'policy/merge-gate', PR_URL: String(pr.html_url ?? source.PR_URL ?? ''), REVIEWER: valid ? String(approval.user?.login ?? approval.user?.username) : '', REVIEW_ID: valid ? Number(approval.id) : 0, APPROVAL_METHOD: valid ? approval.method : '', APPROVAL_CREATED_AT: valid ? approvalCreatedAt : '' } };"
         }
       },
       {
@@ -1619,11 +1619,11 @@
               },
               {
                 "name": "context",
-                "value": "policy/merge-gate"
+                "value": "={{ $json.STATUS_CONTEXT }}"
               },
               {
                 "name": "description",
-                "value": "={{ $json.APPROVAL_METHOD === 'comment' ? 'Confirmed by PR author ' + $json.REVIEWER + ' for this exact commit' : 'Approved by Forgejo reviewer ' + $json.REVIEWER + ' for this exact commit' }}"
+                "value": "={{ 'Approved for ' + $json.BASE_REF + ' by ' + $json.REVIEWER + ' for this exact commit' }}"
               },
               {
                 "name": "target_url",
@@ -1682,7 +1682,7 @@
               },
               {
                 "name": "merge_when_checks_succeed",
-                "value": "={{ $(\"Get Human Merge Status\").item.json.body.state !== 'success' }}"
+                "value": "={{ $(\"Verify Human Approval\").item.json.BASE_REF === 'main' && $(\"Get Human Merge Status\").item.json.body.state !== 'success' }}"
               }
             ]
           },
@@ -1871,7 +1871,7 @@
         "parameters": {
           "mode": "runOnceForEachItem",
           "language": "javaScript",
-          "jsCode": "const read = (name) => { try { return $(name).first().json ?? {}; } catch { return {}; } };\nconst review = read('Validate Multica Review');\nconst renovate = read('Verify Current Renovate PR');\nconst human = read('Verify Human Approval');\nconst scope = Object.keys(renovate).length ? renovate : human;\nlet kind = 'unknown';\nlet responseCode = 424;\nlet responseBody = { error: 'unclassified policy result' };\nif (review.REVIEW_VALID === false) { kind = 'invalid callback'; responseCode = 400; responseBody = { error: 'invalid review capability or fields' }; }\nelse if ($json.capability_consumed === false) { kind = 'capability replay blocked'; responseCode = 409; responseBody = { error: 'review capability has already been consumed' }; }\nelse if (renovate.PR_READ_FAILED === true) { kind = 'Forgejo PR read failed'; responseCode = 424; responseBody = { error: 'failed to read current Forgejo PR' }; }\nelse if (renovate.PR_MATCHES === false) { kind = 'stale SHA blocked'; responseCode = 409; responseBody = { error: 'PR or head SHA no longer matches' }; }\nelse if ($json.error || $json.message) { kind = 'Forgejo status write failed'; responseCode = 424; responseBody = { error: String($json.error?.message ?? $json.message ?? 'Forgejo status write failed').slice(0, 500) }; }\nelse if ($json.statusCode !== undefined && !($json.statusCode === 200 && ['success', 'pending'].includes(String($json.body?.state ?? '').toLowerCase()))) { kind = 'merge blocked'; responseCode = 409; responseBody = { error: 'required commit status is not ready for merge', forgejo_status: Number($json.statusCode ?? 0) }; }\nelse if (typeof $json.MERGE_OK === 'boolean') { kind = $json.MERGE_OK ? ('merge ' + $json.MERGE_RESULT) : 'merge failed'; responseCode = $json.MERGE_OK ? 200 : $json.RESPONSE_CODE; responseBody = $json.MERGE_OK ? { result: $json.MERGE_RESULT, state: 'success' } : { error: $json.ERROR_MESSAGE, forgejo_status: $json.FORGEJO_STATUS }; }\nelse if (review.VERDICT === 'reject' || review.VERDICT === 'human_required') { kind = review.VERDICT; responseCode = 200; responseBody = { result: 'accepted', verdict: review.VERDICT, state: review.VERDICT === 'reject' ? 'failure' : 'pending' }; }\nconst repo = String(scope.REPO ?? review.REPO ?? 'unknown');\nconst number = Number(scope.PR_NUMBER ?? review.PR_NUMBER ?? 0);\nconst sha = String(scope.HEAD_SHA ?? review.HEAD_SHA ?? 'unknown');\nconst prUrl = number > 0 && repo !== 'unknown' ? 'https://forgejo.beaco.works/' + repo + '/pulls/' + number : '';\nconst evidence = String(review.EVIDENCE_URL ?? '');\nconst summary = String(review.SUMMARY ?? $json.ERROR_MESSAGE ?? '').replace(/[\\r\\n]+/g, ' ').slice(0, 500);\nconst lines = ['Policy event: ' + kind, 'Repository: ' + repo, 'PR: #' + number, 'SHA: ' + sha, prUrl ? 'PR URL: ' + prUrl : '', evidence ? 'Evidence: ' + evidence : '', summary ? 'Summary: ' + summary : '', 'n8n execution: https://automaton.beaco.works/workflow/GzhPPYlazQObUguC/executions/' + $execution.id].filter(Boolean);\nreturn { json: { MESSAGE_TEXT: lines.join('\\n'), RESPONSE_CODE: responseCode, RESPONSE_BODY: responseBody } };"
+          "jsCode": "const read = (name) => { try { return $(name).first().json ?? {}; } catch { return {}; } };\nconst review = read('Validate Multica Review');\nconst renovate = read('Verify Current Renovate PR');\nconst human = read('Verify Human Approval');\nconst finalTarget = read('Verify Human Merge Target');\nconst prodReset = read('Reset Prod Review Pending');\nconst scope = Object.keys(renovate).length ? renovate : human;\nlet kind = 'unknown';\nlet responseCode = 424;\nlet responseBody = { error: 'unclassified policy result' };\nif (Object.keys(prodReset).length) { kind = 'prod approval deferred'; responseCode = 200; responseBody = { result: 'deferred', state: 'pending', message: 'Post a new /approve-prod comment after required checks pass' }; }\nelse if (review.REVIEW_VALID === false) { kind = 'invalid callback'; responseCode = 400; responseBody = { error: 'invalid review capability or fields' }; }\nelse if ($json.capability_consumed === false) { kind = 'capability replay blocked'; responseCode = 409; responseBody = { error: 'review capability has already been consumed' }; }\nelse if (finalTarget.HUMAN_MERGE_TARGET_MATCHES === false) { kind = 'merge target changed'; responseCode = 409; responseBody = { error: 'PR target or head changed before merge' }; }\nelse if (renovate.PR_READ_FAILED === true) { kind = 'Forgejo PR read failed'; responseCode = 424; responseBody = { error: 'failed to read current Forgejo PR' }; }\nelse if (renovate.PR_MATCHES === false) { kind = 'stale SHA blocked'; responseCode = 409; responseBody = { error: 'PR or head SHA no longer matches' }; }\nelse if ($json.error || $json.message) { kind = 'Forgejo status write failed'; responseCode = 424; responseBody = { error: String($json.error?.message ?? $json.message ?? 'Forgejo status write failed').slice(0, 500) }; }\nelse if ($json.statusCode !== undefined && !($json.statusCode === 200 && ['success', 'pending'].includes(String($json.body?.state ?? '').toLowerCase()))) { kind = 'merge blocked'; responseCode = 409; responseBody = { error: 'required commit status is not ready for merge', forgejo_status: Number($json.statusCode ?? 0) }; }\nelse if (typeof $json.MERGE_OK === 'boolean') { kind = $json.MERGE_OK ? ('merge ' + $json.MERGE_RESULT) : 'merge failed'; responseCode = $json.MERGE_OK ? 200 : $json.RESPONSE_CODE; responseBody = $json.MERGE_OK ? { result: $json.MERGE_RESULT, state: 'success' } : { error: $json.ERROR_MESSAGE, forgejo_status: $json.FORGEJO_STATUS }; }\nelse if (review.VERDICT === 'reject' || review.VERDICT === 'human_required') { kind = review.VERDICT; responseCode = 200; responseBody = { result: 'accepted', verdict: review.VERDICT, state: review.VERDICT === 'reject' ? 'failure' : 'pending' }; }\nconst repo = String(scope.REPO ?? review.REPO ?? 'unknown');\nconst number = Number(scope.PR_NUMBER ?? review.PR_NUMBER ?? 0);\nconst sha = String(scope.HEAD_SHA ?? review.HEAD_SHA ?? 'unknown');\nconst prUrl = number > 0 && repo !== 'unknown' ? 'https://forgejo.beaco.works/' + repo + '/pulls/' + number : '';\nconst evidence = String(review.EVIDENCE_URL ?? '');\nconst summary = String(Object.keys(prodReset).length ? 'Post a new /approve-prod comment after required checks pass' : (review.SUMMARY ?? $json.ERROR_MESSAGE ?? '')).replace(/[\\r\\n]+/g, ' ').slice(0, 500);\nconst lines = ['Policy event: ' + kind, 'Repository: ' + repo, 'PR: #' + number, 'SHA: ' + sha, prUrl ? 'PR URL: ' + prUrl : '', evidence ? 'Evidence: ' + evidence : '', summary ? 'Summary: ' + summary : '', 'n8n execution: https://automaton.beaco.works/workflow/GzhPPYlazQObUguC/executions/' + $execution.id].filter(Boolean);\nreturn { json: { MESSAGE_TEXT: lines.join('\\n'), RESPONSE_CODE: responseCode, RESPONSE_BODY: responseBody } };"
         }
       },
       {
@@ -1964,7 +1964,7 @@
             },
             "conditions": [
               {
-                "leftValue": "={{ $json.statusCode === 200 && ['success', 'pending'].includes(String($json.body?.state ?? '').toLowerCase()) }}",
+                "leftValue": "={{ $json.statusCode === 200 && (String($json.body?.state ?? '').toLowerCase() === 'success' || ($(\"Verify Human Approval\").item.json.BASE_REF === 'main' && String($json.body?.state ?? '').toLowerCase() === 'pending')) }}",
                 "rightValue": true,
                 "operator": {
                   "type": "boolean",
@@ -2663,6 +2663,447 @@
             "responseCode": 424
           }
         }
+      },
+      {
+        "id": "50b422ad-aba4-442a-b2db-5930f4d146a7",
+        "name": "Get Current Human PR For Pending",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2576,
+          288
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Decide Event Transition\").item.json.REPO + '/pulls/' + $(\"Decide Event Transition\").item.json.PR_NUMBER }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "3b1bce55-eeba-4369-8f9f-1c54897c7ad8",
+        "name": "Verify Human Pending Target",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2688,
+          288
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const source = $(\"Decide Event Transition\").item.json;\nconst response = $json;\nconst pr = response.body ?? {};\nconst target = String(source.PR_BASE_REF ?? '');\nconst validTarget = target === 'main' && ['infrastructure/infra', 'infrastructure/infra-private'].includes(source.REPO)\n  || target === 'prod' && source.REPO === 'infrastructure/infra-private';\nconst valid = response.statusCode === 200\n  && validTarget\n  && pr.state === 'open'\n  && Number(pr.number) === Number(source.PR_NUMBER)\n  && pr.base?.ref === target\n  && String(pr.base?.repo?.full_name ?? '') === source.REPO\n  && /^[0-9a-f]{40}$/.test(String(source.PR_HEAD_SHA ?? '').toLowerCase())\n  && String(pr.head?.sha ?? pr.head?.id ?? '').toLowerCase() === String(source.PR_HEAD_SHA ?? '').toLowerCase()\n  && String(pr.user?.login ?? pr.user?.username ?? '') !== 'renovate';\nreturn { json: { ...source, HUMAN_PENDING_TARGET_MATCHES: valid } };"
+        }
+      },
+      {
+        "id": "01f2f2e4-62c9-45d8-bf19-f7674f73ac47",
+        "name": "Human Pending Target Matches",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2800,
+          288
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.HUMAN_PENDING_TARGET_MATCHES }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "2d465c5b-b256-4395-ab40-a7947edc994f",
+        "name": "Get Human PR Before Merge",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          3808,
+          128
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Verify Human Approval\").item.json.REPO + '/pulls/' + $(\"Verify Human Approval\").item.json.PR_NUMBER }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "4e8db200-447c-43d8-b305-6e20a947d4f5",
+        "name": "Verify Human Merge Target",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3920,
+          128
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const approved = $(\"Verify Human Approval\").item.json;\nconst response = $(\"Get Human PR Before Merge\").item.json;\nlet targetHistoryValid = approved.BASE_REF === 'main';\nif (approved.BASE_REF === 'prod') {\n  const timelineResponse = $(\"Get Human Merge Timeline\").item.json;\n  const nextPageResponse = $(\"Check Human Merge Timeline Completeness\").item.json;\n  const timeline = timelineResponse.body === null ? [] : timelineResponse.body;\n  const nextPage = nextPageResponse.body === null ? [] : nextPageResponse.body;\n  const createdAt = Date.parse(String(approved.APPROVAL_CREATED_AT ?? ''));\n  targetHistoryValid = Number.isFinite(createdAt)\n    && timelineResponse.statusCode === 200\n    && nextPageResponse.statusCode === 200\n    && Array.isArray(timeline)\n    && Array.isArray(nextPage)\n    && nextPage.length === 0\n    && timeline.every((entry) => typeof entry.type === 'string'\n      && (entry.type !== 'change_target_branch' || Number.isFinite(Date.parse(String(entry.created_at ?? '')))))\n    && !timeline.some((entry) => entry.type === 'change_target_branch'\n      && Date.parse(String(entry.created_at)) >= createdAt);\n}\nconst pr = response.body ?? {};\nconst valid = response.statusCode === 200\n  && targetHistoryValid\n  && pr.state === 'open'\n  && Number(pr.number) === Number(approved.PR_NUMBER)\n  && pr.base?.ref === approved.BASE_REF\n  && String(pr.base?.repo?.full_name ?? '') === approved.REPO\n  && /^[0-9a-f]{40}$/.test(String(approved.HEAD_SHA ?? ''))\n  && String(pr.head?.sha ?? pr.head?.id ?? '').toLowerCase() === approved.HEAD_SHA\n  && ((approved.BASE_REF === 'main' && ['infrastructure/infra', 'infrastructure/infra-private'].includes(approved.REPO))\n    || (approved.BASE_REF === 'prod' && approved.REPO === 'infrastructure/infra-private'));\nreturn { json: { ...approved, HUMAN_MERGE_TARGET_MATCHES: valid } };"
+        }
+      },
+      {
+        "id": "c1ec7c98-260e-422c-ae60-1522d06c50b1",
+        "name": "Human Merge Target Matches",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          4032,
+          128
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.HUMAN_MERGE_TARGET_MATCHES }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "e4ddedab-2be4-4e52-aedc-896b0ad1c97b",
+        "name": "Is Prod Human Approval",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2688,
+          160
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $(\"Decide Event Transition\").item.json.APPROVAL_TARGET === 'prod' }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "80030f2f-e95a-44da-b10d-f742c9885ffb",
+        "name": "Get Human PR Timeline",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2800,
+          160
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Decide Event Transition\").item.json.REPO + '/issues/' + $(\"Decide Event Transition\").item.json.PR_NUMBER + '/timeline?page=1&limit=1000&since=' + encodeURIComponent(new Date(Date.parse($(\"Get Human PR Reviews\").item.json.body?.created_at) - 1000).toISOString()) }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "c836e105-5836-4dab-8868-523c931808b3",
+        "name": "Check Human Timeline Completeness",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2912,
+          160
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Decide Event Transition\").item.json.REPO + '/issues/' + $(\"Decide Event Transition\").item.json.PR_NUMBER + '/timeline?page=2&limit=1000&since=' + encodeURIComponent(new Date(Date.parse($(\"Get Human PR Reviews\").item.json.body?.created_at) - 1000).toISOString()) }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "8c8b9457-828d-437e-81a9-189ce83002a3",
+        "name": "Is Prod Human Merge",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          3920,
+          128
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $(\"Verify Human Approval\").item.json.BASE_REF === 'prod' }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "275f4037-713c-4f44-a13a-107a54247afe",
+        "name": "Get Human Merge Timeline",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          4032,
+          128
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Verify Human Approval\").item.json.REPO + '/issues/' + $(\"Verify Human Approval\").item.json.PR_NUMBER + '/timeline?page=1&limit=1000&since=' + encodeURIComponent(new Date(Date.parse($(\"Verify Human Approval\").item.json.APPROVAL_CREATED_AT) - 1000).toISOString()) }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "7b2bb0b0-dc30-4259-8fd2-7d0993ea780d",
+        "name": "Check Human Merge Timeline Completeness",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          4144,
+          128
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Verify Human Approval\").item.json.REPO + '/issues/' + $(\"Verify Human Approval\").item.json.PR_NUMBER + '/timeline?page=2&limit=1000&since=' + encodeURIComponent(new Date(Date.parse($(\"Verify Human Approval\").item.json.APPROVAL_CREATED_AT) - 1000).toISOString()) }}",
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true,
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "b1c8125c-3cfd-4840-8863-f9416a7c4871",
+        "name": "Is Prod Human Merge Deferred",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          3808,
+          320
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $(\"Verify Human Approval\").item.json.BASE_REF === 'prod' }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "567608e4-c7ea-41b0-91a4-9b95fe7fe28a",
+        "name": "Reset Prod Review Pending",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          3920,
+          320
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Verify Human Approval\").item.json.REPO + '/statuses/' + $(\"Verify Human Approval\").item.json.HEAD_SHA }}",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "keypair",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "state",
+                "value": "pending"
+              },
+              {
+                "name": "context",
+                "value": "policy/prod-merge-gate"
+              },
+              {
+                "name": "description",
+                "value": "Prod approval deferred; rerun /approve-prod after required checks pass"
+              },
+              {
+                "name": "target_url",
+                "value": "={{ $(\"Verify Human Approval\").item.json.PR_URL }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
       }
     ],
     "connections": {
@@ -3219,7 +3660,7 @@
         "main": [
           [
             {
-              "node": "Set Human Review Pending",
+              "node": "Get Current Human PR For Pending",
               "type": "main",
               "index": 0
             }
@@ -3242,7 +3683,7 @@
         "main": [
           [
             {
-              "node": "Verify Human Approval",
+              "node": "Is Prod Human Approval",
               "type": "main",
               "index": 0
             }
@@ -3401,14 +3842,14 @@
         "main": [
           [
             {
-              "node": "Merge Human-Approved PR",
+              "node": "Get Human PR Before Merge",
               "type": "main",
               "index": 0
             }
           ],
           [
             {
-              "node": "Build Policy Notice",
+              "node": "Is Prod Human Merge Deferred",
               "type": "main",
               "index": 0
             }
@@ -3679,6 +4120,189 @@
           [
             {
               "node": "Accept Queued Renovate Review",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Current Human PR For Pending": {
+        "main": [
+          [
+            {
+              "node": "Verify Human Pending Target",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verify Human Pending Target": {
+        "main": [
+          [
+            {
+              "node": "Human Pending Target Matches",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Human Pending Target Matches": {
+        "main": [
+          [
+            {
+              "node": "Set Human Review Pending",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Get Human PR Before Merge": {
+        "main": [
+          [
+            {
+              "node": "Is Prod Human Merge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verify Human Merge Target": {
+        "main": [
+          [
+            {
+              "node": "Human Merge Target Matches",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Human Merge Target Matches": {
+        "main": [
+          [
+            {
+              "node": "Merge Human-Approved PR",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Is Prod Human Merge Deferred",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Prod Human Approval": {
+        "main": [
+          [
+            {
+              "node": "Get Human PR Timeline",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Verify Human Approval",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Human PR Timeline": {
+        "main": [
+          [
+            {
+              "node": "Check Human Timeline Completeness",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Check Human Timeline Completeness": {
+        "main": [
+          [
+            {
+              "node": "Verify Human Approval",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Prod Human Merge": {
+        "main": [
+          [
+            {
+              "node": "Get Human Merge Timeline",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Verify Human Merge Target",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Human Merge Timeline": {
+        "main": [
+          [
+            {
+              "node": "Check Human Merge Timeline Completeness",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Check Human Merge Timeline Completeness": {
+        "main": [
+          [
+            {
+              "node": "Verify Human Merge Target",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Prod Human Merge Deferred": {
+        "main": [
+          [
+            {
+              "node": "Reset Prod Review Pending",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Build Policy Notice",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Reset Prod Review Pending": {
+        "main": [
+          [
+            {
+              "node": "Build Policy Notice",
               "type": "main",
               "index": 0
             }

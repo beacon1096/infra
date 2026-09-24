@@ -146,18 +146,19 @@ autopilot 与运行的绑定关系、取消所有仍在排队或执行中的先�
 
 ## 非 Renovate 拉取请求
 
-受保护的 `policy/merge-gate` 状态上下文适用于每个拉取请求。普通 PR 在创建、重新打开或更新时，当前 SHA 的门禁会设为 pending。如果操作员不是 PR 作者，则通过 Forgejo 的常规审查界面批准。Forgejo 有意禁止作者批准自己的 PR，因此允许名单中的作者改为在 PR 上发布内容严格为 `/approve <full-40-character-head-SHA>` 的评论。
+目标为 `main` 的普通 PR 使用 `policy/merge-gate`；目标为 `infra-private/prod` 的热修复 PR 使用独立的 `policy/prod-merge-gate`。PR 在创建、重新打开或更新时，n8n 重新读取当前目标分支和头部 SHA，然后把对应门禁设为 pending。`main` PR 可由非作者通过 Forgejo 常规审查界面批准。Forgejo 有意禁止作者批准自己的 PR，因此允许名单中的作者在 `main` PR 上发布内容严格为 `/approve <full-40-character-head-SHA>` 的评论。`prod` PR 只接受 `/approve-prod <full-40-character-head-SHA>` 评论，不接受常规审查或 `/approve`。
 
 审查或评论 webhook 仅用于唤醒流程。n8n 不信任其中声称的审查人、命令或结论。它通过固定的 Forgejo API 源地址重新读取开放的 PR，以及该 PR 的审查记录或指定评论，然后要求同时满足以下条件：
 
-- 仓库是两个基础设施仓库之一，目标分支为 `main`；
+- `/approve` 或常规审查仅适用于两个基础设施仓库的 `main`；`/approve-prod` 仅适用于 `infra-private/prod`；
 - PR 作者不是 `renovate`；
 - webhook 中的 PR 头部提交与当前 PR 头部提交相同；
 - 对于审查记录，其 `commit_id` 是当前头部提交，且既未过时，也未被撤销；
-- 对于作者确认，重新读取的评论 ID 与 webhook 中的 ID 相同，正文仅包含 `/approve` 加上当前头部提交的完整 SHA，不接受缩写 SHA；
+- 对于评论确认，重新读取的评论 ID 与 webhook 中的 ID 相同，命令对应当前目标分支，正文包含当前头部提交的完整 SHA，不接受缩写 SHA；
+- 对于 `prod` 评论，n8n 在批准时及合并前都读取完整的 PR 时间线；审批评论创建后只要发生过目标分支变更，旧评论即失效。同一时间戳按失效处理，时间线读取失败或分页未读完也拒绝批准；
 - 审查人或确认操作的作者位于明确的操作员允许名单中，初始名单为 `beacon1096`。
 
-只有满足这些条件，`multica-gate` 才会将该 SHA 标记为成功，隔离的 `multica-merger` 凭据才会使用相同的 `head_commit_id` 请求受保护的合并。重放旧审查记录无法批准已变化的头部提交。Multica 的决定继续使用独立的已签名能力凭证路径；代理无法从 PR 可控内容伪造这两类事件中的任何一种。
+只有满足这些条件，`multica-gate` 才会将该 SHA 的对应目标分支状态标记为成功。随后 n8n 再次读取 PR，核对仓库、目标分支、开放状态和头部 SHA；对于 `prod`，还再次核对目标分支变更时间线。聚合检查成功后，隔离的 `multica-merger` 凭据才会使用相同的 `head_commit_id` 请求即时合并。`main` 在其他检查仍为 pending 时保留原有 Forgejo 延迟合并行为；`prod` 不排队，必须等待必需检查全绿后再发布 `/approve-prod`。如果提前发布，n8n 会将生产门禁恢复为 pending，操作者须发布新评论重试。重放旧审查记录无法批准已变化的头部提交。Forgejo 合并 API 不支持原子校验目标分支，因此最后一次读取与合并请求之间仍有短暂竞态；`prod` 分支保护必须只接受 `policy/prod-merge-gate`，`main` 必须只接受 `policy/merge-gate`。Multica 的决定继续使用独立的已签名能力凭证路径；代理无法从 PR 可控内容伪造这两类事件中的任何一种。
 
 作者确认是绑定验证后修订版本的第二次操作，而不是独立的双人复核。这是明确的单操作员例外：目前获授权以 `beacon1096` 身份操作的代理，与该 Forgejo 用户属于同一主体，门禁无法区分代理和人工操作员。长期而言，应使用代理专属的 Forgejo 身份恢复这种区分；在此之前，审计记录只能证明共享主体确认了哪个确切修订版本，无法证明点击者是人工还是受委托的代理。
 
@@ -189,7 +190,7 @@ PR #33（`go-task`）和 #39（`pipx`）创建于 `mise` 分组规则生效之�
 
 ## 合并就绪状态与可观测性
 
-人工批准的 PR 继续走即时合并路径。使用合并器凭据之前，n8n 会重新读取确切获批 SHA 在 Forgejo 中的聚合提交状态。状态失败、缺失或无法读取时，流程都不会到达合并器节点。合并仍绑定 `head_commit_id`、不使用强制合并，并受分支保护约束。
+人工批准的 `prod` PR 走即时合并路径；`main` 保留检查 pending 时的延迟合并。使用合并器凭据之前，n8n 会重新读取确切获批 SHA 在 Forgejo 中的聚合提交状态及当前 PR。生产状态不是成功、PR 目标分支或 SHA 已变化、或任一读取失败时，流程都不会到达合并器节点。合并仍绑定 `head_commit_id`、不使用强制合并，并受分支保护约束。
 
 策略结果以纯文本通知发送到 Forgejo CI Matrix 房间。通知涵盖无效回调、能力凭证重放、过时的 SHA、`reject`、`human_required`、被阻塞或失败的合并、排队中的合并及已完成的合并。通知包含仓库、PR、确切的 SHA、可用时的证据 URL 和 n8n 执行 URL，但绝不包含能力凭证或其他凭据。回调响应与通知投递并行进行，因此 Matrix 故障不会使已接受的决定变成一次与凭证单次使用限制冲突的重试。
 

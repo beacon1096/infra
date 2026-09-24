@@ -148,6 +148,37 @@ assert.equal(selfApprovalEvent.IS_HUMAN_APPROVAL_SIGNAL, true);
 assert.equal(selfApprovalEvent.APPROVAL_KIND, "comment");
 assert.equal(selfApprovalEvent.APPROVAL_COMMENT_ID, 20);
 assert.equal(selfApprovalEvent.PR_HEAD_SHA, event.PR_HEAD_SHA);
+assert.equal(selfApprovalEvent.APPROVAL_TARGET, "main");
+
+const prodApprovalEvent = execute("Normalize Forgejo Event", {
+  $json: {
+    headers: { "x-forgejo-event": "issue" },
+    body: {
+      action: "created",
+      repository: { full_name: "infrastructure/infra-private" },
+      sender: { login: "beacon1096" },
+      issue: { number: 24, pull_request: { merged: false } },
+      comment: { id: 25, body: `/approve-prod ${event.PR_HEAD_SHA}` },
+    },
+  },
+  $execution: { id: "prod-approval-execution" },
+}).json;
+assert.equal(prodApprovalEvent.SUPPORTED, true);
+assert.equal(prodApprovalEvent.IS_HUMAN_APPROVAL_SIGNAL, true);
+assert.equal(prodApprovalEvent.APPROVAL_TARGET, "prod");
+assert.equal(prodApprovalEvent.PR_HEAD_SHA, event.PR_HEAD_SHA);
+assert.equal(execute("Normalize Forgejo Event", {
+  $json: {
+    headers: { "x-forgejo-event": "issue" },
+    body: {
+      action: "created",
+      repository: { full_name: "infrastructure/infra" },
+      issue: { number: 24, pull_request: {} },
+      comment: { id: 26, body: `/approve-prod ${event.PR_HEAD_SHA}` },
+    },
+  },
+  $execution: { id: "wrong-repo-prod-approval" },
+}).json.IS_HUMAN_APPROVAL_SIGNAL, false);
 
 const decideEventTransition = (current, previous) =>
   execute("Decide Event Transition", {
@@ -200,13 +231,16 @@ const verifyHumanApproval = (reviews, headSha = event.PR_HEAD_SHA) =>
       item: {
         json: name === "Decide Event Transition"
           ? { ...humanReviewEvent, PR_HEAD_SHA: event.PR_HEAD_SHA }
+          : name === "Get Human PR Reviews"
+            ? { statusCode: 200, body: reviews }
           : {
               statusCode: 200,
               body: {
                 state: "open",
+                number: 8,
                 html_url: "https://forgejo.beaco.works/infrastructure/infra/pulls/8",
                 user: { login: "contributor" },
-                base: { ref: "main" },
+                base: { ref: "main", repo: { full_name: "infrastructure/infra" } },
                 head: { sha: headSha },
               },
             },
@@ -227,20 +261,35 @@ assert.equal(verifyHumanApproval([{
   user: { login: "untrusted-reviewer" },
 }]).HUMAN_APPROVAL_VALID, false);
 
-const verifySelfApproval = (comment, headSha = event.PR_HEAD_SHA) =>
+const verifySelfApproval = (
+  comment,
+  headSha = event.PR_HEAD_SHA,
+  source = selfApprovalEvent,
+  base = "main",
+  repo = "infrastructure/infra",
+  timeline = [],
+  nextPage = [],
+) =>
   execute("Verify Human Approval", {
     $json: { statusCode: 200, body: comment },
     $: (name) => ({
       item: {
         json: name === "Decide Event Transition"
-          ? selfApprovalEvent
+          ? source
+          : name === "Get Human PR Reviews"
+            ? { statusCode: 200, body: comment }
+            : name === "Get Human PR Timeline"
+              ? { statusCode: 200, body: timeline }
+              : name === "Check Human Timeline Completeness"
+                ? { statusCode: 200, body: nextPage }
           : {
               statusCode: 200,
               body: {
                 state: "open",
-                html_url: "https://forgejo.beaco.works/infrastructure/infra/pulls/8",
+                number: Number(source.PR_NUMBER),
+                html_url: `https://forgejo.beaco.works/${repo}/pulls/${source.PR_NUMBER}`,
                 user: { login: "beacon1096" },
-                base: { ref: "main" },
+                base: { ref: base, repo: { full_name: repo } },
                 head: { sha: headSha },
               },
             },
@@ -253,6 +302,169 @@ assert.equal(verifySelfApproval({
   body: `/approve ${event.PR_HEAD_SHA}`,
   user: { login: "beacon1096" },
 }).HUMAN_APPROVAL_VALID, true);
+const prodComment = {
+  id: 25,
+  body: `/approve-prod ${event.PR_HEAD_SHA}`,
+  created_at: "2026-09-24T00:00:00Z",
+  user: { login: "beacon1096" },
+};
+const verifiedProd = verifySelfApproval(
+  prodComment, event.PR_HEAD_SHA, prodApprovalEvent, "prod", "infrastructure/infra-private",
+);
+assert.equal(verifiedProd.HUMAN_APPROVAL_VALID, true);
+assert.equal(verifiedProd.STATUS_CONTEXT, "policy/prod-merge-gate");
+assert.equal(verifiedProd.APPROVAL_CREATED_AT, prodComment.created_at);
+assert.equal(verifySelfApproval(
+  prodComment, event.PR_HEAD_SHA, prodApprovalEvent, "prod", "infrastructure/infra-private",
+  [
+    { type: "change_target_branch", created_at: "2026-09-24T00:00:00Z" },
+    { type: "change_target_branch", created_at: "2026-09-24T00:01:00Z" },
+  ],
+).HUMAN_APPROVAL_VALID, false);
+assert.equal(verifySelfApproval(
+  prodComment, event.PR_HEAD_SHA, prodApprovalEvent, "prod", "infrastructure/infra-private",
+  [{ type: "change_target_branch", created_at: "2026-09-23T23:59:59Z" }],
+).HUMAN_APPROVAL_VALID, true);
+assert.equal(verifySelfApproval(
+  prodComment, event.PR_HEAD_SHA, prodApprovalEvent, "prod", "infrastructure/infra-private",
+  [{ type: "change_target_branch", created_at: "2026-09-24T00:00:00Z" }],
+).HUMAN_APPROVAL_VALID, false);
+assert.equal(verifySelfApproval(
+  prodComment, event.PR_HEAD_SHA, prodApprovalEvent, "prod", "infrastructure/infra-private",
+  [], [{ type: "comment" }],
+).HUMAN_APPROVAL_VALID, false);
+assert.equal(verifySelfApproval(
+  prodComment, event.PR_HEAD_SHA, prodApprovalEvent, "prod", "infrastructure/infra-private",
+  null,
+).HUMAN_APPROVAL_VALID, true);
+assert.equal(verifySelfApproval(
+  prodComment, event.PR_HEAD_SHA, prodApprovalEvent, "prod", "infrastructure/infra-private",
+  null, null,
+).HUMAN_APPROVAL_VALID, true);
+assert.equal(verifySelfApproval(
+  prodComment, event.PR_HEAD_SHA, prodApprovalEvent, "prod", "infrastructure/infra-private",
+  {},
+).HUMAN_APPROVAL_VALID, false);
+assert.equal(verifySelfApproval(
+  { ...prodComment, created_at: undefined },
+  event.PR_HEAD_SHA, prodApprovalEvent, "prod", "infrastructure/infra-private",
+).HUMAN_APPROVAL_VALID, false);
+assert.equal(verifySelfApproval(
+  prodComment, event.PR_HEAD_SHA, prodApprovalEvent, "main", "infrastructure/infra-private",
+).HUMAN_APPROVAL_VALID, false);
+assert.equal(verifySelfApproval(
+  { ...prodComment, body: `/approve ${event.PR_HEAD_SHA}` },
+  event.PR_HEAD_SHA, prodApprovalEvent, "prod", "infrastructure/infra-private",
+).HUMAN_APPROVAL_VALID, false);
+assert.equal(verifySelfApproval(
+  { id: 20, body: `/approve ${event.PR_HEAD_SHA}`, user: { login: "beacon1096" } },
+  event.PR_HEAD_SHA, selfApprovalEvent, "prod", "infrastructure/infra",
+).HUMAN_APPROVAL_VALID, false);
+assert.equal(verifySelfApproval(
+  prodComment, event.PR_HEAD_SHA, prodApprovalEvent, "prod", "infrastructure/infra",
+).HUMAN_APPROVAL_VALID, false);
+
+const prodUpdate = execute("Normalize Forgejo Event", {
+  $json: {
+    headers: { "x-forgejo-event": "pull_request" },
+    body: {
+      action: "synchronize",
+      repository: { full_name: "infrastructure/infra-private" },
+      pull_request: {
+        number: 24,
+        user: { login: "beacon1096" },
+        base: { ref: "prod" },
+        head: { sha: event.PR_HEAD_SHA },
+      },
+    },
+  },
+  $execution: { id: "prod-update" },
+}).json;
+assert.equal(prodUpdate.IS_ORDINARY_PR_UPDATE, true);
+const retargetedProd = execute("Normalize Forgejo Event", {
+  $json: {
+    headers: { "x-forgejo-event": "pull_request", "x-forgejo-delivery": "retargeted-prod" },
+    body: {
+      action: "edited",
+      repository: { full_name: "infrastructure/infra-private" },
+      pull_request: {
+        number: 24,
+        user: { login: "beacon1096" },
+        base: { ref: "prod" },
+        head: { sha: event.PR_HEAD_SHA },
+      },
+    },
+  },
+  $execution: { id: "retargeted-prod" },
+}).json;
+assert.equal(retargetedProd.SUPPORTED, true);
+assert.equal(retargetedProd.IS_ORDINARY_PR_UPDATE, true);
+assert.equal(decideEventTransition(retargetedProd, {
+  STATE_KEY: retargetedProd.STATE_KEY,
+  LAST_DELIVERY_ID: "prior-delivery",
+}).SHOULD_NOTIFY, true);
+const verifyPending = (base, sha = event.PR_HEAD_SHA, repo = "infrastructure/infra-private") =>
+  execute("Verify Human Pending Target", {
+    $json: { statusCode: 200, body: {
+      state: "open",
+      number: 24,
+      base: { ref: base, repo: { full_name: repo } },
+      head: { sha },
+      user: { login: "beacon1096" },
+    } },
+    $: () => ({ item: { json: prodUpdate } }),
+  }).json.HUMAN_PENDING_TARGET_MATCHES;
+assert.equal(verifyPending("prod"), true);
+assert.equal(verifyPending("main"), false);
+assert.equal(verifyPending("prod", "a".repeat(40)), false);
+assert.equal(verifyPending("prod", event.PR_HEAD_SHA, "infrastructure/infra"), false);
+
+const verifyMergeTarget = (
+  base,
+  sha = event.PR_HEAD_SHA,
+  repo = "infrastructure/infra-private",
+  timeline = [],
+  nextPage = [],
+) =>
+  execute("Verify Human Merge Target", {
+    $json: { statusCode: 200, body: {
+      state: "open",
+      number: 24,
+      base: { ref: base, repo: { full_name: repo } },
+      head: { sha },
+    } },
+    $: (name) => ({ item: { json: name === "Verify Human Approval"
+      ? verifiedProd
+      : name === "Get Human Merge Timeline"
+        ? { statusCode: 200, body: timeline }
+        : name === "Check Human Merge Timeline Completeness"
+          ? { statusCode: 200, body: nextPage }
+          : { statusCode: 200, body: {
+              state: "open",
+              number: 24,
+              base: { ref: base, repo: { full_name: repo } },
+              head: { sha },
+            } },
+    } }),
+  }).json.HUMAN_MERGE_TARGET_MATCHES;
+assert.equal(verifyMergeTarget("prod"), true);
+assert.equal(verifyMergeTarget("prod", event.PR_HEAD_SHA, "infrastructure/infra-private", null, null), true);
+assert.equal(verifyMergeTarget("main"), false);
+assert.equal(verifyMergeTarget("prod", "a".repeat(40)), false);
+assert.equal(verifyMergeTarget("prod", event.PR_HEAD_SHA, "infrastructure/infra"), false);
+assert.equal(verifyMergeTarget("prod", event.PR_HEAD_SHA, "infrastructure/infra-private", [
+  { type: "change_target_branch", created_at: "2026-09-24T00:01:00Z" },
+  { type: "change_target_branch", created_at: "2026-09-24T00:02:00Z" },
+]), false);
+assert.equal(verifyMergeTarget("prod", event.PR_HEAD_SHA, "infrastructure/infra-private", [], [
+  { type: "comment" },
+]), false);
+assert.deepEqual(workflow.connections["Human Merge Target Matches"].main.map((branch) =>
+  branch.map(({ node }) => node)),
+[["Merge Human-Approved PR"], ["Is Prod Human Merge Deferred"]]);
+assert.deepEqual(workflow.connections["Is Prod Human Merge"].main.map((branch) =>
+  branch.map(({ node }) => node)),
+[["Get Human Merge Timeline"], ["Verify Human Merge Target"]]);
 assert.equal(verifySelfApproval({
   id: 20,
   body: "/approve aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -426,9 +638,26 @@ const humanMergeFields = Object.fromEntries(
   humanMerge.parameters.bodyParameters.parameters.map((field) => [field.name, field.value]),
 );
 assert.equal(humanMergeFields.force_merge, undefined);
+assert.match(humanMergeFields.merge_when_checks_succeed, /BASE_REF === 'main'/);
 assert.match(humanMergeFields.merge_when_checks_succeed, /Get Human Merge Status/);
-assert.match(humanMergeFields.merge_when_checks_succeed, /state !== 'success'/);
 assert.match(humanMergeFields.head_commit_id, /Verify Human Approval/);
+assert.deepEqual(workflow.connections["Is Prod Human Approval"].main.map((branch) =>
+  branch.map(({ node }) => node)),
+[["Get Human PR Timeline"], ["Verify Human Approval"]]);
+assert.match(nodes.get("Get Human PR Timeline").parameters.url, /page=1&limit=1000&since=/);
+assert.match(nodes.get("Check Human Timeline Completeness").parameters.url, /page=2&limit=1000&since=/);
+assert.match(nodes.get("Human Merge Status Can Proceed").parameters.conditions.conditions[0].leftValue, /=== 'success'/);
+assert.match(nodes.get("Human Merge Status Can Proceed").parameters.conditions.conditions[0].leftValue, /BASE_REF === 'main'/);
+assert.equal(nodes.get("Reset Prod Review Pending").parameters.bodyParameters.parameters.find(
+  ({ name }) => name === "context",
+).value, "policy/prod-merge-gate");
+assert.equal(nodes.get("Reset Prod Review Pending").retryOnFail, true);
+assert.equal(nodes.get("Set Human Review Status").parameters.bodyParameters.parameters.find(
+  ({ name }) => name === "context",
+).value, "={{ $json.STATUS_CONTEXT }}");
+assert.match(nodes.get("Set Human Review Pending").parameters.bodyParameters.parameters.find(
+  ({ name }) => name === "context",
+).value, /policy\/prod-merge-gate/);
 
 assert.match(nodes.get("Check Renovate Merge Result").parameters.jsCode, /\[200, 201\]/);
 assert.match(nodes.get("Check Human Merge Result").parameters.jsCode, /\[200, 201\]/);
@@ -454,6 +683,18 @@ const blockedMergeNotice = execute("Build Policy Notice", {
 assert.equal(blockedMergeNotice.RESPONSE_CODE, 409);
 assert.match(blockedMergeNotice.MESSAGE_TEXT, /merge blocked/);
 
+const deferredProdNotice = execute("Build Policy Notice", {
+  $json: {},
+  $: (name) => ({ first: () => ({ json: name === "Reset Prod Review Pending"
+    ? { state: "pending" }
+    : name === "Verify Human Approval"
+      ? verifiedProd
+      : {} }) }),
+  $execution: { id: "prod-deferred-test" },
+}).json;
+assert.equal(deferredProdNotice.RESPONSE_BODY.state, "pending");
+assert.match(deferredProdNotice.MESSAGE_TEXT, /new \/approve-prod comment/);
+
 const dependencyFailureNotice = execute("Build Policy Notice", {
   $json: {},
   $: (name) => ({
@@ -471,14 +712,17 @@ assert.equal(
   "failed to read current Forgejo PR",
 );
 
-for (const name of [
-  "Renovate Merge Status Can Proceed",
-  "Human Merge Status Can Proceed",
-]) {
-  const branches = workflow.connections[name].main.map((branch) =>
-    branch.map(({ node }) => node));
-  assert.equal(branches[1][0], "Build Policy Notice");
-}
+assert.equal(
+  workflow.connections["Renovate Merge Status Can Proceed"].main[1][0].node,
+  "Build Policy Notice",
+);
+assert.equal(
+  workflow.connections["Human Merge Status Can Proceed"].main[1][0].node,
+  "Is Prod Human Merge Deferred",
+);
+assert.deepEqual(workflow.connections["Is Prod Human Merge Deferred"].main.map((branch) =>
+  branch.map(({ node }) => node)),
+[["Reset Prod Review Pending"], ["Build Policy Notice"]]);
 
 for (const name of [
   "Get Current Renovate PR",

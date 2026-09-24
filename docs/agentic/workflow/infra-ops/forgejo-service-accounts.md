@@ -5,7 +5,7 @@
 | 用户名 | 邮箱 | 用途 | 仓库权限 |
 | --- | --- | --- | --- |
 | `renovate` | `renovate@noreply.forgejo.beaco.works` | 发现依赖更新并创建 PR | `infrastructure/infra` 和 `infrastructure/infra-private` 的写入协作者 |
-| `multica-gate` | `multica-gate.no-reply@beacoworks.xyz` | 读取 Renovate PR，写入 `policy/merge-gate` 提交状态 | 两个基础设施仓库的写入协作者 |
+| `multica-gate` | `multica-gate.no-reply@beacoworks.xyz` | 读取 PR，写入 `policy/merge-gate` 或 `policy/prod-merge-gate` 提交状态 | 两个基础设施仓库的写入协作者 |
 | `multica-merger` | `multica-merger.no-reply@beacoworks.xyz` | 满足受保护分支要求后合并 PR | 两个基础设施仓库的写入协作者 |
 | `ci-publisher` | `ci-publisher.no-reply@beacoworks.xyz` | 发布可丢弃的 OCI 冒烟测试镜像 | 不属于仓库或组织；只拥有 `ci-publisher/` 下的软件包 |
 
@@ -25,6 +25,8 @@ Forgejo 对 `infrastructure/infra` 和 `infrastructure/infra-private` 的 `main`
 - 仅允许 `multica-merger` 执行合并。
 
 合并白名单和合并账号凭据已经启用。n8n 只有在验证与 SHA 绑定的审查凭证后才能安排合并；Forgejo 仍负责执行全部分支保护要求。目前这些规则通过 Forgejo API 管理，并在此记录，尚未由仓库声明式管理。
+
+`infra-private/prod` 的保护规则应单独要求 `policy/prod-merge-gate`，不得复用 `main` 的 `policy/merge-gate`。设置该规则前，必须先发布并验证支持 `/approve-prod <完整头部 SHA>` 的 n8n 工作流。
 
 本文不得写入密码、PAT、webhook URL 或回调凭据；其真实来源是对应的 SOPS Secret 或 Forgejo 凭据库。
 
