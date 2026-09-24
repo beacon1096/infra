@@ -58,3 +58,27 @@ systemctl show "gitea-runner-$(systemd-escape "$(hostname)").service" \
 ```
 
 部署后，使用受控测试作业验证：排空会在当前作业完成的同时阻止获取新作业，维护标记会阻止 runner 启动，而当 runner 尚未完全停止时会跳过维护。Nix 构建成功只能验证配置，不能检验这些实际运行时行为。
+
+## aarch64 与 Darwin 构建能力
+
+x86_64 构建池除三台 Harvester 构建机外，还有注册了 `nix-builder:host` 的 `gen10plus`；它同时承载本地 OSPF 出口代理。上述轮换是为了避免 Longhorn I/O 与存储维护影响构建，并不要求 runner 只能承担一种职责。
+
+`beacon-mac-mini-m4` 是唯一注册 `nix-builder-aarch64-darwin:host` 的机器，同一个标签承载两类任务：
+
+| 任务 | 实际执行位置 |
+| --- | --- |
+| `darwinConfigurations.*.system` | Mac 本机 |
+| aarch64-linux 系统（`ms-r1`、`thor`） | nix-darwin 的 `linux-builder` 虚拟机，构建结果复制回 Mac 的 store |
+
+Darwin derivation 需要真正的 Darwin 构建机，不能交给 aarch64-linux 主机；反向构建则可行，因此目前两类任务都落在 Mac 上。flake 声明了四个 Darwin 配置，但只有这台 Mac mini 在线，没有可轮换的第二台 runner。每周维护期间，runner 完成当前作业、清理 store 并恢复运行；此时 aarch64 CI 暂停。
+
+调整 PR 门禁前，还需考虑：
+
+- 首次让 `thor` 进入 CI 构建时，若缓存尚无其闭包，就需要编译 Jetson 内核（`linux-nvgpu`、`linux-nv-oot`、`linux-hwpm`），并在 Mac 上放入约 7.6 GiB 的闭包。2026-09-21 的尝试因磁盘空间不足失败，当时仅余 192 MiB，空间主要由本地模型缓存占用，而非构建输出。
+- Mac 现在会在每周 GC 和 store 优化之前排空 runner。此前没有配置垃圾回收，store 增长至 40 GiB。维护时段可避免 GC 删除运行中作业使用的路径，但不会增加 aarch64 PR 的构建容量。
+
+后续工作：
+
+1. 拆分 `nix-builder-aarch64-linux` 与 `nix-builder-aarch64-darwin` 标签。`thor` 可承担前者并构建自身配置，类似 Harvester 构建机，也能为 aarch64-linux 建立轮换能力。
+2. 将 `darwinConfigurations` 移出 PR 门禁，改在推送或定时任务中构建，避免门禁依赖唯一的 Darwin runner。
+3. 用受控作业验证 Mac 的排空、清理和恢复流程；配置求值无法证明 launchd 实际运行行为。
