@@ -32,7 +32,7 @@ Longhorn 为每台构建机的磁盘保留三个副本，每个存储节点各�
 
 ## 执行顺序与故障处理
 
-1. 排空定时器写入 `/run/nixbuilder-maintenance`，防止中途执行系统激活时重启 runner。
+1. 排空定时器写入 `/var/lib/nixbuilder-maintenance`，跨重启保留排空状态，防止系统激活或重启让 runner 提前恢复。首次部署时，激活脚本会将旧的 `/run/nixbuilder-maintenance` 标记迁到新路径。
 2. runner 停止接收新作业，并最多等待 12 小时让当前作业完成。`KillMode=mixed` 最初只向 runner 发送 SIGTERM，因此作业子进程可在等待期间继续运行直至完成。在 `TimeoutStopSec=12h5m` 之后，systemd 可以强制停止剩余的进程组。维护在开始排空 12 小时 15 分钟后启动。
 3. 03:15 时，只有标记存在且 runner 已完全停止，才会执行维护。否则跳过维护，以免影响仍在运行的构建。
 4. `nix-collect-garbage --delete-older-than 7d` 和 `nix-store --optimise` 共用一小时的 systemd 超时。已在这些构建机上禁用每日自动垃圾回收和优化。

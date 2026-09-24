@@ -31,7 +31,7 @@ let
     };
   };
   maintenanceSchedule = maintenanceSchedules.${config.networking.hostName};
-  maintenanceMarker = "/run/nixbuilder-maintenance";
+  maintenanceMarker = "/var/lib/nixbuilder-maintenance";
   runnerService = "gitea-runner-${utils.escapeSystemdPath config.networking.hostName}.service";
   runnerServiceShell = lib.escapeShellArg runnerService;
 in
@@ -64,6 +64,13 @@ in
     "forgejo.beaco.works"
     "nix.beaco.works"
   ];
+
+  system.activationScripts.nixbuilderMaintenanceMarker = ''
+    if [ -e /run/nixbuilder-maintenance ]; then
+      ${pkgs.coreutils}/bin/install -m 000 /dev/null ${maintenanceMarker}
+      ${pkgs.coreutils}/bin/rm -f /run/nixbuilder-maintenance
+    fi
+  '';
 
   # ── Build role ──────────────────────────────────────────────
   # These nodes ARE builders: compile locally, never offload.
