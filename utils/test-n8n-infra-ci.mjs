@@ -149,6 +149,34 @@ assert.equal(selfApprovalEvent.APPROVAL_KIND, "comment");
 assert.equal(selfApprovalEvent.APPROVAL_COMMENT_ID, 20);
 assert.equal(selfApprovalEvent.PR_HEAD_SHA, event.PR_HEAD_SHA);
 
+const decideEventTransition = (current, previous) =>
+  execute("Decide Event Transition", {
+    $json: previous,
+    $: () => ({ first: () => ({ json: current }) }),
+    $now: {
+      toISO: () => "2026-09-24T00:00:00.000Z",
+      setZone: () => ({ toFormat: () => "20260924-0800" }),
+    },
+    $execution: { id: "retry-test" },
+  }).json;
+const previousApproval = {
+  STATE_KEY: selfApprovalEvent.STATE_KEY,
+  LAST_DELIVERY_ID: "prior-delivery",
+};
+assert.equal(decideEventTransition(selfApprovalEvent, previousApproval).SHOULD_NOTIFY, true);
+assert.equal(decideEventTransition(
+  { ...selfApprovalEvent, DELIVERY_ID: "prior-delivery" },
+  previousApproval,
+).SHOULD_NOTIFY, false);
+assert.equal(decideEventTransition(normalized, {
+  STATE_KEY: normalized.STATE_KEY,
+  LAST_DELIVERY_ID: "prior-delivery",
+}).SHOULD_NOTIFY, false);
+
+const humanStatusNode = nodes.get("Set Human Review Status");
+assert.equal(humanStatusNode.retryOnFail, true);
+assert.equal(humanStatusNode.maxTries, 3);
+
 const shortShaApproval = execute("Normalize Forgejo Event", {
   $json: {
     headers: { "x-forgejo-event": "issue" },
