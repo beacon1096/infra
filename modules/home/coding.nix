@@ -1,10 +1,9 @@
 # Coding and AI tools for Beacon's full desktop Home Manager profile.
-{
-  pkgs,
-  lib,
-  inputs,
-  config,
-  ...
+{ pkgs
+, lib
+, inputs
+, config
+, ...
 }:
 
 let
@@ -13,12 +12,7 @@ let
     config = pkgs.config;
   };
 
-  paseoPackage = inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.default.override {
-    npmDepsHash = "sha256-oXz8hMk+5DlTYK8OndUAjB+RJMDbPqobVGXLFeoH++o=";
-  };
-  paseoDesktop = inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.desktop.override {
-    paseo = paseoPackage;
-  };
+  paseoDesktop = (import ../../lib/paseo { inherit inputs pkgs; }).desktop;
 
   antigravityCli = pkgs.writeShellScriptBin "antigravity-cli" ''
     exec ${lib.getExe unstablePkgs.antigravity-cli} "$@"
