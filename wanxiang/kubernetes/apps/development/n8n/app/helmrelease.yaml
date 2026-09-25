@@ -28,6 +28,8 @@ spec:
   values:
     controllers:
       n8n:
+        annotations:
+          reloader.stakater.com/auto: "true"
         # n8n's queue/runner state is in the same Pod's filesystem;
         # rolling updates that overlap two pods cause "another
         # process holds X" errors. Recreate strategy serializes the
@@ -138,8 +140,6 @@ spec:
                 n8n publish:workflow --id=GzhPPYlazQObUguC
                 n8n publish:workflow --id=renovateMergeQueue01
     defaultPodOptions:
-      annotations:
-        reloader.stakater.com/auto: "true"
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
