@@ -52,6 +52,7 @@ let
     "minimax/MiniMax-M3" = reasoningVisionTextModel "MiniMax M3" 1000000 512000;
     "moonshot/kimi-k2.6" = reasoningVisionTextModel "Kimi K2.6" 262144 262144;
     "moonshot/kimi-k2.7-code" = reasoningVisionTextModel "Kimi K2.7 Code" 262144 32768;
+    "thor/qwen3.8-27b" = reasoningVisionTextModel "Thor Qwen3.8 27B" 262144 65536;
     "xiaomi_mimo/mimo-v2.5" = reasoningVisionTextModel "MiMo V2.5" 1048576 131072;
     "xiaomi_mimo/mimo-v2.5-pro" = reasoningTextModel "MiMo V2.5 Pro" 1048576 131072;
     "zai/glm-5.2" = reasoningTextModel "GLM-5.2" 1048576 131072;
