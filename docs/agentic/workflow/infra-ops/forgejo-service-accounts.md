@@ -47,6 +47,6 @@ GPG 指纹为 `B2FAAFEAC5E4727FB4AF35784932794C9ED791BE`，SSH 推送密钥指�
 
 确定后的账号名和免回复邮箱应记录在本文；令牌与私有签名材料仍保留在相应的秘密存储中。Agent 身份不能复用 `renovate`、`multica-gate` 或 `multica-merger`，因为它们分别负责依赖发现、策略判断和合并。
 
-`CODEOWNERS` 可以请求路径所有者审查，但不能阻止有仓库写权限的账号向功能分支推送。后续限制普通 Agent 只能改自己的环境时，需在服务端按已认证的推送账号检查变更路径，并在受保护分支的合并门禁再次检查；GitOps 主 Agent 和人工账号可配置跨 Agent 例外。此前仅适用于 Clerk 的规则已移除。
+`CODEOWNERS` 用于请求路径所有者审查。普通编码 Agent 只获得自己 fork 的写权限；`policy/merge-gate` 在接受人工精确 SHA 审核后核对 PR 作者、来源 fork 和相对 merge base 的完整文件变更。为待启用的 `multica-nix-packager` 预留的规则只接受从 `multica-nix-packager/infra` 提交、且只修改公开仓 `packages/` 的 PR；其他普通作者默认拒绝。`beacon1096` 和 GitOps 主 Agent `multica-gitops` 可跨 Agent 范围修改。该规则只限制进入基础设施仓库 `main` 的 PR，不限制 Agent 在自己 fork 上推送。此前仅适用于 Clerk 的规则已移除。
 
 在独立身份建立前，经明确授权的 Agent 可以使用 `beacon1096` 身份。Forgejo 和合并门禁必然将其视为与人类操作员相同的主体。由这一共享身份创建的 PR 无法在 Forgejo 中自我审查；操作员改为在 PR 下发布精确的 `/approve <full-head-SHA>` 评论，由 n8n 通过 API 重新读取。这样可以绑定具体修订并留下可审计的第二次操作，但**不是独立审查**，不能称作独立审查。

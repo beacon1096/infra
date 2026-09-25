@@ -208,6 +208,96 @@ const humanStatusNode = nodes.get("Set Human Review Status");
 assert.equal(humanStatusNode.retryOnFail, true);
 assert.equal(humanStatusNode.maxTries, 3);
 
+const pathBaseSha = "b".repeat(40);
+const pathHeadSha = "c".repeat(40);
+const pathApproved = {
+  REPO: "infrastructure/infra",
+  PR_NUMBER: 8,
+  HEAD_SHA: pathHeadSha,
+  BASE_REF: "main",
+  STATUS_CONTEXT: "policy/merge-gate",
+};
+const pathPr = (author, headRepo = `${author}/infra`, repo = pathApproved.REPO) => ({
+  state: "open",
+  number: 8,
+  user: { login: author },
+  base: { ref: "main", repo: { full_name: repo } },
+  head: { sha: pathHeadSha, repo: {
+    full_name: headRepo,
+    owner: { login: headRepo.split("/")[0] },
+  } },
+  merge_base: pathBaseSha,
+});
+const classifyPathScope = (pr, approved = pathApproved) =>
+  execute("Classify Human Path Scope", {
+    $: (name) => ({ item: { json: name === "Get Current Human PR"
+      ? { statusCode: 200, body: pr }
+      : approved } }),
+  }).json;
+const nixScope = classifyPathScope(pathPr("multica-nix-packager"));
+assert.equal(nixScope.PATH_SCOPE_ELIGIBLE, true);
+assert.equal(nixScope.PATH_SCOPE_NEEDS_TREE, true);
+assert.equal(classifyPathScope(pathPr("beacon1096")).PATH_SCOPE_NEEDS_TREE, false);
+assert.equal(classifyPathScope(pathPr("multica-gitops")).PATH_SCOPE_ELIGIBLE, true);
+assert.equal(classifyPathScope(pathPr("unknown-author")).PATH_SCOPE_ELIGIBLE, false);
+assert.equal(classifyPathScope(pathPr("multica-nix-packager", "beacon1096/infra")).PATH_SCOPE_ELIGIBLE, false);
+assert.equal(classifyPathScope(pathPr("multica-nix-packager", "multica-nix-packager/infra-private",
+  "infrastructure/infra-private"), { ...pathApproved, REPO: "infrastructure/infra-private" }).PATH_SCOPE_ELIGIBLE, false);
+
+const file = (path, sha = "d".repeat(40), mode = "100644") => ({
+  path, sha, mode, type: "blob",
+});
+const treePages = (entries, sha) => [1, 2].map((page) => ({
+  statusCode: 200,
+  body: {
+    page,
+    sha,
+    total_count: entries.length,
+    tree: entries.slice((page - 1) * 1000, page * 1000).length
+      ? entries.slice((page - 1) * 1000, page * 1000)
+      : null,
+  },
+}));
+const verifyPathScope = (baseEntries, headEntries, change = (responses) => responses) => {
+  const [base1, base2] = treePages(baseEntries, pathBaseSha);
+  const [head1, head2] = treePages(headEntries, pathHeadSha);
+  const responses = change({
+    "Get Human Base Tree Page 1": base1,
+    "Get Human Base Tree Page 2": base2,
+    "Get Human Head Tree Page 1": head1,
+    "Get Human Head Tree Page 2": head2,
+  });
+  return execute("Verify Human Path Scope", {
+    $: (name) => ({ item: { json: name === "Classify Human Path Scope"
+      ? nixScope : responses[name] } }),
+  }).json;
+};
+assert.equal(verifyPathScope([file("packages/a.nix")], [file("packages/a.nix", "e".repeat(40))]).PATH_SCOPE_VALID, true);
+assert.equal(verifyPathScope([], [file("packages-other/a.nix")]).PATH_SCOPE_VALID, false);
+assert.equal(verifyPathScope([file("packages/a.nix")], [file("modules/a.nix")]).PATH_SCOPE_VALID, false);
+assert.equal(verifyPathScope([file("packages/a.nix")], []).PATH_SCOPE_VALID, true);
+assert.equal(verifyPathScope([file("packages/a.nix")], [file("packages/a.nix", "d".repeat(40), "100755")]).PATH_SCOPE_VALID, true);
+assert.equal(verifyPathScope([file("packages/a.nix")], [file("packages/a.nix")],
+  (responses) => { responses["Get Human Base Tree Page 2"].statusCode = 500; return responses; }).PATH_SCOPE_VALID, false);
+assert.equal(verifyPathScope([file("packages/a.nix")], [file("packages/a.nix")],
+  (responses) => { responses["Get Human Head Tree Page 2"].body.total_count = 2; return responses; }).PATH_SCOPE_VALID, false);
+assert.equal(verifyPathScope([file("packages/a.nix")], [file("packages/a.nix")],
+  (responses) => { responses["Get Human Head Tree Page 1"].body.sha = "f".repeat(40); return responses; }).PATH_SCOPE_VALID, false);
+assert.equal(verifyPathScope([file("packages/a.nix"), file("packages/a.nix")], [],
+).PATH_SCOPE_VALID, false);
+const manyFiles = Array.from({ length: 1001 }, (_, i) => file(`packages/${i}.nix`));
+assert.equal(verifyPathScope(manyFiles, manyFiles).PATH_SCOPE_VALID, true);
+assert.equal(verifyPathScope(manyFiles, manyFiles,
+  (responses) => { responses["Get Human Base Tree Page 2"].body.tree = null; return responses; }).PATH_SCOPE_VALID, false);
+assert.deepEqual(workflow.connections["Human Approval Is Valid"].main.map((branch) => branch.map(({ node }) => node)),
+  [["Classify Human Path Scope"], []]);
+assert.deepEqual(workflow.connections["Human Path Scope Is Eligible"].main.map((branch) => branch.map(({ node }) => node)),
+  [["Human Path Scope Needs Tree"], ["Set Human Path Failure Status"]]);
+assert.deepEqual(workflow.connections["Human Path Scope Is Valid"].main.map((branch) => branch.map(({ node }) => node)),
+  [["Set Human Review Status"], ["Set Human Path Failure Status"]]);
+assert.equal(nodes.get("Set Human Path Failure Status").parameters.bodyParameters.parameters.find(
+  ({ name }) => name === "state").value, "failure");
+
 const shortShaApproval = execute("Normalize Forgejo Event", {
   $json: {
     headers: { "x-forgejo-event": "issue" },
@@ -433,19 +523,23 @@ const verifyMergeTarget = (
       base: { ref: base, repo: { full_name: repo } },
       head: { sha },
     } },
-    $: (name) => ({ item: { json: name === "Verify Human Approval"
-      ? verifiedProd
-      : name === "Get Human Merge Timeline"
-        ? { statusCode: 200, body: timeline }
-        : name === "Check Human Merge Timeline Completeness"
-          ? { statusCode: 200, body: nextPage }
-          : { statusCode: 200, body: {
-              state: "open",
-              number: 24,
-              base: { ref: base, repo: { full_name: repo } },
-              head: { sha },
-            } },
-    } }),
+    $: (name) => {
+      const json = name === "Verify Human Approval"
+        ? verifiedProd
+        : name === "Get Human Merge Timeline"
+          ? { statusCode: 200, body: timeline }
+          : name === "Check Human Merge Timeline Completeness"
+            ? { statusCode: 200, body: nextPage }
+            : name === "Classify Human Path Scope"
+              ? {}
+              : { statusCode: 200, body: {
+                  state: "open",
+                  number: 24,
+                  base: { ref: base, repo: { full_name: repo } },
+                  head: { sha },
+                } };
+      return { item: { json }, first: () => ({ json }) };
+    },
   }).json.HUMAN_MERGE_TARGET_MATCHES;
 assert.equal(verifyMergeTarget("prod"), true);
 assert.equal(verifyMergeTarget("prod", event.PR_HEAD_SHA, "infrastructure/infra-private", null, null), true);
@@ -459,6 +553,20 @@ assert.equal(verifyMergeTarget("prod", event.PR_HEAD_SHA, "infrastructure/infra-
 assert.equal(verifyMergeTarget("prod", event.PR_HEAD_SHA, "infrastructure/infra-private", [], [
   { type: "comment" },
 ]), false);
+const verifyMainMergeTarget = (pr) => execute("Verify Human Merge Target", {
+  $: (name) => {
+    const json = name === "Verify Human Approval"
+      ? pathApproved
+      : name === "Classify Human Path Scope"
+        ? nixScope
+        : { statusCode: 200, body: pr };
+    return { item: { json }, first: () => ({ json }) };
+  },
+}).json.HUMAN_MERGE_TARGET_MATCHES;
+assert.equal(verifyMainMergeTarget(pathPr("multica-nix-packager")), true);
+assert.equal(verifyMainMergeTarget({ ...pathPr("multica-nix-packager"), merge_base: "e".repeat(40) }), false);
+assert.equal(verifyMainMergeTarget(pathPr("beacon1096")), false);
+assert.equal(verifyMainMergeTarget(pathPr("multica-nix-packager", "beacon1096/infra")), false);
 assert.deepEqual(workflow.connections["Human Merge Target Matches"].main.map((branch) =>
   branch.map(({ node }) => node)),
 [["Merge Human-Approved PR"], ["Is Prod Human Merge Deferred"]]);
