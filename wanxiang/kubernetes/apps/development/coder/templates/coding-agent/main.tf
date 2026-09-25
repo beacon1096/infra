@@ -21,7 +21,7 @@ variable "image" {
   # cert (machineconfig extraHostEntries), whereas 172.16.87.51:5000 is only
   # reachable via a mirror that Spegel shadows, so zot-only images fail to
   # pull. See the coding-agent-oci image in the NixOS flake.
-  default = "forgejo.beaco.works/infrastructure/nix-fleet/coding-agent@sha256:1b0786525490e55db3942bef6ec930000b7dd8612f57a1a98b5c48d1fae1809e"
+  default = "forgejo.beaco.works/infrastructure/nix-fleet/coding-agent@sha256:e4c5c686f898511fc72a1575ab156c2b7cd9f67ebf691418d74a3327e6eecd53"
 }
 
 variable "home_disk_size" {
@@ -134,6 +134,14 @@ resource "coder_agent" "main" {
     if [ -f /run/coder-agent-secrets/GPG_SIGNING_KEY ]; then
       install -d -m 0700 /home/coder/.gnupg
       gpg --batch --import /run/coder-agent-secrets/GPG_SIGNING_KEY
+    fi
+
+    if [ "${local.gitops_workspace}" = "true" ]; then
+      git config --global user.name 'GitOps + 运维 @ Beacoworks'
+      git config --global user.email 'multica-gitops.no-reply@beacoworks.xyz'
+      git config --global user.signingkey 'B2FAAFEAC5E4727FB4AF35784932794C9ED791BE'
+      git config --global gpg.format openpgp
+      git config --global commit.gpgsign true
     fi
 
     if [ -S /tmp/tailscale/tailscaled.sock ]; then
