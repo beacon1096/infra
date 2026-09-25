@@ -7,6 +7,7 @@
 | `renovate` | `renovate@noreply.forgejo.beaco.works` | 发现依赖更新并创建 PR | `infrastructure/infra` 和 `infrastructure/infra-private` 的写入协作者 |
 | `multica-gate` | `multica-gate.no-reply@beacoworks.xyz` | 读取 PR，写入 `policy/merge-gate` 或 `policy/prod-merge-gate` 提交状态 | 两个基础设施仓库的写入协作者 |
 | `multica-merger` | `multica-merger.no-reply@beacoworks.xyz` | 满足受保护分支要求后合并 PR | 两个基础设施仓库的写入协作者 |
+| `multica-gitops` | `multica-gitops.no-reply@beacoworks.xyz` | GitOps + 运维主 Agent 编码、推送分支和创建 PR | 两个基础设施仓库的写入协作者；无合并白名单权限 |
 | `ci-publisher` | `ci-publisher.no-reply@beacoworks.xyz` | 发布可丢弃的 OCI 冒烟测试镜像 | 不属于仓库或组织；只拥有 `ci-publisher/` 下的软件包 |
 
 `multica-gate` 不能通过自动化流程合并 PR。其 PAT 只有 `write:repository` 和 `read:issue` 权限，保存在加密的 n8n SOPS Secret 中。`read:issue` 用于重新读取与 SHA 绑定的作者确认评论；不能仅信任 webhook 内容。Multica Agent 只获得向 n8n 提交审查结果的凭据，不持有 Forgejo PAT。
@@ -32,7 +33,7 @@ Forgejo 对 `infrastructure/infra` 和 `infrastructure/infra-private` 的 `main`
 
 ## [WIP] 各 Agent 独立的开发身份
 
-修改仓库的 Multica Agent 最终应拥有独立运行身份，而不是继承一套共享工作区配置。这项工作独立于合并门禁，尚未完成。
+GitOps + 运维主 Agent 已以 `multica-gitops` 作为首个独立编码身份。其专用 Coder 工作区从 SOPS Secret 获取 SSH 推送密钥、GPG 提交签名密钥与 Forgejo API 令牌；提交邮箱为 `multica-gitops.no-reply@beacoworks.xyz`。签名密钥与 SSH 推送密钥分开，GPG 公钥已在 Forgejo 验证。工作区上线及其他 Agent 的身份隔离仍需逐项完成。
 
 每个 Agent 配置至少应隔离：
 
@@ -43,5 +44,7 @@ Forgejo 对 `infrastructure/infra` 和 `infrastructure/infra-private` 的 `main`
 - 缓存、home 和临时目录，避免全局 `gitconfig`、Nix 状态或凭据在 Agent 之间泄漏。
 
 确定后的账号名和免回复邮箱应记录在本文；令牌与私有签名材料仍保留在相应的秘密存储中。Agent 身份不能复用 `renovate`、`multica-gate` 或 `multica-merger`，因为它们分别负责依赖发现、策略判断和合并。
+
+`CODEOWNERS` 可以请求路径所有者审查，但不能阻止有仓库写权限的账号向功能分支推送。后续限制普通 Agent 只能改自己的环境时，需在服务端按已认证的推送账号检查变更路径，并在受保护分支的合并门禁再次检查；GitOps 主 Agent 和人工账号可配置跨 Agent 例外。此前仅适用于 Clerk 的规则已移除。
 
 在独立身份建立前，经明确授权的 Agent 可以使用 `beacon1096` 身份。Forgejo 和合并门禁必然将其视为与人类操作员相同的主体。由这一共享身份创建的 PR 无法在 Forgejo 中自我审查；操作员改为在 PR 下发布精确的 `/approve <full-head-SHA>` 评论，由 n8n 通过 API 重新读取。这样可以绑定具体修订并留下可审计的第二次操作，但**不是独立审查**，不能称作独立审查。
