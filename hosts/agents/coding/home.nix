@@ -29,6 +29,7 @@ in
   # nix-ld; the template launches it as a coder_app.
   home.packages = [
     pkgs.code-server
+    pkgs.gnupg
     multica
   ];
 

@@ -64,9 +64,12 @@ data "coder_workspace" "me" {}
 data "coder_workspace_owner" "me" {}
 
 locals {
-  workspace_slug = lower(replace(data.coder_workspace.me.name, "/[^a-zA-Z0-9-]/", "-"))
-  owner_slug     = lower(replace(data.coder_workspace_owner.me.name, "/[^a-zA-Z0-9-]/", "-"))
-  app            = "coder-${local.owner_slug}-${local.workspace_slug}"
+  workspace_slug   = lower(replace(data.coder_workspace.me.name, "/[^a-zA-Z0-9-]/", "-"))
+  owner_slug       = lower(replace(data.coder_workspace_owner.me.name, "/[^a-zA-Z0-9-]/", "-"))
+  app              = "coder-${local.owner_slug}-${local.workspace_slug}"
+  gitops_workspace = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "gitops-agent"
+  agent_secret     = local.gitops_workspace ? "coder-workspace-gitops-agent" : var.agent_secret_name
+  git_ssh_secret   = local.gitops_workspace ? "coder-workspace-gitops-git-ssh" : var.git_ssh_secret_name
 }
 
 resource "coder_agent" "main" {
@@ -76,9 +79,17 @@ resource "coder_agent" "main" {
 
   env = {
     CODER_WORKSPACE_DIR = "/home/coder/workspace"
-    GIT_CONFIG_COUNT    = "1"
+    GIT_CONFIG_COUNT    = local.gitops_workspace ? "5" : "1"
     GIT_CONFIG_KEY_0    = "user.signingKey"
-    GIT_CONFIG_VALUE_0  = "/home/coder/.ssh/runtime/id_ed25519"
+    GIT_CONFIG_VALUE_0  = local.gitops_workspace ? "B2FAAFEAC5E4727FB4AF35784932794C9ED791BE" : "/home/coder/.ssh/runtime/id_ed25519"
+    GIT_CONFIG_KEY_1    = "user.name"
+    GIT_CONFIG_VALUE_1  = "GitOps + 运维 @ Beacoworks"
+    GIT_CONFIG_KEY_2    = "user.email"
+    GIT_CONFIG_VALUE_2  = "multica-gitops.no-reply@beacoworks.xyz"
+    GIT_CONFIG_KEY_3    = "commit.gpgsign"
+    GIT_CONFIG_VALUE_3  = "true"
+    GIT_CONFIG_KEY_4    = "gpg.format"
+    GIT_CONFIG_VALUE_4  = local.gitops_workspace ? "openpgp" : "ssh"
     GIT_SSH_COMMAND     = "ssh -F /home/coder/.ssh/config -i /home/coder/.ssh/runtime/id_ed25519 -o UserKnownHostsFile=/home/coder/.ssh/known_hosts -o StrictHostKeyChecking=yes"
     KUBECONFIG          = "/run/coder-infra/kubeconfig"
     SOPS_AGE_KEY_FILE   = "/run/coder-infra/sops-age-keys"
@@ -101,8 +112,10 @@ resource "coder_agent" "main" {
     install_secret CODEX_AUTH_JSON /home/coder/.codex/auth.json
     install_secret OPENCODE_AUTH_JSON /home/coder/.local/share/opencode/auth.json
     install_secret GH_HOSTS_YML /home/coder/.config/gh/hosts.yml
-    install_secret FORGEJO_GIT_CREDENTIALS /home/coder/.config/git/credentials
-    git config --global credential.https://forgejo.beaco.works.helper 'store --file /home/coder/.config/git/credentials'
+    if [ -f /run/coder-agent-secrets/FORGEJO_GIT_CREDENTIALS ]; then
+      install_secret FORGEJO_GIT_CREDENTIALS /home/coder/.config/git/credentials
+      git config --global credential.https://forgejo.beaco.works.helper 'store --file /home/coder/.config/git/credentials'
+    fi
 
     if [ -f /run/coder-git-ssh/id_ed25519 ]; then
       install -d -m 0700 /home/coder/.ssh/runtime
@@ -113,6 +126,11 @@ resource "coder_agent" "main" {
         ssh-keygen -y -f /home/coder/.ssh/runtime/id_ed25519 > /home/coder/.ssh/runtime/id_ed25519.pub
         chmod 0644 /home/coder/.ssh/runtime/id_ed25519.pub
       fi
+    fi
+
+    if [ -f /run/coder-agent-secrets/GPG_SIGNING_KEY ]; then
+      install -d -m 0700 /home/coder/.gnupg
+      gpg --batch --import /run/coder-agent-secrets/GPG_SIGNING_KEY
     fi
 
     if [ -S /tmp/tailscale/tailscaled.sock ]; then
@@ -221,7 +239,7 @@ resource "kubernetes_pod" "workspace" {
       }
 
       dynamic "env" {
-        for_each = var.agent_secret_name == "" ? [] : [var.agent_secret_name]
+        for_each = local.agent_secret == "" ? [] : [local.agent_secret]
         content {
           name = "TS_AUTHKEY"
           value_from {
@@ -240,7 +258,7 @@ resource "kubernetes_pod" "workspace" {
       }
 
       dynamic "env" {
-        for_each = var.agent_secret_name == "" ? [] : [
+        for_each = local.agent_secret == "" ? [] : [
           "BEACOWORKS_MODELS_API_KEY",
           "TAVILY_API_KEY",
         ]
@@ -248,7 +266,7 @@ resource "kubernetes_pod" "workspace" {
           name = env.value
           value_from {
             secret_key_ref {
-              name = var.agent_secret_name
+              name = local.agent_secret
               key  = env.value
             }
           }
@@ -276,7 +294,7 @@ resource "kubernetes_pod" "workspace" {
       }
 
       dynamic "volume_mount" {
-        for_each = var.git_ssh_secret_name == "" ? [] : [var.git_ssh_secret_name]
+        for_each = local.git_ssh_secret == "" ? [] : [local.git_ssh_secret]
         content {
           name       = "git-ssh-secret"
           mount_path = "/run/coder-git-ssh"
@@ -285,7 +303,7 @@ resource "kubernetes_pod" "workspace" {
       }
 
       dynamic "volume_mount" {
-        for_each = var.agent_secret_name == "" ? [] : [var.agent_secret_name]
+        for_each = local.agent_secret == "" ? [] : [local.agent_secret]
         content {
           name       = "agent-secrets"
           mount_path = "/run/coder-agent-secrets"
@@ -316,7 +334,7 @@ resource "kubernetes_pod" "workspace" {
     }
 
     dynamic "volume" {
-      for_each = var.git_ssh_secret_name == "" ? [] : [var.git_ssh_secret_name]
+      for_each = local.git_ssh_secret == "" ? [] : [local.git_ssh_secret]
       content {
         name = "git-ssh-secret"
         secret {
@@ -326,7 +344,7 @@ resource "kubernetes_pod" "workspace" {
     }
 
     dynamic "volume" {
-      for_each = var.agent_secret_name == "" ? [] : [var.agent_secret_name]
+      for_each = local.agent_secret == "" ? [] : [local.agent_secret]
       content {
         name = "agent-secrets"
         secret {
