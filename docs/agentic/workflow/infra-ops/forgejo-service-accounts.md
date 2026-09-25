@@ -35,6 +35,8 @@ Forgejo 对 `infrastructure/infra` 和 `infrastructure/infra-private` 的 `main`
 
 GitOps + 运维主 Agent 已以 `multica-gitops` 作为首个独立编码身份。其专用 Coder 工作区从 SOPS Secret 获取 SSH 推送密钥、GPG 提交签名密钥与 Forgejo API 令牌；提交邮箱为 `multica-gitops.no-reply@beacoworks.xyz`。签名密钥与 SSH 推送密钥分开，GPG 公钥已在 Forgejo 验证。工作区上线及其他 Agent 的身份隔离仍需逐项完成。
 
+GPG 指纹为 `B2FAAFEAC5E4727FB4AF35784932794C9ED791BE`，SSH 推送密钥指纹为 `SHA256:sH+YsSs8xbe3YNlzjsc0ZMhu1RBO977sSWv6JnARkhc`。Multica daemon 的专用 PAT 只用于工作区首次配置；持久 home 中保留其自动续期结果，启动脚本不会覆盖它。
+
 每个 Agent 配置至少应隔离：
 
 - Nix 配置、substituter、受信任密钥、构建机和缓存；
