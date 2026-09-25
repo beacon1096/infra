@@ -5,7 +5,9 @@
 - `infra/main` 是公开仓库的规范集成分支。其 CI 验证可复用模块和公开架构。
 - `infra-private` 锁定 `infra` 的精确修订，并结合私有配置层组装完整的生产机群。
 - 生产审批、发布标签、向 `prod` 推进以及 Comin 部署均由 `infra-private` 负责。
-- `infra` 中的标签可以发布公开模块或展示版本，但不授权生产部署。
+- `infra/prod` 由公开发布标签流程更新，不是生产部署分支。只有 `infra-private/prod` 是生产审批和 Comin 部署的输入；`infra` 中的标签不授权生产部署。
+
+普通改动如何经 PR 进入两个仓库的 `main`，见[仓库与分支提交流转](./repository-flow.md)。
 
 ## 流程
 
@@ -14,7 +16,7 @@
 3. 推送到 `infra-private/main` 会运行完整机群构建。此步骤只做验证，不部署。
 4. 运维人员手动运行 `build-and-push.yaml`。运行成功后，n8n 创建发布审批记录并发布审批表单。
 5. 审批通过后，n8n 为经过审核的精确 SHA 创建 `infra-private` 发布标签。
-6. 标签触发再次完整构建并发布产物。只有所有发布作业都成功后，Forgejo Actions 才会将 `infra-private/prod` 推进到该标签对应的 SHA。
+6. 标签触发再次完整构建并发布产物。只有所有发布作业都成功后，Forgejo Actions 才会创建晋级提交并更新 `infra-private/prod`：该提交沿用此前 `prod` 头部作为父提交，文件树与发布标签修订相同，提交说明记录 `Source-Commit`。
 7. Comin 监视 `infra-private/prod`，并将该修订部署到 NixOS 机群。
 
 ```text
@@ -27,7 +29,7 @@ infra-private/main ── 完整验证 ── n8n 审批
                                      发布构建
                                             │ 所有作业成功
                                             ▼
-                                  infra-private/prod
+                         infra-private/prod 晋级提交
                                             │ Comin
                                             ▼
                                       NixOS 机群
