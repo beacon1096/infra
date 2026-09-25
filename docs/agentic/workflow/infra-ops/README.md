@@ -1,6 +1,6 @@
 # CI/CD 与机群交付
 
-这里记录跨仓库的交付控制流程。集群实现细节和故障恢复步骤仍放在 `wanxiang/docs`。
+这里记录跨仓库的交付控制流程。集群实现细节和故障恢复步骤仍放在 `wanxiang/docs`；基础设施运维文档见 [`docs/infra-ops`](https://github.com/beacon1096/infra/tree/main/docs/infra-ops)。
 
 - [仓库与分支提交流转](repository-flow.md)：两个仓的 `main`、`prod` 分支及 PR 和自动发布入口。
 - [生产发布与 Nix 部署](production-release-and-rollout.md)：公开/私有仓边界、发布标签、`prod` 分支与 Comin。
