@@ -8,6 +8,8 @@
 
 显然只靠自己维护难以支撑。
 
+跨仓库交付控制与 Agent 运维流程见 [Agentic infra-ops](../agentic/workflow/infra-ops/README.md)。
+
 ## 目录
 
 - [Forgejo Runner nix-builder 维护窗口](./runner-maintenance.md)
