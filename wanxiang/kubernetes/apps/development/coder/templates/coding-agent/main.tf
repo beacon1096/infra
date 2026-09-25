@@ -64,12 +64,19 @@ data "coder_workspace" "me" {}
 data "coder_workspace_owner" "me" {}
 
 locals {
-  workspace_slug   = lower(replace(data.coder_workspace.me.name, "/[^a-zA-Z0-9-]/", "-"))
-  owner_slug       = lower(replace(data.coder_workspace_owner.me.name, "/[^a-zA-Z0-9-]/", "-"))
-  app              = "coder-${local.owner_slug}-${local.workspace_slug}"
-  gitops_workspace = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "gitops-agent"
-  agent_secret     = local.gitops_workspace ? "coder-workspace-gitops-agent" : var.agent_secret_name
-  git_ssh_secret   = local.gitops_workspace ? "coder-workspace-gitops-git-ssh" : var.git_ssh_secret_name
+  workspace_slug         = lower(replace(data.coder_workspace.me.name, "/[^a-zA-Z0-9-]/", "-"))
+  owner_slug             = lower(replace(data.coder_workspace_owner.me.name, "/[^a-zA-Z0-9-]/", "-"))
+  app                    = "coder-${local.owner_slug}-${local.workspace_slug}"
+  gitops_workspace       = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "gitops-agent"
+  nix_packager_workspace = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "nix-packager-agent"
+  legacy_workspace       = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "nixos-agent-coder"
+  agent_secret           = local.gitops_workspace ? "coder-workspace-gitops-agent" : local.nix_packager_workspace ? "coder-workspace-nix-packager-agent" : local.legacy_workspace ? var.agent_secret_name : ""
+  git_ssh_secret         = local.gitops_workspace ? "coder-workspace-gitops-git-ssh" : local.nix_packager_workspace ? "coder-workspace-nix-packager-git-ssh" : local.legacy_workspace ? var.git_ssh_secret_name : ""
+  infra_secret           = local.gitops_workspace || local.legacy_workspace ? var.infra_secret_name : ""
+  git_identity_workspace = local.gitops_workspace || local.nix_packager_workspace
+  git_user_name          = local.nix_packager_workspace ? "Nix 打包维护者 @ Beacoworks" : "GitOps + 运维 @ Beacoworks"
+  git_user_email         = local.nix_packager_workspace ? "multica-nix-packager.no-reply@beacoworks.xyz" : "multica-gitops.no-reply@beacoworks.xyz"
+  git_signing_key        = local.nix_packager_workspace ? "8F57D2F99F73669B937CC52E93BF0D5DA19E76C2" : "B2FAAFEAC5E4727FB4AF35784932794C9ED791BE"
 }
 
 resource "coder_agent" "main" {
@@ -77,24 +84,25 @@ resource "coder_agent" "main" {
   os   = "linux"
   dir  = "/home/coder/workspace"
 
-  env = {
+  env = merge({
     CODER_WORKSPACE_DIR = "/home/coder/workspace"
-    GIT_CONFIG_COUNT    = local.gitops_workspace ? "5" : "1"
+    GIT_CONFIG_COUNT    = local.git_identity_workspace ? "5" : "1"
     GIT_CONFIG_KEY_0    = "user.signingKey"
-    GIT_CONFIG_VALUE_0  = local.gitops_workspace ? "B2FAAFEAC5E4727FB4AF35784932794C9ED791BE" : "/home/coder/.ssh/runtime/id_ed25519"
+    GIT_CONFIG_VALUE_0  = local.git_identity_workspace ? local.git_signing_key : "/home/coder/.ssh/runtime/id_ed25519"
     GIT_CONFIG_KEY_1    = "user.name"
-    GIT_CONFIG_VALUE_1  = "GitOps + 运维 @ Beacoworks"
+    GIT_CONFIG_VALUE_1  = local.git_user_name
     GIT_CONFIG_KEY_2    = "user.email"
-    GIT_CONFIG_VALUE_2  = "multica-gitops.no-reply@beacoworks.xyz"
+    GIT_CONFIG_VALUE_2  = local.git_user_email
     GIT_CONFIG_KEY_3    = "commit.gpgsign"
     GIT_CONFIG_VALUE_3  = "true"
     GIT_CONFIG_KEY_4    = "gpg.format"
-    GIT_CONFIG_VALUE_4  = local.gitops_workspace ? "openpgp" : "ssh"
+    GIT_CONFIG_VALUE_4  = local.git_identity_workspace ? "openpgp" : "ssh"
     GIT_SSH_COMMAND     = "ssh -F /home/coder/.ssh/config -i /home/coder/.ssh/runtime/id_ed25519 -o UserKnownHostsFile=/home/coder/.ssh/known_hosts -o StrictHostKeyChecking=yes"
-    KUBECONFIG          = "/run/coder-infra/kubeconfig"
-    SOPS_AGE_KEY_FILE   = "/run/coder-infra/sops-age-keys"
-    TALOSCONFIG         = "/run/coder-infra/talosconfig"
-  }
+    }, local.infra_secret == "" ? {} : {
+    KUBECONFIG        = "/run/coder-infra/kubeconfig"
+    SOPS_AGE_KEY_FILE = "/run/coder-infra/sops-age-keys"
+    TALOSCONFIG       = "/run/coder-infra/talosconfig"
+  })
 
   startup_script = <<-EOT
     set -e
@@ -136,10 +144,10 @@ resource "coder_agent" "main" {
       gpg --batch --import /run/coder-agent-secrets/GPG_SIGNING_KEY
     fi
 
-    if [ "${local.gitops_workspace}" = "true" ]; then
-      git config --global user.name 'GitOps + 运维 @ Beacoworks'
-      git config --global user.email 'multica-gitops.no-reply@beacoworks.xyz'
-      git config --global user.signingkey 'B2FAAFEAC5E4727FB4AF35784932794C9ED791BE'
+    if [ "${local.git_identity_workspace}" = "true" ]; then
+      git config --global user.name '${local.git_user_name}'
+      git config --global user.email '${local.git_user_email}'
+      git config --global user.signingkey '${local.git_signing_key}'
       git config --global gpg.format openpgp
       git config --global commit.gpgsign true
     fi
@@ -148,7 +156,7 @@ resource "coder_agent" "main" {
       tailscale --socket=/tmp/tailscale/tailscaled.sock set --accept-routes=true
     fi
 
-    if command -v multica >/dev/null 2>&1; then
+    if [ -f /home/coder/.multica/config.json ] && command -v multica >/dev/null 2>&1; then
       multica daemon start || multica daemon status >/dev/null
     fi
   EOT
@@ -234,19 +242,16 @@ resource "kubernetes_pod" "workspace" {
         value = local.app
       }
 
-      env {
-        name  = "KUBECONFIG"
-        value = "/run/coder-infra/kubeconfig"
-      }
-
-      env {
-        name  = "SOPS_AGE_KEY_FILE"
-        value = "/run/coder-infra/sops-age-keys"
-      }
-
-      env {
-        name  = "TALOSCONFIG"
-        value = "/run/coder-infra/talosconfig"
+      dynamic "env" {
+        for_each = local.infra_secret == "" ? {} : {
+          KUBECONFIG        = "/run/coder-infra/kubeconfig"
+          SOPS_AGE_KEY_FILE = "/run/coder-infra/sops-age-keys"
+          TALOSCONFIG       = "/run/coder-infra/talosconfig"
+        }
+        content {
+          name  = env.key
+          value = env.value
+        }
       }
 
       dynamic "env" {
@@ -323,7 +328,7 @@ resource "kubernetes_pod" "workspace" {
       }
 
       dynamic "volume_mount" {
-        for_each = var.infra_secret_name == "" ? [] : [var.infra_secret_name]
+        for_each = local.infra_secret == "" ? [] : [local.infra_secret]
         content {
           name       = "infra-secrets"
           mount_path = "/run/coder-infra"
@@ -365,7 +370,7 @@ resource "kubernetes_pod" "workspace" {
     }
 
     dynamic "volume" {
-      for_each = var.infra_secret_name == "" ? [] : [var.infra_secret_name]
+      for_each = local.infra_secret == "" ? [] : [local.infra_secret]
       content {
         name = "infra-secrets"
         secret {
