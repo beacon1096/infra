@@ -40,6 +40,11 @@ resource "harvester_storageclass" "builder" {
 resource "harvester_virtualmachine" "builder" {
   for_each = var.nodes
 
+  # Existing three-replica disks are replaced one VM at a time.
+  lifecycle {
+    ignore_changes = [disk]
+  }
+
   name                 = each.key
   namespace            = var.namespace
   hostname             = each.key
@@ -65,19 +70,22 @@ resource "harvester_virtualmachine" "builder" {
 
   # Keep the installer ISO attached as recovery media after provisioning.
   disk {
-    name       = "cdrom"
-    type       = "cd-rom"
-    size       = "10Gi"
-    bus        = "sata"
-    boot_order = 2
-    image      = harvester_image.installer.id
+    name        = "cdrom"
+    type        = "cd-rom"
+    size        = "10Gi"
+    bus         = "sata"
+    boot_order  = 2
+    image       = harvester_image.installer.id
+    auto_delete = true
   }
 
   disk {
-    name       = "rootdisk"
-    type       = "disk"
-    size       = var.disk_size
-    bus        = "virtio"
-    boot_order = 1
+    name               = "rootdisk"
+    type               = "disk"
+    size               = var.disk_size
+    bus                = "virtio"
+    boot_order         = 1
+    storage_class_name = harvester_storageclass.builder.name
+    auto_delete        = true
   }
 }

@@ -40,7 +40,7 @@ variable "memory" {
 
 variable "disk_size" {
   type    = string
-  default = "80Gi"
+  default = "160Gi"
 }
 
 # Pin one builder to each Harvester node. MACs must match the RB5009 DHCP
