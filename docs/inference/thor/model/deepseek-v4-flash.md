@@ -5,6 +5,8 @@
 状态（2026-09-26）：本机单台 Jetson AGX Thor 已用 ExLlamaV3 v1.5.1
 运行全专家 EXL3 2.95 bpw 的 `DeepSeek-V4-Flash-0731`。32K 缓存配置、
 10.4K token 输入均已生成正确结果；较长的两次解码实测约 15.4 tok/s。
+另用包含 MTP 模块的 2.32 bpw 权重在同机启用 DSpark：单路 384-token
+解码为 25.65 tok/s，同权重关闭 MTP 为 16.73 tok/s；这只是一次短输入对照。
 0731 是取代预览版的正式文本权重。[V4.1-Flash](https://www.deepseek.com/en/news/deepseek-v4-1-flash/)
 是另一套 552B 架构；现在 DeepSeek API 的旧 V4 Flash 名称会路由至 V4.1，
 不能把 0731 的本地结果用于 V4.1。
@@ -23,6 +25,7 @@ CPU、GPU 和系统服务共享容量。
 | 同仓库 `ds4f-q2-q4`，后六层专家升至 Q4 | 97.6 GB，约 90.9 GiB | 容量上可能；余量更小，启动和上下文待本机验证 |
 | 同仓库匹配的 DSpark 辅助权重 | 5.99 GB，约 5.6 GiB | 可选，另占内存；推测解码收益依负载而变 |
 | [完整专家 EXL3 优化版 2.95 bpw](https://huggingface.co/amanwalksdownthestreet/DeepSeek-V4-Flash-0731-exl3) | 本机文件 105.73 GB，约 98.47 GiB | 已在单 Thor 常驻并用 32K 缓存生成；最低可用内存约 15.6 GiB |
+| [完整专家 EXL3 2.32 bpw，内含 MTP](https://huggingface.co/anoane/DeepSeek-V4-Flash-0731-exl3-2.32bpw) | 本机文件 90.94 GB，约 84.69 GiB | 已在单 Thor 上以 8K、32K 缓存配置启用 DSpark；最低可用内存约 30.2 GiB |
 
 文件大小见各权重仓库；ds4 的模型格式和下载名称见
 [引擎说明](https://github.com/antirez/ds4)。文件大小只是内存下界，
@@ -66,7 +69,7 @@ Spark 社区的
 也明确指定 `CUTE_DSL_ARCH=sm_121a`。
 仅修改架构标志不能证明它在 SM110 可运行。
 
-本机完整专家 EXL3 实测见下文。它既没有 K216 专家剪枝，也没有 DSpark；
+下述 2.95 bpw 基线既没有 K216 专家剪枝，也没有 DSpark；
 约 15.4 tok/s 的短请求解码与 Spark 的 38.12 tok/s 不是同一负载，
 不能把差距或收益单独归因于量化格式。
 此前厂商报告的[双机 Thor 约 70 tok/s](https://manateelazycat.github.io/2026/08/29/model-adaptation-record/)
@@ -112,9 +115,45 @@ token。默认 4096 token 分块加载失败并报 `Insufficient VRAM in split`�
 这份结果仅证明单路生成和有限的短代码、算术、长文检索正确性；
 并发、32K 实际输入、长时间运行及与原版模型的质量对照尚未验证。
 
+## 本机 EXL3 + DSpark 实测（2026-09-26）
+
+使用 [完整专家 2.32 bpw 量化](https://huggingface.co/anoane/DeepSeek-V4-Flash-0731-exl3-2.32bpw/tree/52ee0ca4b5e5d132a1b4e91d11824c6943cba1f7)，固定修订 `52ee0ca4`。
+12 个 SafeTensors 文件共 90,939,355,279 字节；索引含 9,447 个 `mtp.*`
+张量，其中三个 DSpark block 在同一包内。量化作者在 ANEMONE 分支验证过，
+但未声称 stock ExLlamaV3 兼容。本机沿用上节的 patched v1.5.1、
+Torch 2.13、CUDA 13.0、SM110 镜像，成功用 `-mtp` 加载并生成。
+测试时只为记录分配错误和草稿加载占用临时加入日志；推理计算路径未改。
+
+停用生产实例后，每行由独立容器运行相同的归并排序提示词：47-token 输入、
+温度 0、最多 384-token 输出、`-mode ds4 -cq 8 -rcs 1 -chunk_size 256`
+及 118 GiB 容器内存上限。输出均达到 384-token 截断，故速度覆盖持续解码，
+答案完整性不能由这组截断输出判断。`-cq 8` 是缓存配置参数，
+不意味着所有 DSA／DSpark 缓存均为 8-bit。`MemAvailable` 为主机逐秒最低值。
+
+| 缓存配置 | MTP | 预填充 | 384-token 解码 | 草稿接受 | 最低可用内存 |
+| ---: | :---: | ---: | ---: | ---: | ---: |
+| 8K | 关 | 71.55 tok/s | 16.73 tok/s | — | 35.52 GiB |
+| 8K | 开 | 48.53 tok/s | 25.65 tok/s | 296 / 352，84.09% | 30.40 GiB |
+| 32K | 开 | 49.30 tok/s | 25.78 tok/s | 296 / 352，84.09% | 30.19 GiB |
+
+8K 的 MTP 开关对照中，解码速度增加约 53.3%；47-token 短输入的预填充
+则从 71.55 降至 48.53 tok/s。这是单个提示词、单次运行，不能代表一般负载。
+MTP 两次输出相同；与无 MTP 输出有一处措辞差异，不能宣称逐 token 等价。
+32K 是缓存容量配置，实际输入仍只有 47 token。加载日志显示主模型加 MTP
+约 90.92 GB、无 MTP 约 85.75 GB，差约 5.18 GB。
+
+容器上限设为 110 GiB 时，主模型 32K／8K 加载曾报
+`Insufficient VRAM in split for model and cache`，另一次 8K 加载成功。
+8K MTP 在第 42 层失败时，PyTorch 单进程预算约 84.19 GiB、GPU 物理空闲
+约 28.85 GiB；这不是主机物理内存耗尽。把容器上限调至 118 GiB 后，
+上述三轮均成功，最低主机可用内存仍高于 30 GiB。12 GiB 实验保护未触发。
+实验结束已移除临时诊断脚本，恢复生产服务并确认 `/health` 返回 200；
+权重与结果日志保留在 Thor 的 `/var/lib/thor-inference/exl3-0731-dspark-232`
+及 `exl3-0731-dspark-232-results`。
+
 ## 下一步
 
-在同一提示集上比较全专家 EXL3 与 GGUF Q2 + ds4 的解码、预填充和
-代码质量，再评估是否值得为 Thor 引入 DSpark 或更低位宽。生产实例与
-本模型必须互斥；若要长期服务，还需把内存锁恢复流程和负载测试纳入
-部署配置。
+用多种实际提示词和较长输入重复同权重 MTP 开关对照，核查质量、预填充、
+吞吐波动和并发；再与 2.95 bpw EXL3、GGUF Q2 + ds4 比较质量与性能。
+生产实例与本模型必须互斥；若要长期服务，还需把内存锁恢复流程和
+负载测试纳入部署配置。
