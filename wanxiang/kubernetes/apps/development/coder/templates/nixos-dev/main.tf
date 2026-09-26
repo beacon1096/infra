@@ -270,6 +270,31 @@ resource "kubernetes_pod" "workspace" {
         }
       }
 
+      # Pi and OpenCode resolve their model endpoint from these two variables
+      # in workspace images (no sops secrets inside the container). Without
+      # them Pi registers no litellm provider at all and OpenCode gets an
+      # empty baseURL. Mirrors the coding-agent template.
+      env {
+        name  = "BEACOWORKS_MODELS_API_BASE"
+        value = "http://litellm.ai.svc.cluster.local:4000/v1"
+      }
+
+      dynamic "env" {
+        for_each = var.agent_secret_name == "" ? [] : [
+          "BEACOWORKS_MODELS_API_KEY",
+          "TAVILY_API_KEY",
+        ]
+        content {
+          name = env.value
+          value_from {
+            secret_key_ref {
+              name = var.agent_secret_name
+              key  = env.value
+            }
+          }
+        }
+      }
+
       resources {
         requests = {
           cpu    = var.cpu_request
