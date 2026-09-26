@@ -83,6 +83,8 @@ in
       http2 = false;
       max-jobs = lib.mkForce 1;
       cores = lib.mkForce 4;
+      min-free = 12 * 1024 * 1024 * 1024;
+      max-free = 32 * 1024 * 1024 * 1024;
       trusted-users = [
         "root"
         "beacon"

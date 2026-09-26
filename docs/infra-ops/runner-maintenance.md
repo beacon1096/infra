@@ -1,6 +1,6 @@
 # Forgejo runner 维护
 
-三台 Harvester Nix 构建机各自一次只接收一个 Forgejo Actions 作业。工作流作业和 runner 的最长运行时间均为 12 小时。存储维护不能与运行中的作业重叠：垃圾回收可能删除仅由求值缓存保留的 derivation，而垃圾回收和存储优化都会产生足以让构建看似停滞的 Longhorn I/O。
+三台 Harvester Nix 构建机各自一次只接收一个 Forgejo Actions 作业。工作流作业和 runner 的最长运行时间均为 12 小时。Nix 在空闲空间低于 12 GiB 时尝试回收到 32 GiB，仍可能因为无法回收正在使用的数据而构建失败。定时存储维护不能与运行中的作业重叠：垃圾回收可能删除仅由求值缓存保留的 derivation，而垃圾回收和存储优化都会产生足以让构建看似停滞的 Longhorn I/O。
 
 ## 轮换安排
 
