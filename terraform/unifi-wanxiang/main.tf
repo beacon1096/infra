@@ -50,8 +50,56 @@ locals {
   }
 }
 
+resource "unifi_setting" "dns" {
+  site = "default"
+
+  doh = {
+    state = "off"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "unifi_wan" "primary" {
+  name = local.wans.internet_1.name
+  type = local.wans.internet_1.type
+
+  dns = {
+    preference = "manual"
+    primary    = "172.16.80.240"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [
+      dhcp,
+      dhcpv6,
+      egress_qos,
+      enabled,
+      igmp_proxy,
+      ip_aliases,
+      ipv6_setting_preference,
+      load_balance,
+      mac_override_enabled,
+      networkgroup,
+      provider_capabilities,
+      report_wan_event,
+      setting_preference,
+      single_network_lan,
+      smartq,
+      type_v6,
+      upnp,
+      vlan,
+      wan_dslite_remote_host,
+      wan_dslite_remote_host_auto,
+    ]
+  }
+}
+
 resource "unifi_wan" "managed" {
-  for_each = local.wans
+  for_each = { internet_2 = local.wans.internet_2 }
 
   name = each.value.name
   type = each.value.type
@@ -60,6 +108,11 @@ resource "unifi_wan" "managed" {
     prevent_destroy = true
     ignore_changes  = all
   }
+}
+
+moved {
+  from = unifi_wan.managed["internet_1"]
+  to   = unifi_wan.primary
 }
 
 resource "unifi_network" "managed" {
@@ -97,7 +150,7 @@ resource "unifi_static_route" "jinyintan_storage_via_ms_r1" {
 # The provider has no OSPF resource. Keep the live OSPF adjacency unmanaged.
 
 import {
-  to = unifi_wan.managed["internet_1"]
+  to = unifi_wan.primary
   id = "Internet 1"
 }
 

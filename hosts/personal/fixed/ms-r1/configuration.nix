@@ -56,6 +56,10 @@
   systemd.network.networks."10-enp49s0" = {
     matchConfig.Name = "enp49s0";
     networkConfig.DHCP = "yes";
+    dhcpV4Config.UseDNS = false;
+    dhcpV6Config.UseDNS = false;
+    ipv6AcceptRAConfig.UseDNS = false;
+    dns = [ "172.16.80.240" ];
     linkConfig = {
       RequiredForOnline = "routable";
       MTUBytes = "9216";
@@ -65,6 +69,9 @@
   systemd.network.networks."20-enp1s0" = {
     matchConfig.Name = "enp1s0";
     networkConfig.DHCP = "yes";
+    dhcpV4Config.UseDNS = false;
+    dhcpV6Config.UseDNS = false;
+    ipv6AcceptRAConfig.UseDNS = false;
   };
 
   systemd.services.disable-rtl8127-eee = {
