@@ -128,6 +128,15 @@ resource "coder_agent" "main" {
       install_secret FORGEJO_GIT_CREDENTIALS /home/coder/.config/git/credentials
       git config --global credential.https://forgejo.beaco.works.helper 'store --file /home/coder/.config/git/credentials'
     fi
+    if [ "${local.copilot_workspace}" = "true" ]; then
+      git config --file /home/coder/.gitconfig user.name beacon1096
+      git config --file /home/coder/.gitconfig user.email beacon1096@beacoworks.xyz
+      git config --file /home/coder/.gitconfig user.signingKey /home/coder/.ssh/beacon1096-copilot/id_ed25519
+      git config --file /home/coder/.gitconfig gpg.format ssh
+      git config --file /home/coder/.gitconfig commit.gpgsign true
+      git config --file /home/coder/.gitconfig core.sshCommand 'ssh -F /home/coder/.ssh/config -i /home/coder/.ssh/beacon1096-copilot/id_ed25519 -o IdentitiesOnly=yes -o UserKnownHostsFile=/home/coder/.ssh/known_hosts -o StrictHostKeyChecking=yes'
+      chmod 0600 /home/coder/.gitconfig
+    fi
     if [ -s /run/coder-agent-secrets/FORGEJO_API_TOKEN ] && command -v tea >/dev/null 2>&1; then
       tea login delete forgejo >/dev/null 2>&1 || true
       if ! GITEA_SERVER_TOKEN="$(cat /run/coder-agent-secrets/FORGEJO_API_TOKEN)" \
