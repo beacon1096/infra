@@ -25,13 +25,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
         completed = any((m.get('role') == 'user' and 'Task exec-1:' in str(m.get('content')) for m in msgs))
         tool = any((m.get('role') == 'tool' for m in msgs))
         visible_output = '\n'.join(str(m.get('content')) for m in msgs if m.get('role') in ['tool', 'user'])
-        if case == 'status' and completed and not any(str(m.get('tool_call_id', '')).startswith('status_') for m in msgs):
+        if case == 'observed' and any(str(m.get('tool_call_id', '')).startswith('observe_') for m in msgs):
+            delta = {'content': 'VERIFIED_COMPLETION_8291'}
+            finish = 'stop'
+        elif case == 'observed' and tool:
+            time.sleep(1.5)
+            delta = {'tool_calls': [{'index': 0, 'id': 'observe_0', 'type': 'function', 'function': {'name': 'exec_status', 'arguments': json.dumps({'taskId': 'exec-1'})}}]}
+            finish = 'tool_calls'
+        elif case == 'status' and completed and not any(str(m.get('tool_call_id', '')).startswith('status_') for m in msgs):
             delta = {'tool_calls': [{'index': i, 'id': f'status_{i}', 'type': 'function', 'function': {'name': 'exec_status', 'arguments': json.dumps({'taskId': 'exec-1'})}} for i in range(2)]}
             finish = 'tool_calls'
         elif case == 'foreground' and tool and 'UNIQUE_COMPLETION_8291' in visible_output:
             delta = {'content': 'VERIFIED_COMPLETION_8291'}
             finish = 'stop'
-        elif completed and (case in ['cancel', 'tree', 'timeout'] or 'UNIQUE_COMPLETION_8291' in visible_output) and (case != 'multiple' or 'SECOND_COMPLETE' in visible_output):
+        elif case in ['cancel', 'tree'] and tool and 'cancelled' in visible_output:
+            delta = {'content': 'VERIFIED_COMPLETION_8291'}
+            finish = 'stop'
+        elif completed and (case in ['cancel', 'tree', 'timeout'] or 'UNIQUE_COMPLETION_8291' in visible_output) and (case not in ['multiple', 'backlog'] or 'SECOND_COMPLETE' in visible_output):
             delta = {'content': 'VERIFIED_COMPLETION_8291'}
             finish = 'stop'
         elif case == 'abort' and completed:
@@ -47,6 +57,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             delta = {'tool_calls': [{'index': 0, 'id': 'call_cancel', 'type': 'function', 'function': {'name': 'exec_cancel', 'arguments': json.dumps({'taskId': 'exec-1'})}}]}
             finish = 'tool_calls'
         elif tool:
+            if case == 'backlog':
+                time.sleep(3)
             delta = {'content': 'INITIAL_TURN_FINISHED'}
             finish = 'stop'
         else:
@@ -69,9 +81,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 command = '(sleep 2; touch child-survived) & wait'
             delta = {'tool_calls': [{'index': 0, 'id': 'call_exp', 'type': 'function', 'function': {'name': 'bash', 'arguments': json.dumps(dict(command=command, background=case not in ['yield', 'foreground'], **{'timeout': 0.2} if case == 'timeout' else {}))}}]}
             finish = 'tool_calls'
-            if case in ['multiple', 'abort']:
-                second = 'sleep 3; echo SECOND_COMPLETE' if case == 'abort' else 'sleep 1.05; echo SECOND_COMPLETE'
+            if case in ['multiple', 'abort', 'backlog']:
+                second = 'sleep 3; echo SECOND_COMPLETE' if case == 'abort' else 'sleep 2; echo SECOND_COMPLETE' if case == 'backlog' else 'sleep 1.05; echo SECOND_COMPLETE'
                 delta['tool_calls'].append({'index': 1, 'id': 'call_second', 'type': 'function', 'function': {'name': 'bash', 'arguments': json.dumps({'command': second, 'background': True})}})
+            if case == 'backlog':
+                for index in range(2, 9):
+                    delta['tool_calls'].append({'index': index, 'id': f'call_extra_{index}', 'type': 'function', 'function': {'name': 'bash', 'arguments': json.dumps({'command': f'sleep 1.{index}; echo EXTRA_{index}', 'background': True})}})
         self.send_response(200)
         self.send_header('Content-Type', 'text/event-stream')
         self.end_headers()
@@ -163,20 +178,31 @@ except subprocess.TimeoutExpired:
 server.shutdown()
 output = (folder / 'stdout.jsonl').read_text()
 assert 'VERIFIED_COMPLETION_8291' in output, (folder, (folder / 'stderr').read_text())
-expected = {'success': 'completed', 'failure': 'failed', 'timeout': 'timed_out', 'cancel': 'cancelled', 'yield': 'completed', 'foreground': 'completed', 'multiple': 'completed', 'tree': 'cancelled', 'status': 'completed', 'truncate': 'completed', 'logcap': 'completed'}[case]
+expected = {'success': 'completed', 'failure': 'failed', 'timeout': 'timed_out', 'cancel': 'cancelled', 'yield': 'completed', 'foreground': 'completed', 'multiple': 'completed', 'backlog': 'completed', 'observed': 'completed', 'tree': 'cancelled', 'status': 'completed', 'truncate': 'completed', 'logcap': 'completed'}[case]
 assert f'Task exec-1: {expected}' in output, output
 assert p.returncode == 0
 if case == 'foreground':
     assert 'exec-completion' not in output
-if case == 'multiple':
+if case in ['multiple', 'backlog']:
     assert 'Task exec-2: completed' in output
 events = [json.loads(line) for line in output.splitlines()]
-notifications = [event['message'] for event in events if event.get('type') == 'message_end' and event.get('message', {}).get('customType') == 'exec-completion']
+entries = [json.loads(line) for line in (folder / 'session.jsonl').read_text().splitlines()]
+notifications = [entry for entry in entries if entry.get('type') == 'custom_message' and entry.get('customType') == 'exec-completion']
 for notification in notifications:
     assert len(notification['content'].encode()) <= 8192
+    assert notification['display'] is False
 if case == 'multiple':
     assert len(notifications) == 1, notifications
     assert len(notifications[0]['details']['tasks']) == 2
+if case == 'backlog':
+    assert len(notifications) == 2, notifications
+    assert sum(len(notification['details']['tasks']) for notification in notifications) == 9
+    requests = [json.loads(line) for line in (folder / 'events.jsonl').read_text().splitlines() if '"model_request"' in line]
+    assert len(requests) == 3, requests
+if case == 'observed':
+    assert not notifications, notifications
+if case in ['cancel', 'tree']:
+    assert not notifications, notifications
 if case == 'status':
     results = [event['result'] for event in events if event.get('type') == 'tool_execution_end' and event.get('toolName') == 'exec_status']
     assert len(results) == 2

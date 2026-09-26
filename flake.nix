@@ -4,6 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    pi-nixpkgs.url = "github:NixOS/nixpkgs/74435dcdae840e9770652a7bf7754c2ef7b257e1";
 
     nixpkgs-thor.url = "github:NixOS/nixpkgs/d58a46e3bc02d91ebe04667f8397752a749c0024";
     jetpack-nixos = {
@@ -127,6 +128,8 @@
         ];
       };
     };
+
+    homeManagerModules.pi = ./modules/home/pi.nix;
 
     darwinModules.omlx = ./modules/darwin/omlx;
     darwinModules."beacon-mac-mini-m4" = ./hosts/personal/beacon-mac-mini-m4/configuration.nix;
@@ -637,6 +640,14 @@
           ];
         }).config.system.build.toplevel;
 
+      };
+
+    checks.x86_64-linux.pi-exec-smoke =
+      let
+        pkgs = import nixpkgs { system = "x86_64-linux"; };
+      in
+      pkgs.callPackage ./modules/home/pi-exec/tests {
+        inherit (inputs.pi-nixpkgs.legacyPackages.x86_64-linux) pi-coding-agent;
       };
 
     packages.aarch64-linux = {

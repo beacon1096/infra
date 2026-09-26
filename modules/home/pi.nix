@@ -2,10 +2,9 @@
 
 let
   cfg = config.beacon.pi;
-  unstablePkgs = import inputs.nixpkgs-unstable {
+  piPkgs = import inputs.pi-nixpkgs {
     system = pkgs.stdenv.hostPlatform.system;
     config = pkgs.config;
-    overlays = [ inputs.llmAgents.overlays.shared-nixpkgs ];
   };
   piWebAccess = pkgs.callPackage ./pi-web-access/package.nix { };
   tavilySecretPath = osConfig.sops.secrets."personal/tavily/api-key".path or null;
@@ -77,6 +76,11 @@ in
       default = { };
       description = "Models registered with the optional OpenAI-compatible provider.";
     };
+    modelBaseURL = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Optional provider base URL when no runtime environment override is set.";
+    };
     searchBaseURL = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -95,7 +99,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = [ unstablePkgs.pi-coding-agent ]
+    home.packages = [ piPkgs.pi-coding-agent ]
       ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.libsecret ];
 
     home.file.".pi/agent/AGENTS.md".text = builtins.readFile cfg.rulesFile + ''
@@ -123,7 +127,9 @@ in
 
         export default function (pi) {
           const basePath = ${builtins.toJSON modelBasePath};
+          const configuredBaseUrl = ${builtins.toJSON cfg.modelBaseURL};
           const baseUrl = process.env.BEACOWORKS_MODELS_API_BASE
+            || configuredBaseUrl
             || (basePath ? readFileSync(basePath, "utf8").trim() : "");
           if (!baseUrl) return;
           pi.registerProvider("litellm", {

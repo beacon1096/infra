@@ -11,6 +11,8 @@ let
     "yield"
     "foreground"
     "multiple"
+    "backlog"
+    "observed"
     "tree"
     "status"
     "truncate"

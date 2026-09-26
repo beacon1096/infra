@@ -15,6 +15,7 @@ type Job = {
   done: Promise<void>;
   bytes: number;
   logged: number;
+  delivery: "none" | "pending" | "enqueued" | "observed";
   deliveryError?: string;
 };
 
@@ -22,6 +23,7 @@ export default function (pi: ExtensionAPI) {
   const jobs = new Map<string, Job>();
   let owner = "";
   let shuttingDown = false;
+  let runActive = false;
   let sequence = 0;
   let notificationTimer: ReturnType<typeof setTimeout> | undefined;
   const pending: Job[] = [];
@@ -35,22 +37,35 @@ export default function (pi: ExtensionAPI) {
   };
   const metadata = (job: Job) => `Task ${job.id}: ${job.state}\nBytes: ${job.bytes}; logged: ${job.logged}\nOutput: ${job.path}${job.deliveryError ? `\nDelivery failed: ${job.deliveryError}` : ""}`;
   const summary = (job: Job) => `${metadata(job)}\n${job.result}`;
+  const completion = (batch: Job[]) => {
+    const budget = Math.min(4096, Math.max(0, Math.floor((8192 - Buffer.byteLength(batch.map(metadata).join("\n\n")) - 128) / batch.length)));
+    return { customType: "exec-completion", content: batch.map((job) => {
+      const result = bounded(job.result, Math.max(0, budget - 40));
+      return `${metadata(job)}\n${result}${result !== job.result ? "\n[Shortened; read log for details.]" : ""}`;
+    }).join("\n\n"), display: false, details: { tasks: batch.map((job) => ({ taskId: job.id, state: job.state, outputPath: job.path })) } };
+  };
+  const takePending = () => pending.splice(0).filter((job) => job.owner === owner && job.delivery === "pending");
+  const scheduleNotification = () => {
+    if (!runActive && !shuttingDown && pending.some((job) => job.delivery === "pending")) {
+      notificationTimer ??= setTimeout(flushNotifications, 250);
+    }
+  };
   const flushNotifications = () => {
     clearTimeout(notificationTimer);
     notificationTimer = undefined;
-    while (pending.length > 0 && !shuttingDown) {
-      const batch = pending.splice(0, 8).filter((job) => job.owner === owner);
-      if (!batch.length) continue;
-      const budget = Math.min(4096, Math.max(0, Math.floor((8192 - Buffer.byteLength(batch.map(metadata).join("\n\n")) - 128) / batch.length)));
-      try {
-        pi.sendMessage({ customType: "exec-completion", content: batch.map((job) => {
-          const result = bounded(job.result, Math.max(0, budget - 40));
-          return `${metadata(job)}\n${result}${result !== job.result ? "\n[Shortened; read log for details.]" : ""}`;
-        }).join("\n\n"), display: true, details: { tasks: batch.map((job) => ({ taskId: job.id, state: job.state, outputPath: job.path })) } }, { deliverAs: "followUp", triggerTurn: true });
-      } catch (error) {
-        for (const job of batch) job.deliveryError = bounded(String(error), 256);
-        console.error(`exec completion delivery failed for ${batch.map((job) => job.id).join(", ")}: ${error}`);
+    if (runActive || shuttingDown) return;
+    const batch = takePending();
+    if (!batch.length) return;
+    try {
+      pi.sendMessage(completion(batch), { deliverAs: "followUp", triggerTurn: true });
+      for (const job of batch) job.delivery = "enqueued";
+    } catch (error) {
+      for (const job of batch) {
+        job.deliveryError = bounded(String(error), 256);
+        job.delivery = "pending";
+        pending.push(job);
       }
+      console.error(`exec completion delivery failed for ${batch.map((job) => job.id).join(", ")}: ${error}`);
     }
   };
   const stopAll = async () => {
@@ -58,6 +73,7 @@ export default function (pi: ExtensionAPI) {
     clearTimeout(notificationTimer);
     notificationTimer = undefined;
     pending.length = 0;
+    runActive = false;
     for (const job of jobs.values()) job.controller.abort();
     await Promise.all([...jobs.values()].map((job) => job.done));
     jobs.clear();
@@ -69,6 +85,25 @@ export default function (pi: ExtensionAPI) {
     shuttingDown = false;
   });
   pi.on("session_shutdown", stopAll);
+  pi.on("agent_start", () => {
+    runActive = true;
+    clearTimeout(notificationTimer);
+    notificationTimer = undefined;
+  });
+  pi.on("agent_before_settle", () => {
+    const batch = takePending();
+    if (!batch.length) return;
+    const entries = [];
+    for (let index = 0; index < batch.length; index += 8) {
+      entries.push({ type: "custom_message" as const, ...completion(batch.slice(index, index + 8)) });
+    }
+    for (const job of batch) job.delivery = "enqueued";
+    return { entries, continue: true };
+  });
+  pi.on("agent_settled", () => {
+    runActive = false;
+    scheduleNotification();
+  });
   pi.on("agent_end", async (event, ctx) => {
     const last = event.messages.at(-1);
     if (last?.role === "assistant" && ["error", "aborted"].includes(last.stopReason)) {
@@ -86,7 +121,7 @@ export default function (pi: ExtensionAPI) {
     name: "bash",
     label: "bash",
     promptSnippet: "Execute bash with automatic background yield and completion notifications",
-    description: "Execute bash. Returns output if done within 10 seconds; otherwise returns a task ID and automatically delivers completion. background:true returns immediately. timeout is an optional hard limit in seconds, NOT a yield interval. Omit timeout for long builds unless a deadline is intended. Results contain at most 4 KiB/80 lines of output tail; read the log for details (64 MiB log limit). Nearby completions are batched.",
+    description: "Execute bash. Returns output if done within 10 seconds; otherwise returns a task ID and automatically delivers completion. background:true returns immediately. timeout is an optional hard limit in seconds, NOT a yield interval. Omit timeout for long builds unless a deadline is intended. Results contain at most 4 KiB/80 lines of output tail; read the log for details (64 MiB log limit). Completions during an agent run are delivered together before settlement.",
     promptGuidelines: ["After bash returns a running task, do independent work or end the turn. Completion wakes you automatically; do not poll or sleep merely to wait. Use exec_status only for a requested progress update or troubleshooting; exec_cancel stops a task."],
     parameters: Type.Object({ command: Type.String(), timeout: Type.Optional(Type.Number()), background: Type.Optional(Type.Boolean()) }),
     async execute(_id, args, signal, onUpdate, ctx) {
@@ -95,7 +130,7 @@ export default function (pi: ExtensionAPI) {
       const directory = mkdtempSync(join(tmpdir(), "pi-exec-"));
       const path = join(directory, "output.log");
       const fd = openSync(path, "wx", 0o600);
-      const job: Job = { id: `exec-${++sequence}`, owner, path, controller: new AbortController(), state: "running", result: "", background: false, done: Promise.resolve(), bytes: 0, logged: 0 };
+      const job: Job = { id: `exec-${++sequence}`, owner, path, controller: new AbortController(), state: "running", result: "", background: false, done: Promise.resolve(), bytes: 0, logged: 0, delivery: "none" };
       jobs.set(job.id, job);
       const abort = () => job.controller.abort();
       signal?.addEventListener("abort", abort, { once: true });
@@ -153,8 +188,9 @@ export default function (pi: ExtensionAPI) {
         if (logError) { job.state = "failed"; job.result += `\nLog write failed: ${logError}`; }
         job.result = bounded(job.result);
         if (job.background && !shuttingDown && owner === job.owner) {
+          job.delivery = "pending";
           pending.push(job);
-          notificationTimer ??= setTimeout(flushNotifications, 250);
+          scheduleNotification();
         }
         const completed = [...jobs.values()].filter((entry) => entry.state !== "running");
         for (const entry of completed.slice(0, -100)) jobs.delete(entry.id);
@@ -181,6 +217,7 @@ export default function (pi: ExtensionAPI) {
     async execute(_id, args) {
       const selected = [...jobs.values()].filter((job) => job.owner === owner && (!args.taskId || job.id === args.taskId));
       const visible = args.taskId ? selected : selected.slice(-20);
+      for (const job of visible) if (job.delivery === "pending") job.delivery = "observed";
       return text((args.taskId ? "" : `${selected.length} tasks; showing latest ${visible.length}.\n`) + (visible.map(metadata).join("\n\n") || "No matching tasks"));
     },
   });
@@ -192,6 +229,7 @@ export default function (pi: ExtensionAPI) {
       if (!job || job.owner !== owner) throw new Error("Unknown task");
       job.controller.abort();
       await job.done;
+      job.delivery = "observed";
       return text(summary(job));
     },
   });
