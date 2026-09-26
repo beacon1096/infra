@@ -127,3 +127,16 @@ resource "authentik_application" "tailscale" {
     prevent_destroy = true
   }
 }
+
+resource "authentik_user" "multica_gitops" {
+  username  = "multica-gitops"
+  name      = "GitOps + 运维 @ Beacoworks"
+  email     = "multica-gitops.no-reply@beacoworks.xyz"
+  type      = "internal"
+  path      = "agents"
+  is_active = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
