@@ -60,7 +60,7 @@ variable "nodes" {
     "nixbuilder-02" = {
       mac            = "52:54:00:6e:01:02" # 172.16.101.32
       harvester_node = "mc4-02"
-      active         = false
+      active         = true
     }
     "nixbuilder-03" = {
       mac            = "52:54:00:6e:01:03" # 172.16.101.33
