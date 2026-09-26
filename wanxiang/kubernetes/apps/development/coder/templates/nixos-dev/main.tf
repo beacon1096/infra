@@ -42,6 +42,11 @@ variable "git_ssh_secret_name" {
   default = "coder-workspace-git-ssh"
 }
 
+variable "infra_workspace_id" {
+  type    = string
+  default = ""
+}
+
 variable "tailscale_auth_key_expires_at" {
   type    = string
   default = "2026-11-03T00:00:00Z"
@@ -72,9 +77,10 @@ data "coder_workspace" "me" {}
 data "coder_workspace_owner" "me" {}
 
 locals {
-  workspace_slug = lower(replace(data.coder_workspace.me.name, "/[^a-zA-Z0-9-]/", "-"))
-  owner_slug     = lower(replace(data.coder_workspace_owner.me.name, "/[^a-zA-Z0-9-]/", "-"))
-  app            = "coder-${local.owner_slug}-${local.workspace_slug}"
+  workspace_slug  = lower(replace(data.coder_workspace.me.name, "/[^a-zA-Z0-9-]/", "-"))
+  owner_slug      = lower(replace(data.coder_workspace_owner.me.name, "/[^a-zA-Z0-9-]/", "-"))
+  app             = "coder-${local.owner_slug}-${local.workspace_slug}"
+  infra_workspace = var.infra_workspace_id != "" && data.coder_workspace.me.id == var.infra_workspace_id
   # The image's Home Manager profile bin — where code-server and the rest of
   # the toolchain live. The entrypoint already puts this on PATH, but the
   # startup script prepends it defensively in case the agent resets PATH.
@@ -86,10 +92,14 @@ resource "coder_agent" "main" {
   os   = "linux"
   dir  = "/home/coder/workspace"
 
-  env = {
+  env = merge({
     CODER_WORKSPACE_DIR = "/home/coder/workspace"
     GIT_SSH_COMMAND     = "ssh -F /home/coder/.ssh/config -i /home/coder/.ssh/runtime/id_ed25519 -o UserKnownHostsFile=/home/coder/.ssh/known_hosts -o StrictHostKeyChecking=yes"
-  }
+    }, local.infra_workspace ? {
+    KUBECONFIG        = "/run/coder-infra/kubeconfig"
+    SOPS_AGE_KEY_FILE = "/run/coder-infra/sops-age-keys"
+    TALOSCONFIG       = "/run/coder-infra/talosconfig"
+  } : {})
 
   startup_script = <<-EOT
     set -e
@@ -105,6 +115,7 @@ resource "coder_agent" "main" {
     }
 
     install_secret CLAUDE_CREDENTIALS_JSON /home/coder/.claude/.credentials.json
+    install_secret CODEX_AUTH_JSON /home/coder/.codex/auth.json
     install_secret OPENCODE_AUTH_JSON /home/coder/.local/share/opencode/auth.json
     install_secret GH_HOSTS_YML /home/coder/.config/gh/hosts.yml
     install_secret FORGEJO_GIT_CREDENTIALS /home/coder/.config/git/credentials
@@ -234,6 +245,18 @@ resource "kubernetes_pod" "workspace" {
       }
 
       dynamic "env" {
+        for_each = local.infra_workspace ? {
+          KUBECONFIG        = "/run/coder-infra/kubeconfig"
+          SOPS_AGE_KEY_FILE = "/run/coder-infra/sops-age-keys"
+          TALOSCONFIG       = "/run/coder-infra/talosconfig"
+        } : {}
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      dynamic "env" {
         for_each = var.agent_secret_name == "" ? [] : [var.agent_secret_name]
         content {
           name = "TS_AUTHKEY"
@@ -284,6 +307,15 @@ resource "kubernetes_pod" "workspace" {
           read_only  = true
         }
       }
+
+      dynamic "volume_mount" {
+        for_each = local.infra_workspace ? ["coder-workspace-infra"] : []
+        content {
+          name       = "infra-secrets"
+          mount_path = "/run/coder-infra"
+          read_only  = true
+        }
+      }
     }
 
     volume {
@@ -312,6 +344,16 @@ resource "kubernetes_pod" "workspace" {
       for_each = var.agent_secret_name == "" ? [] : [var.agent_secret_name]
       content {
         name = "agent-secrets"
+        secret {
+          secret_name = volume.value
+        }
+      }
+    }
+
+    dynamic "volume" {
+      for_each = local.infra_workspace ? ["coder-workspace-infra"] : []
+      content {
+        name = "infra-secrets"
         secret {
           secret_name = volume.value
         }
