@@ -49,19 +49,23 @@ variable "nodes" {
   type = map(object({
     mac            = string
     harvester_node = string
+    active         = bool
   }))
   default = {
     "nixbuilder-01" = {
       mac            = "52:54:00:6e:01:01" # 172.16.101.31
       harvester_node = "mc4-01"
+      active         = true
     }
     "nixbuilder-02" = {
       mac            = "52:54:00:6e:01:02" # 172.16.101.32
       harvester_node = "mc4-02"
+      active         = false
     }
     "nixbuilder-03" = {
       mac            = "52:54:00:6e:01:03" # 172.16.101.33
       harvester_node = "mc5-01"
+      active         = false
     }
   }
 }

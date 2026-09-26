@@ -36,7 +36,7 @@ resource "harvester_storageclass" "builder" {
   }
 }
 
-# Paused CI builders must remain off through Terraform updates.
+# Only explicitly enabled canaries may run through Terraform updates.
 resource "harvester_virtualmachine" "builder" {
   for_each = var.nodes
 
@@ -49,7 +49,7 @@ resource "harvester_virtualmachine" "builder" {
   namespace            = var.namespace
   hostname             = each.key
   restart_after_update = false
-  run_strategy         = "Halted"
+  run_strategy         = each.value.active ? "RerunOnFailure" : "Halted"
 
   cpu          = var.cpu
   memory       = var.memory
