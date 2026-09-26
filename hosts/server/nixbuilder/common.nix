@@ -32,6 +32,7 @@ let
   };
   maintenanceSchedule = maintenanceSchedules.${config.networking.hostName};
   maintenanceMarker = "/var/lib/nixbuilder-maintenance";
+  runnerEnabledMarker = "/var/lib/nixbuilder-runner-enabled";
   runnerService = "gitea-runner-${utils.escapeSystemdPath config.networking.hostName}.service";
   runnerServiceShell = lib.escapeShellArg runnerService;
 in
@@ -80,7 +81,8 @@ in
       # Forgejo and Attic currently traverse Cloudflare from this VLAN;
       # large HTTP/2 transfers intermittently reset mid-stream.
       http2 = false;
-      max-jobs = lib.mkForce "auto";
+      max-jobs = lib.mkForce 1;
+      cores = lib.mkForce 4;
       trusted-users = [
         "root"
         "beacon"
@@ -148,7 +150,10 @@ in
 
   systemd.services = {
     "gitea-runner-${utils.escapeSystemdPath config.networking.hostName}" = {
-      unitConfig.ConditionPathExists = "!${maintenanceMarker}";
+      unitConfig.ConditionPathExists = [
+        "!${maintenanceMarker}"
+        runnerEnabledMarker
+      ];
       serviceConfig = {
         KillMode = "mixed";
         TimeoutStopSec = "12h5m";

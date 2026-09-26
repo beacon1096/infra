@@ -21,14 +21,30 @@ resource "harvester_image" "installer" {
   }
 }
 
+resource "harvester_storageclass" "builder" {
+  name = "nixbuilder-local"
+
+  is_default             = false
+  reclaim_policy         = "Delete"
+  volume_binding_mode    = "Immediate"
+  allow_volume_expansion = true
+
+  parameters = {
+    migratable       = "false"
+    numberOfReplicas = "1"
+    dataLocality     = "best-effort"
+  }
+}
+
+# Paused CI builders must remain off through Terraform updates.
 resource "harvester_virtualmachine" "builder" {
   for_each = var.nodes
 
   name                 = each.key
   namespace            = var.namespace
   hostname             = each.key
-  restart_after_update = true
-  run_strategy         = "RerunOnFailure"
+  restart_after_update = false
+  run_strategy         = "Halted"
 
   cpu          = var.cpu
   memory       = var.memory
