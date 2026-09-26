@@ -43,7 +43,6 @@ in
   programs.vscode.profiles.default.enableMcpIntegration = true;
   programs.cursor.profiles.default.enableMcpIntegration = true;
   programs.claude-code.enableMcpIntegration = true;
-  programs.codex.settings.mcp_servers.outline.url = outlineMcpUrl;
 
   home.file.".cursor/mcp.json".source = jsonFormat.generate "cursor-mcp.json" {
     mcpServers = lib.mapAttrs
@@ -55,6 +54,17 @@ in
       )
       config.programs.mcp.servers;
   };
+
+  home.activation.outlineCodexMcp = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    codex_config="$HOME/.codex/config.toml"
+    run install -d -m 0700 "$HOME/.codex"
+    if [ ! -e "$codex_config" ]; then
+      run install -m 0600 /dev/null "$codex_config"
+    fi
+    if [ -f "$codex_config" ] && ! grep -q '^\[mcp_servers\.outline\]$' "$codex_config"; then
+      printf '\n[mcp_servers.outline]\nurl = "${outlineMcpUrl}"\n' | run tee -a "$codex_config" >/dev/null
+    fi
+  '';
 
   home.activation.tavilyMcpApiKeyEnv = lib.mkIf
     (lib.hasAttrByPath tavilySecretAttr osConfig)
