@@ -85,6 +85,7 @@ resource "harvester_virtualmachine" "builder" {
     size               = var.disk_size
     bus                = "virtio"
     boot_order         = 1
+    access_mode        = "ReadWriteOnce"
     storage_class_name = harvester_storageclass.builder.name
     auto_delete        = true
   }
