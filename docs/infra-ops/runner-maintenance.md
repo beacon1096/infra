@@ -28,7 +28,7 @@
 
 这样可避免两个 I/O 密集型 Nix 构建在同一台虚拟机宿主机上争用资源。映射在 `terraform/harvester/variables.tf` 中声明；不要依赖 Harvester 默认的首选反亲和性，因为它并非强制性的节点分配约束。
 
-固定节点有意以虚拟机级故障转移能力换取可预测的构建容量。如果某个 Harvester 节点故障或进入维护，其构建机将保持不可用；其余 builder 继续接收作业。重建后的根盘使用 `nixbuilder-local` 单副本 StorageClass，不能实时迁移。旧根盘仍保留原来的三副本配置，直到对应 VM 被逐台重建。
+固定节点有意以虚拟机级故障转移能力换取可预测的构建容量。如果某个 Harvester 节点故障或进入维护，其构建机将保持不可用；其余 builder 继续接收作业。根盘使用 `nixbuilder-local` 单副本 StorageClass，不能实时迁移。
 
 ## 执行顺序与故障处理
 

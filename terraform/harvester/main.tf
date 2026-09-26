@@ -36,14 +36,8 @@ resource "harvester_storageclass" "builder" {
   }
 }
 
-# Only explicitly enabled canaries may run through Terraform updates.
 resource "harvester_virtualmachine" "builder" {
   for_each = var.nodes
-
-  # Existing three-replica disks are replaced one VM at a time.
-  lifecycle {
-    ignore_changes = [disk]
-  }
 
   name                 = each.key
   namespace            = var.namespace
