@@ -1,6 +1,8 @@
 # Forgejo runner 维护
 
-三台 Harvester Nix 构建机各自一次只接收一个 Forgejo Actions 作业。工作流作业和 runner 的最长运行时间均为 12 小时。Nix 在空闲空间低于 12 GiB 时尝试回收到 32 GiB，仍可能因为无法回收正在使用的数据而构建失败。定时存储维护不能与运行中的作业重叠：垃圾回收可能删除仅由求值缓存保留的 derivation，而垃圾回收和存储优化都会产生足以让构建看似停滞的 Longhorn I/O。
+三台 Harvester Nix 构建机各自一次只接收一个 Forgejo Actions 作业。工作流作业和 runner 的最长运行时间均为 12 小时。存储维护不能与运行中的作业重叠：垃圾回收可能删除仅由求值缓存保留的 derivation，而垃圾回收和存储优化都会产生足以让构建看似停滞的 Longhorn I/O。
+
+生产 VM 的 NixOS 配置和 SOPS 密文由私有仓管理；本仓的 `terraform/harvester` 管理 VM 与存储。以下主机操作须按私有仓当前配置执行。
 
 ## 轮换安排
 
@@ -28,15 +30,13 @@
 
 固定节点有意以虚拟机级故障转移能力换取可预测的构建容量。如果某个 Harvester 节点故障或进入维护，其构建机将保持不可用；其余 builder 继续接收作业。重建后的根盘使用 `nixbuilder-local` 单副本 StorageClass，不能实时迁移。旧根盘仍保留原来的三副本配置，直到对应 VM 被逐台重建。
 
-builder 根盘只保存可重建的系统与本地 Nix 缓存。重建前需准备新的 SOPS 解密身份：从有权限的机器生成 SSH 主机密钥、更新共享 Secret 的 age 收件人，并在 `nixos-anywhere --extra-files` 中注入私钥。密钥不得进入 Nix store 或公开仓。重建后重新注册 Forgejo runner，确认 SOPS 解密、缓存访问和资源限制，再创建 `/var/lib/nixbuilder-runner-enabled` 并启动 runner。停止 VM 不会释放旧 Longhorn 卷空间；删除旧根盘前要核对 PVC 与卷的对应关系。
-
 ## 执行顺序与故障处理
 
 1. 排空定时器写入 `/var/lib/nixbuilder-maintenance`，跨重启保留排空状态，防止系统激活或重启让 runner 提前恢复。首次部署时，激活脚本会将旧的 `/run/nixbuilder-maintenance` 标记迁到新路径。
 2. runner 停止接收新作业，并最多等待 12 小时让当前作业完成。`KillMode=mixed` 最初只向 runner 发送 SIGTERM，因此作业子进程可在等待期间继续运行直至完成。在 `TimeoutStopSec=12h5m` 之后，systemd 可以强制停止剩余的进程组。维护在开始排空 12 小时 15 分钟后启动。
 3. 03:15 时，只有标记存在且 runner 已完全停止，才会执行维护。否则跳过维护，以免影响仍在运行的构建。
 4. `nix-collect-garbage --delete-older-than 7d` 和 `nix-store --optimise` 共用一小时的 systemd 超时。已在这些构建机上禁用每日自动垃圾回收和优化。
-5. 04:25 时删除维护标记并尝试启动 runner。恢复运行的定时器具有持久性，因此如果主机在 04:25 不可用，下次启动时仍会尝试恢复运行。新安装的 builder 还需要 `/var/lib/nixbuilder-runner-enabled` 标记；完成解密、缓存和资源限制验证后，才创建该标记并启动 runner。
+5. 04:25 时删除标记并启动 runner。恢复运行的定时器具有持久性，因此如果主机在 04:25 不可用，下次启动时仍会恢复运行。
 
 如果作业经常接近 12 小时，请保留这一维护时段。消除长时间运行的作业后，应同步缩短工作流超时、runner 超时、停止服务超时和排空提前量；只改其中一项可能终止正在运行的作业，或使维护与作业重叠。
 

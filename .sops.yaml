@@ -33,7 +33,6 @@ keys:
   - &hpe_microserver_age age1ydr0lk4m3xgqs8s8s2ynnxfjrhhesgr0agwj9mlz0ds6vqzuhgtsul5jv7
   - &ms_r1_age age15wuj5a3j2ec36u9fmlnftm6sgynk580zk5xt6nrun9lvr2ja698shc5mdl
   - &nixbuilder_01_age age1m4xcp2h5a5uwpr3368z09knqpf6jn5uq6798tnj4g40g9xj564pseuxct3
-  - &nixbuilder_01_rebuild_age age1u4qyvh47xxp9h7k9p83n2evg6m4f6r9gdqa7lchq46xfdsf3ppaqj60m5v
   - &nixbuilder_02_age age1fk62h42a933kdl994lmthsyq05fygmqf42fm30d7ed8w57lw03lqf587ah
   - &nixbuilder_03_age age1lwa37uzjagu4xm0fuvsm4fmyrgxrj484vr6ptuq4dqx743hq3gyqe3faeh
   # - &surface_book_3_age age1TODO_REPLACE_AFTER_NIXOS_INSTALL_SURFACE_BOOK_3
@@ -118,7 +117,6 @@ creation_rules:
           - *hpe_microserver_age
           - *ms_r1_age
           - *nixbuilder_01_age
-          - *nixbuilder_01_rebuild_age
           - *nixbuilder_02_age
           - *nixbuilder_03_age
           - *clerk_technician
