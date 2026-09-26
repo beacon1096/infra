@@ -127,6 +127,13 @@ resource "coder_agent" "main" {
       install_secret FORGEJO_GIT_CREDENTIALS /home/coder/.config/git/credentials
       git config --global credential.https://forgejo.beaco.works.helper 'store --file /home/coder/.config/git/credentials'
     fi
+    if [ -s /run/coder-agent-secrets/FORGEJO_API_TOKEN ] && command -v tea >/dev/null 2>&1; then
+      tea login delete forgejo >/dev/null 2>&1 || true
+      if ! GITEA_SERVER_TOKEN="$(cat /run/coder-agent-secrets/FORGEJO_API_TOKEN)" \
+        tea login add --name forgejo --url https://forgejo.beaco.works --no-version-check; then
+        echo "tea Forgejo login failed" >&2
+      fi
+    fi
 
     if [ -f /run/coder-git-ssh/id_ed25519 ]; then
       install -d -m 0700 /home/coder/.ssh/runtime
