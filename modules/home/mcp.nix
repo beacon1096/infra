@@ -2,6 +2,7 @@
 
 let
   jsonFormat = pkgs.formats.json { };
+  outlineMcpUrl = "https://docs.beacoworks.xyz/mcp";
   tavilySecretName = "personal/tavily/api-key";
   tavilySecretAttr = [ "sops" "secrets" tavilySecretName ];
   tavilySecretPath = (lib.attrByPath tavilySecretAttr null osConfig).path;
@@ -18,6 +19,10 @@ in
 
     grep = {
       url = "https://mcp.grep.app";
+    };
+
+    outline = {
+      url = outlineMcpUrl;
     };
 
     playwright = {
@@ -38,12 +43,13 @@ in
   programs.vscode.profiles.default.enableMcpIntegration = true;
   programs.cursor.profiles.default.enableMcpIntegration = true;
   programs.claude-code.enableMcpIntegration = true;
+  programs.codex.settings.mcp_servers.outline.url = outlineMcpUrl;
 
   home.file.".cursor/mcp.json".source = jsonFormat.generate "cursor-mcp.json" {
     mcpServers = lib.mapAttrs
-      (_: server:
+      (name: server:
         let
-          addType = if server ? command then "stdio" else "sse";
+          addType = if server ? command then "stdio" else if name == "outline" then "http" else "sse";
         in
         server // { type = addType; }
       )
