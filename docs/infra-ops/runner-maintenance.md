@@ -26,9 +26,9 @@
 
 这样可避免两个 I/O 密集型 Nix 构建在同一台虚拟机宿主机上争用资源。映射在 `terraform/harvester/variables.tf` 中声明；不要依赖 Harvester 默认的首选反亲和性，因为它并非强制性的节点分配约束。
 
-固定节点有意以虚拟机级故障转移能力换取可预测的构建容量。如果某个 Harvester 节点故障或进入维护，其构建机将保持不可用，而不会迁移到另一台构建机所在的节点；另外两个 runner 仍可接收作业。维护期间可以手动实时迁移，暂时覆盖节点分配，但之后应恢复声明的映射。
+固定节点有意以虚拟机级故障转移能力换取可预测的构建容量。如果某个 Harvester 节点故障或进入维护，其构建机将保持不可用；其余 builder 继续接收作业。重建后的根盘使用 `nixbuilder-local` 单副本 StorageClass，不能实时迁移。旧根盘仍保留原来的三副本配置，直到对应 VM 被逐台重建。
 
-Longhorn 为每台构建机的磁盘保留三个副本，每个存储节点各一个。迁移虚拟机会改变其计算节点位置和 Longhorn 卷前端，但不会重新均衡副本分布，也不会减少节点的存储预留量。
+builder 根盘只保存可重建的系统与本地 Nix 缓存。重建前需准备新的 SOPS 解密身份：从有权限的机器生成 SSH 主机密钥、更新共享 Secret 的 age 收件人，并在 `nixos-anywhere --extra-files` 中注入私钥。密钥不得进入 Nix store 或公开仓。重建后重新注册 Forgejo runner，确认 SOPS 解密、缓存访问和资源限制，再创建 `/var/lib/nixbuilder-runner-enabled` 并启动 runner。停止 VM 不会释放旧 Longhorn 卷空间；删除旧根盘前要核对 PVC 与卷的对应关系。
 
 ## 执行顺序与故障处理
 
