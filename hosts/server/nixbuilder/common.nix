@@ -125,6 +125,7 @@ in
         gzip
         jq
         nodejs
+        openssh
         python3
         unzip
         wget
