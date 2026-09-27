@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | thor | Jetson AGX Thor，Blackwell GPU，128 GiB 统一内存 | 主力 LLM/VLM：生产 SGLang Qwen3.8 27B；按需运行实验实例 | 生产实例配置 256K 上下文、最多 4 个活动生成，但不代表 4 路均可占满 256K。重负载需与生产实例互斥，内存守护以 12 GiB 可用内存为红线 |
 | beacon-mac-mini-m4 | Mac mini M4，32 GiB 统一内存 | 27B 级 oMLX 服务已于 2026-09 下线；待分配新负载 | ASR、TTS、Embedding 或中小模型为候选；磁盘权重待手动清理 |
-| m920x | x86 NixOS、KVM，太初集群 | Tesla P4 实验宿主 | P4 已装机并被驱动识别；推理负载和便携 PD 电源下的稳定性尚未验证 |
+| m920x | x86 NixOS、KVM，太初集群 | Tesla P4 实验宿主 | P4 已装机并被驱动识别；推理负载和便携 PD 电源下的稳定性尚未验证。A2000 在本机持续负载下同样整机断电（与 gen10plus 同类供电问题），且无 IPMI 级遥测 |
 | microserver-gen10plus | HPE MicroServer Gen10 Plus，x86 NixOS、KVM | 目前无法用于稳定可靠的高性能或长时间推理 | NVIDIA 驱动缺失待重建；A2000 满载会触发主板 P12V 稳压器 Critical 故障并断电，200 W → 300 W 换电源仍未解决（2026-09-28） |
 | NUC9 | x86，旧 TrueNAS 设备 | 暂无推理负载 | 尚未接管，目前没有显卡 |
 | NUC11 | x86，Windows，Titan RTX 24 GiB | 当前游戏机；非生产推理 | 尚未由 NixOS 接管 |
@@ -26,6 +26,7 @@
 
 - A2000 可使用 NVIDIA 开源内核模块，P4 需要私有模块；不能在同一内核中混用两种模块。两卡目前不在同一宿主机。
 - gen10plus 供电问题未解决：原装 HP DC 圆孔外置电源仅 200 W，A2000 负载会致整机断电；已换 Alienware 300 W，2026-09-28 仍复现——iLO 报 `Runtime Fault, System Board, P12V Main/AUX Regulators (10h)` 并断电（长时间游戏与持续推理均会触发；此前 vLLM 跑 GLM-7B 短请求 webchat 未见问题）。RAID5 与风扇、温度、内存、存储均正常，限制指向主板 12V 稳压供电链路而非电源额定功率。另：gen 27–37 的内核模块均无 `nvidia.ko`，此前 `nvidia-smi` 可用是旧模块在 `switch` 后残留，重启即失效；恢复 GPU 需带私有仓 NVIDIA 模块重建。详见 [Gen10 Plus 设备记录](../inventory/guanggu/microserver-gen10plus/readme.md)。
+- A2000 的持续负载供电问题不是 gen10plus 独有：m920x 装 A2000 同样整机断电，症状一致，但只有 Intel AMT、缺少 iLO/IPMI 级遥测。详见 [m920x 设备记录](../inventory/taichu/m920x.md)。
 - Thor 的 128 GiB 统一内存与宿主共享；生产 SGLang 常驻约 70–90 GiB。新增重模型需停生产实例或按需运行实验实例；轻量 ASR、TTS、Embedding 合计低于 5 GiB 时可作为共存候选，尚非已部署结论。
 - M4 的 32 GiB 内存不适合同时承载更多 27B 级负载；oMLX 已移出系统配置，重新部署需恢复相关模块并评估 `iogpu.wired_limit_mb`。
 
