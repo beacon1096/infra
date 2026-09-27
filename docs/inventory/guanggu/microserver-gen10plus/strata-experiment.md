@@ -1,6 +1,6 @@
 # Strata + Swift 1.5 推理实验（MicroServer Gen10 Plus）
 
-设备背景、供电与驱动状态见 [MicroServer Gen10 Plus 设备记录](./microserver-gen10plus.md)。
+设备背景与驱动状态见 [设备记录](./readme.md)；本次触发的供电故障见 [GPU 持续负载与供电](./power-and-load.md)。
 
 实验目的：验证 [Strata](https://github.com/Niko1221/Strata)（Qwen3.8-Flash-Next 125B MoE 的本地推理框架）在本机的实际可用性。
 
@@ -33,7 +33,7 @@ Strata 的 i-quant CPU expert 内核有 AVX-512（VNNI/VBMI）快路径，本机
 
 ## 稳定性
 
-实验运行约 1 小时后，iLO 报 `Runtime Fault, System Board, P12V Main/AUX Regulators (10h)`，整机断电。详见设备记录的 [GPU 持续负载与供电](./microserver-gen10plus.md#gpu-持续负载与供电)。
+实验后期在一次 Web UI 请求期间触发主板供电故障（`Runtime Fault, System Board, P12V Main/AUX Regulators`），整机断电。完整时间线与遥测缺口见 [GPU 持续负载与供电](./power-and-load.md)。
 
 ## 善后
 

@@ -6,7 +6,7 @@
 ## 设备库存
 
 - [UCG-Fiber 主路由](ucg-fiber.md)
-- [MicroServer Gen10 Plus 驻守节点](microserver-gen10plus.md)
+- [MicroServer Gen10 Plus 驻守节点](microserver-gen10plus/readme.md)
 - [HPE ProLiant EC200a（暂停使用）](ec200a/README.md)
 - [懒猫微服本体](lazycat-microserver.md)
 - [懒猫 AI Pod（LC-X5 / Jetson T5000）](lazycat-aipod/README.md)

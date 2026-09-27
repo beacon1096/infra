@@ -25,7 +25,7 @@
 ## 约束
 
 - A2000 可使用 NVIDIA 开源内核模块，P4 需要私有模块；不能在同一内核中混用两种模块。两卡目前不在同一宿主机。
-- gen10plus 供电问题未解决：原装 HP DC 圆孔外置电源仅 200 W，A2000 负载会致整机断电；已换 Alienware 300 W，2026-09-28 仍复现——iLO 报 `Runtime Fault, System Board, P12V Main/AUX Regulators (10h)` 并断电（长时间游戏与持续推理均会触发；此前 vLLM 跑 GLM-7B 短请求 webchat 未见问题）。RAID5 与风扇、温度、内存、存储均正常，限制指向主板 12V 稳压供电链路而非电源额定功率。另：gen 27–37 的内核模块均无 `nvidia.ko`，此前 `nvidia-smi` 可用是旧模块在 `switch` 后残留，重启即失效；恢复 GPU 需带私有仓 NVIDIA 模块重建。详见 [Gen10 Plus 设备记录](../inventory/guanggu/microserver-gen10plus.md)。
+- gen10plus 供电问题未解决：原装 HP DC 圆孔外置电源仅 200 W，A2000 负载会致整机断电；已换 Alienware 300 W，2026-09-28 仍复现——iLO 报 `Runtime Fault, System Board, P12V Main/AUX Regulators (10h)` 并断电（长时间游戏与持续推理均会触发；此前 vLLM 跑 GLM-7B 短请求 webchat 未见问题）。RAID5 与风扇、温度、内存、存储均正常，限制指向主板 12V 稳压供电链路而非电源额定功率。另：gen 27–37 的内核模块均无 `nvidia.ko`，此前 `nvidia-smi` 可用是旧模块在 `switch` 后残留，重启即失效；恢复 GPU 需带私有仓 NVIDIA 模块重建。详见 [Gen10 Plus 设备记录](../inventory/guanggu/microserver-gen10plus/readme.md)。
 - Thor 的 128 GiB 统一内存与宿主共享；生产 SGLang 常驻约 70–90 GiB。新增重模型需停生产实例或按需运行实验实例；轻量 ASR、TTS、Embedding 合计低于 5 GiB 时可作为共存候选，尚非已部署结论。
 - M4 的 32 GiB 内存不适合同时承载更多 27B 级负载；oMLX 已移出系统配置，重新部署需恢复相关模块并评估 `iogpu.wired_limit_mb`。
 

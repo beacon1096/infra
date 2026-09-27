@@ -26,7 +26,7 @@ UniFi OS，Debian 11 userland，内核 `5.4.213-ui-ipq9574`，aarch64。
 ## 运行角色
 
 光谷主路由，提供主网和 IoT 网关。
-与之交互的 NixOS驻守节点是 [172.16.20.11](./microserver-gen10plus.md)
+与之交互的 NixOS驻守节点是 [172.16.20.11](./microserver-gen10plus/readme.md)
 
 ## 访问
 
