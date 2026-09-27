@@ -1,0 +1,17 @@
+--- flashattention_backend.py
++++ flashattention_backend.py
+@@ -319,7 +319,13 @@
+         # num_splits == 0 delegates SplitKV sizing to the selected FA runtime.
+         deterministic = get_exec().deterministic.enable_deterministic_inference
+         if self._get_fa_runtime_policy is None:
+-            self.num_splits = 1 if deterministic else 0
++            force_single_split = (
++                self.fa_impl_ver == 4
++                and device_capability[0] in (10, 11)
++                and self.head_dim == 256
++            )
++            # FA4's SM10x/SM11x dedicated head-dim-256 kernel rejects SplitKV.
++            self.num_splits = 1 if deterministic or force_single_split else 0
+             self.decode_num_splits = self.num_splits
+             self._decode_uses_static_max_seqlen_k = False
+         else:

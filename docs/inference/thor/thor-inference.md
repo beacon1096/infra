@@ -38,11 +38,11 @@ LiteLLM 1.90.0 优先使用模型 `stream_timeout`，其次才是 `timeout`，�
 
 `hosts/personal/fixed/thor/inference.nix` 声明主机服务。其 `inference/` 目录包含最小补丁，以及源文件和结果文件的 SHA256 校验值。启动时从锁定的本地 Docker 镜像提取原文件并验证两类哈希。模型快照和镜像须预先存在于 `/var/lib/thor-inference`；重建 Nix 不会下载这些大型前置资源。镜像按本地 image ID 锁定，而非仓库 digest；清理 Docker 镜像时须保留它。
 
-`terraform/litellm-wanxiang/` 管理模型记录、`ai/thor-inference` 出站 Service 和 `ai/litellm-tailscale` 入站 Service。现有 Tailscale Operator 管理其代理 Pod。显式 `tag:talos-ii-operator` 与正常运行的机群 Service 一致；Operator 默认 `tag:talos-ii-svc` 被其 OAuth 权限拒绝。不要覆盖 Operator 生成的 `externalName`。
+私有仓 `terraform/litellm-wanxiang/` 管理模型记录、`ai/thor-inference` 出站 Service 和 `ai/litellm-tailscale` 入站 Service。现有 Tailscale Operator 管理其代理 Pod。显式 `tag:talos-ii-operator` 与正常运行的机群 Service 一致；Operator 默认 `tag:talos-ii-svc` 被其 OAuth 权限拒绝。不要覆盖 Operator 生成的 `externalName`。
 
 流量路径：agent → LiteLLM → `thor-inference.ai.svc.cluster.local:8889` → Tailscale → Thor `100.88.133.23:8889` → 回环 SGLang `127.0.0.1:8888`。原始推理只能通过 Tailnet 监听器访问；模型服务器没有单独的 API 密钥。因此 Tailnet ACL 仍属于后端访问边界。
 
-用 `KUBECONFIG=<cluster-config> terraform/litellm-wanxiang/run.sh plan` 和 `apply` 应用模型/网络变更，需备有 `kubectl` 和 `tofu`。脚本获取管理凭据但不打印它。Terraform 状态保存在现有 Kubernetes 后端。
+用私有仓的 `KUBECONFIG=<cluster-config> terraform/litellm-wanxiang/run.sh` 执行 `plan` 和 `apply` 应用模型/网络变更，需备有 `kubectl` 和 `tofu`。脚本获取管理凭据但不打印它。Terraform 状态保存在现有 Kubernetes 后端。
 
 管理 URL 是临时 Terraform 变量，因为每次调用可能使用不同的本地端口转发端口。因此保存的 plan 可以在新的转发会话中应用。
 

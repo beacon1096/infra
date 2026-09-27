@@ -8,7 +8,9 @@ let
 in
 {
   imports = [
+    ./fan-control.nix
     ./hardware-configuration.nix
+    ./inference.nix
     ../../../../modules/nixos/hyprland.nix
   ];
 

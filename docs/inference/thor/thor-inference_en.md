@@ -57,11 +57,11 @@ than left running after the client disappears; see
 
 `hosts/personal/fixed/thor/inference.nix` declares the host service. Its `inference/` directory contains minimal patches and their source/result SHA256 checks. Startup extracts originals from the pinned local Docker image and verifies both hashes. Model snapshots and image must already exist under `/var/lib/thor-inference`; rebuilding Nix does not download these large prerequisites. The image is pinned by local image ID, not a registry digest; preserve it when cleaning Docker images.
 
-`terraform/litellm-wanxiang/` owns the model row, the `ai/thor-inference` egress Service, and the `ai/litellm-tailscale` ingress Service. The existing Tailscale Operator owns their proxy pods. The explicit `tag:talos-ii-operator` matches working fleet Services; the operator's default `tag:talos-ii-svc` was rejected by its OAuth permissions. Do not overwrite the operator-generated `externalName`.
+The private repository's `terraform/litellm-wanxiang/` owns the model row, the `ai/thor-inference` egress Service, and the `ai/litellm-tailscale` ingress Service. The existing Tailscale Operator owns their proxy pods. The explicit `tag:talos-ii-operator` matches working fleet Services; the operator's default `tag:talos-ii-svc` was rejected by its OAuth permissions. Do not overwrite the operator-generated `externalName`.
 
 Traffic: agent → LiteLLM → `thor-inference.ai.svc.cluster.local:8889` → Tailscale → Thor `100.88.133.23:8889` → loopback SGLang `127.0.0.1:8888`. Raw inference is accessible only through the Tailnet listener; the model server has no separate API key. Tailnet ACLs therefore remain part of the backend access boundary.
 
-Apply model/network changes using `KUBECONFIG=<cluster-config> terraform/litellm-wanxiang/run.sh plan` and `apply` with `kubectl` and `tofu` available. The script obtains the management credential without printing it. Terraform state stays in the existing Kubernetes backend.
+Apply model/network changes using the private repository's `KUBECONFIG=<cluster-config> terraform/litellm-wanxiang/run.sh` with `plan` and `apply`, with `kubectl` and `tofu` available. The script obtains the management credential without printing it. Terraform state stays in the existing Kubernetes backend.
 
 The management URL is an ephemeral Terraform variable because each invocation may use a different local port-forward port. A saved plan can therefore be applied through a fresh forwarding session.
 

@@ -1,0 +1,12 @@
+--- scheduler.py
++++ scheduler.py
+@@ -2996,6 +2996,9 @@
+             # it. Drop the marker once the request is actually gone.
+             if req.finished() or req.req_pool_idx is None:
+                 self._pending_chunked_abort_req = None
++                return
++            self._pending_chunked_abort_req = None
++            self.abort_request(AbortReq(rid=req.rid))
+             return
+ 
+         prepare_abort(req, "Aborted")

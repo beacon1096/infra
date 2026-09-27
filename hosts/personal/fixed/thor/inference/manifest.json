@@ -1,0 +1,44 @@
+[
+  {
+    "file": "dflash.py",
+    "source": "/sgl-workspace/sglang/python/sglang/srt/models/dflash.py",
+    "original_sha256": "ad1e7957ce59751266c9359bfe65f51668fd81716744e34f55f7efd42e08d0f6",
+    "patched_sha256": "fd3275b840455c2efab544fb89b9402fb058d0773343c8c63f3eec8c38b5bbfa"
+  },
+  {
+    "file": "dflash_worker_v2.py",
+    "source": "/sgl-workspace/sglang/python/sglang/srt/speculative/dflash_worker_v2.py",
+    "original_sha256": "5fd1e3f16c5725e4d56ac327515b56cfd06de52f94b069332d43faad7d771482",
+    "patched_sha256": "dc75546704582664719ccd22aeca57514f0f92b6d8a47a16b8936436b2da0ffb"
+  },
+  {
+    "file": "fused_sigmoid_gating_recurrent.py",
+    "source": "/sgl-workspace/sglang/python/sglang/kernels/ops/attention/fla/fused_sigmoid_gating_recurrent.py",
+    "original_sha256": "b6c85121c6b2c04a14691db04e808ed173da772c8d9b3f6a12d6ce5b01987472",
+    "patched_sha256": "5425674631d382b88b70ad8490d4a2717d009ffcc8af5918d24b2d26eef8ad44"
+  },
+  {
+    "file": "tokenizer_manager.py",
+    "source": "/sgl-workspace/sglang/python/sglang/srt/managers/tokenizer_manager.py",
+    "original_sha256": "67abae42e171b663dc4c4afa426147d0d6305ec9824c8e2a8b3560c1a13da9e3",
+    "patched_sha256": "93bea6e37f6becfaecac6f9e73e5f12b8ba80ef56fa19d8bc12c3cab15f248a2"
+  },
+  {
+    "file": "scheduler.py",
+    "source": "/sgl-workspace/sglang/python/sglang/srt/managers/scheduler.py",
+    "original_sha256": "7beb1b7108f4e6eebdeda57ea2126f7a1404fc0af7a2b24179cf8259f8e0b2a2",
+    "patched_sha256": "3ffe59325f183a81f922449e111b034082bdc211b8d5e4b5c0001710fd935da4"
+  },
+  {
+    "file": "extend_attention.py",
+    "source": "/sgl-workspace/sglang/python/sglang/kernels/ops/attention/extend_attention.py",
+    "original_sha256": "8aa8d01f0a73a144f51a8b7e8dae94a96c227b1dc6b6397ab8ff03116514dfd9",
+    "patched_sha256": "c6a977a9092c43c3649ac5ff75f3801b1880a37ef9347bde7e213e571216d06f"
+  },
+  {
+    "file": "flashattention_backend.py",
+    "source": "/sgl-workspace/sglang/python/sglang/srt/layers/attention/flashattention_backend.py",
+    "original_sha256": "c401e8c9acadff8845906f5d386c2cc318ba818712f161b1e5b591baa1f0dd79",
+    "patched_sha256": "d0e181e52c0de07149708fa57aee7e18bd14501826e005d374f9dc3b6cc7a494"
+  }
+]

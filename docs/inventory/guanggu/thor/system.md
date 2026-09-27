@@ -8,6 +8,8 @@
 
 - [主机配置](../../../../hosts/personal/fixed/thor/configuration.nix)：用户、Hyprland、Tailscale、SSH 和网络设置。
 - [硬件配置](../../../../hosts/personal/fixed/thor/hardware-configuration.nix)：本机的启动和存储配置。
+- [推理服务](../../../../hosts/personal/fixed/thor/inference.nix)：SGLang 启动参数、内存门槛、健康检查，以及 `inference/` 下的运行时补丁与 SHA256 清单。
+- [风扇控制](../../../../hosts/personal/fixed/thor/fan-control.nix)：接管懒猫守护进程并在推理前锁定 Performance 档位。
 - [懒猫温控检查](lzc-thermal.md)：AI Pod 界面、后端、设备代理和风扇守护进程的控制链，以及 NixOS 接管边界。
 
 以上文件描述公开的声明式配置。下列固件信息是带日期的只读快照，不表示各项数值均为 NixOS 所需设置。

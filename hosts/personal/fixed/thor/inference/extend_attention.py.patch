@@ -1,0 +1,30 @@
+--- extend_attention.py
++++ extend_attention.py
+@@ -791,6 +791,18 @@
+         _get_block_sizes_for_extend_attention(Lq, Lv)
+     )
+ 
++    tune_sm110_prefill = (
++        _is_cuda
++        and CUDA_CAPABILITY[0] == 11
++        and Lq == 256
++        and Lv == 256
++        and max_len_extend > 64
++    )
++    if tune_sm110_prefill:
++        # The larger tile saves repeated prefix-KV reads but regresses short verify batches.
++        BLOCK_M = 128
++        BLOCK_N = 64
++
+     sm_scale = sm_scale or 1.0 / (Lq**0.5)
+     batch_size, head_num = qo_indptr.shape[0] - 1, q_extend.shape[1]
+     kv_group_num = q_extend.shape[1] // k_extend.shape[1]
+@@ -837,7 +849,7 @@
+         grid = (compact_q_tiles, head_num)
+     else:
+         grid = (batch_size, head_num, triton.cdiv(max_len_extend, BLOCK_M))
+-    num_stages = 1
++    num_stages = 2 if tune_sm110_prefill else 1
+ 
+     extra_kargs = {}
+     if _is_hip:

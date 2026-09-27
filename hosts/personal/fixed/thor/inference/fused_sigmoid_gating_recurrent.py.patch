@@ -1,0 +1,48 @@
+--- fused_sigmoid_gating_recurrent.py
++++ fused_sigmoid_gating_recurrent.py
+@@ -1,8 +1,18 @@
++import os
++from functools import lru_cache
+ from typing import Optional
+ 
+ import torch
+ import triton
+ import triton.language as tl
++
++
++_THOR_GDN_VERIFY_BV16 = os.environ.get("THOR_GDN_VERIFY_BV16", "0") == "1"
++
++
++@lru_cache(maxsize=None)
++def _thor_gdn_verify_sm110(device):
++    return torch.cuda.get_device_capability(device) == (11, 0)
+ 
+ 
+ @triton.jit(do_not_specialize=["T"])
+@@ -385,6 +395,26 @@
+     HV = v.shape[2]
+     N = B if cu_seqlens is None else len(cu_seqlens) - 1
+     BK, BV = triton.next_power_of_2(K), min(triton.next_power_of_2(V), 32)
++    if (
++        _THOR_GDN_VERIFY_BV16
++        and B == 1 and N == 1 and T == 8
++        and H == 16 and HV == 48 and K == 128 and V == 128
++        and q.dtype == torch.bfloat16
++        and k.dtype == torch.bfloat16
++        and v.dtype == torch.bfloat16
++        and disable_state_update
++        and use_qk_l2norm_in_kernel
++        and not is_kda
++        and not cache_ring
++        and retrieve_parent_token is None
++        and initial_state_source is not None
++        and initial_state_source.dtype == torch.bfloat16
++        and intermediate_states_buffer is not None
++        and intermediate_states_buffer.dtype == torch.bfloat16
++        and intermediate_states_buffer.shape[1] >= 8
++        and _thor_gdn_verify_sm110(q.device)
++    ):
++        BV = 16
+     NK, NV = triton.cdiv(K, BK), triton.cdiv(V, BV)
+     assert NK == 1, "NK > 1 is not supported yet"
+     num_stages = 3

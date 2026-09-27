@@ -1,0 +1,114 @@
+--- dflash_worker_v2.py
++++ dflash_worker_v2.py
+@@ -1,4 +1,7 @@
+ import logging
++import os
++
++from thor_dflash_int8_head import ThorDFlashInt8Head, ThorDraftHiddenCapture
+ import math
+ from dataclasses import replace
+ from typing import List, Optional, Tuple
+@@ -98,9 +101,10 @@
+     """
+ 
+     def __init__(
+-        self, *, weight, block_size, num_org, org_vocab_start, max_bs, tp_group=None
++        self, *, weight, block_size, num_org, org_vocab_start, max_bs, tp_group=None, thor_head=None
+     ):
+         self.weight = weight
++        self.thor_head = thor_head
+         self.block_size = int(block_size)
+         self.num_org = int(num_org)
+         self.org_vocab_start = int(org_vocab_start)
+@@ -139,7 +143,8 @@
+         if hs.dtype != self.weight.dtype:
+             hs = hs.to(self.weight.dtype)
+         n = hs.shape[0]
+-        logits = torch.matmul(hs, self.weight[: self.num_org].T)
++        self._thor_last_hidden = hs
++        logits = self.thor_head(hs) if self.thor_head is not None else torch.matmul(hs, self.weight[: self.num_org].T)
+         if self.tp_size == 1:
+             tokens = torch.argmax(logits, dim=-1).to(torch.long)
+             if self.org_vocab_start:
+@@ -458,6 +463,36 @@
+                     "memory is available after target backend initialization.",
+                     available_mem,
+                 )
++        self._thor_hidden_capture = None
++        capture_directory = os.environ.get("THOR_DRAFT_HIDDEN_DIR")
++        if capture_directory:
++            if get_tp_group().world_size != 1 or self.block_size != 8:
++                raise RuntimeError("Thor hidden capture requires full-vocab TP=1 block=8")
++            if self.selector is not None and self.draft_model.__class__.__name__ != "DFlash2DraftModel":
++                raise RuntimeError("Thor hidden capture requires the audited DFlash2DraftModel selector path")
++            self._thor_hidden_capture = ThorDraftHiddenCapture(
++                capture_directory, os.environ.get("THOR_DRAFT_HIDDEN_LIMIT", "32")
++            )
++        self._thor_draft_head = None
++        if os.environ.get("THOR_DRAFT_HEAD_INT8") == "1":
++            if self.selector is not None and self.draft_model.__class__.__name__ != "DFlash2DraftModel":
++                raise RuntimeError("Thor INT8 experiment requires the audited DFlash2DraftModel selector path")
++            head = self._target_worker.model_runner.model.lm_head
++            shard = getattr(head, "shard_indices", None)
++            if shard is not None and int(shard.num_added_elements) != 0:
++                raise RuntimeError("Thor INT8 experiment requires no added vocabulary")
++            self._thor_draft_head = ThorDFlashInt8Head(
++                head.weight,
++                num_org=int(shard.num_org_elements) if shard is not None else head.weight.shape[0],
++                org_vocab_start=int(shard.org_vocab_start_index) if shard is not None else 0,
++                tp_size=get_tp_group().world_size,
++            )
++        self.draft_model._thor_draft_head = self._thor_draft_head
++        self.draft_model._thor_capture_head = self._thor_hidden_capture is not None
++        if self.selector is not None and (self._thor_draft_head is not None or self._thor_hidden_capture is not None):
++            if not getattr(self.draft_model, "_thor_projection_patch", False):
++                raise RuntimeError("Thor DFlash2 projection patch is missing")
++            logger.info("THOR DFlash2 full-vocab projection patched; candidate top-k and selector preserved.")
+         if capture_decode_cuda_graph:
+             # Must run before capture so the draft graph folds the head in.
+             self._draft_sampler = self._maybe_build_draft_sampler()
+@@ -536,6 +571,7 @@
+             org_vocab_start=org_vocab_start,
+             max_bs=max(get_exec().graph.cuda_graph_config.decode.bs),
+             tp_group=tp_group if tp_group.world_size > 1 else None,
++            thor_head=self._thor_draft_head,
+         )
+ 
+     def _init_fused_kv_helper(self) -> None:
+@@ -1074,6 +1110,11 @@
+ 
+         if hidden_states.numel() == 0:
+             return torch.empty((0,), dtype=torch.long, device=hidden_states.device)
++
++        if self._thor_draft_head is not None:
++            if lm_head.weight.data_ptr() != self._thor_draft_head.source_ptr:
++                raise RuntimeError("Unexpected draft head source")
++            return self._thor_draft_head(hidden_states).argmax(dim=-1).to(torch.long)
+ 
+         if not is_dense_head_weight(getattr(lm_head, "weight", None)):
+             return self._greedy_sample_from_quantized_head(
+@@ -1932,6 +1973,24 @@
+                 ),
+                 lm_head=lm_head,
+             ).view(bs, int(self.block_size) - 1)
++
++        if self._thor_hidden_capture is not None:
++            candidate_ids = candidate_logits = None
++            if self.selector is not None:
++                capture_hidden = self.draft_model._thor_last_hidden
++                candidate_ids = self.draft_model._thor_last_candidate_ids
++                candidate_logits = self.draft_model._thor_last_candidate_logits
++            else:
++                capture_hidden = (
++                    self._draft_sampler._thor_last_hidden
++                    if folded
++                    else draft_logits_output.hidden_states.view(bs, int(self.block_size), -1)[:, 1:, :].reshape(-1, 5120)
++                )
++            self._thor_hidden_capture.capture(
++                capture_hidden, draft_next,
++                quantized=self._thor_draft_head is not None, folded=folded,
++                candidate_ids=candidate_ids, candidate_logits=candidate_logits,
++            )
+ 
+         draft_tokens = self._draft_block_tokens_buf[:bs]
+         draft_tokens[:, 0].copy_(block_ids[:, 0])

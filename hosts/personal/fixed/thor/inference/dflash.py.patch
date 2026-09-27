@@ -1,0 +1,36 @@
+--- dflash.py
++++ dflash.py
+@@ -944,6 +944,7 @@
+ 
+ 
+ class DFlash2DraftModel(DFlashDraftModel):
++    _thor_projection_patch = True
+     """DFlash backbone + candidate selector. Reuses the DFLASH speculative worker."""
+ 
+     def __init__(self, config, quant_config=None, prefix: str = "") -> None:
+@@ -993,12 +994,20 @@
+             )
+         if get_parallel().tp_size == 1:
+             org = int(self.lm_head.org_vocab_size)
+-            vals, ids = _radix_topk(
+-                _project_candidate_logits(
++            thor_head = getattr(self, "_thor_draft_head", None)
++            if thor_head is not None:
++                if use_quant_head or org != 248320 or self.lm_head.weight.data_ptr() != thor_head.source_ptr:
++                    raise RuntimeError("Thor DFlash2 target head contract changed")
++                logits = thor_head(hidden)
++            else:
++                logits = _project_candidate_logits(
+                     hidden, self.lm_head, num_org=org, use_quant_head=use_quant_head
+-                ),
+-                k,
+-            )
++                )
++            vals, ids = _radix_topk(logits, k)
++            if getattr(self, "_thor_capture_head", False):
++                self._thor_last_hidden = hidden
++                self._thor_last_candidate_ids = ids
++                self._thor_last_candidate_logits = vals
+             return ids.long(), self._transform_unary_logits(vals)
+         shard = self.lm_head.shard_indices
+         vals, ids = _radix_topk(

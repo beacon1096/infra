@@ -23,7 +23,7 @@ LiteLLM 运行在万象集群，声明见 `wanxiang/kubernetes/apps/ai/litellm/`
 | `thor/qwen3.8-auto` | LiteLLM 按顺序尝试 NixOS/SGLang、懒猫应用 27B、懒猫应用 Flash Next | 三条后端均有 Terraform 路由；故障切换行为及各后端当前可用性仍需实测 |
 | `lcai/qwen-3.8-27b-uncensored`、`lcai/qwen-3.8-flash-next-uncensored` | 懒猫 AI Pod 应用提供的对照后端 | 保留了模型路由；不把它视为唯一设备的长期生产方向 |
 
-Thor 当前的生产声明位于私有仓 `hosts/personal/fixed/thor/inference.nix`：SGLang 以本地模型快照启动 Qwen3.8 27B，使用 DFlash2 block16 推测解码；单请求上下文 262144 token，最多 4 个活动生成共享 270336 token 的驻留池。因此“4 并发”不表示四个请求都能同时占满 256K 上下文。LiteLLM 经 Tailnet 连接 Thor，后端不另设独立 API key；访问控制依赖网络边界和 LiteLLM 的虚拟密钥。
+Thor 当前的生产声明位于 `hosts/personal/fixed/thor/inference.nix`：SGLang 以本地模型快照启动 Qwen3.8 27B，使用 DFlash2 block16 推测解码；单请求上下文 262144 token，最多 4 个活动生成共享 270336 token 的驻留池。因此“4 并发”不表示四个请求都能同时占满 256K 上下文。LiteLLM 经 Tailnet 连接 Thor，后端不另设独立 API key；访问控制依赖网络边界和 LiteLLM 的虚拟密钥。
 
 已记录的验证覆盖普通文本、流式响应、JSON 输出、工具调用及工具结果续接。长上下文冷启动可能需要很久；客户端、LiteLLM 的请求/流超时均需匹配。Pi 的相关超时和被中断请求处理见 [turn-replay](../harness/turn-replay.md)。推理服务的部署与运行约束见 [本地推理](../../inference/README.md)，模型评估见 [Thor 模型实验](../../inference/thor/README.md#模型实验)。
 
