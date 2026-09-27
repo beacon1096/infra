@@ -1,0 +1,153 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: memoh-postgres
+  namespace: ai
+  labels:
+    app.kubernetes.io/part-of: memoh
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: memoh-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memoh-postgres
+  namespace: ai
+  labels:
+    app.kubernetes.io/part-of: memoh
+spec:
+  serviceName: memoh-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: memoh-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: memoh-postgres
+        app.kubernetes.io/part-of: memoh
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: mirror.gcr.io/library/postgres:18-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: memoh
+            - name: POSTGRES_USER
+              value: memoh
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: memoh-config
+                  key: postgres-password
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql
+          readinessProbe:
+            exec:
+              command: [sh, -c, "pg_isready -U memoh -d memoh"]
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/part-of: memoh
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: longhorn
+        resources:
+          requests:
+            storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: memoh-pgvector
+  namespace: ai
+  labels:
+    app.kubernetes.io/part-of: memoh
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: memoh-pgvector
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memoh-pgvector
+  namespace: ai
+  labels:
+    app.kubernetes.io/part-of: memoh
+spec:
+  serviceName: memoh-pgvector
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: memoh-pgvector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: memoh-pgvector
+        app.kubernetes.io/part-of: memoh
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: mirror.gcr.io/pgvector/pgvector:pg18
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: memoh_vector
+            - name: POSTGRES_USER
+              value: memoh
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: memoh-config
+                  key: postgres-password
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql
+          readinessProbe:
+            exec:
+              command: [sh, -c, "pg_isready -U memoh -d memoh_vector"]
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/part-of: memoh
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: longhorn
+        resources:
+          requests:
+            storage: 2Gi

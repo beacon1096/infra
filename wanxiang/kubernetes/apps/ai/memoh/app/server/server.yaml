@@ -1,0 +1,191 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: memoh-containerd
+  namespace: ai
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    app.kubernetes.io/part-of: memoh
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: memoh-data
+  namespace: ai
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    app.kubernetes.io/part-of: memoh
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memoh-server
+  namespace: ai
+  annotations:
+    secret.reloader.stakater.com/reload: memoh-config,memoh-connect-it-config
+  labels:
+    app.kubernetes.io/part-of: memoh
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: memoh-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: memoh-server
+        app.kubernetes.io/part-of: memoh
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: server
+          image: mirror.gcr.io/memohai/server:0.20.0
+          securityContext:
+            privileged: true
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: channel
+              containerPort: 8081
+          env:
+            - name: GOMEMLIMIT
+              value: 7GiB
+            - name: MEMOH_CONNECT_IT_BASE_URL
+              value: http://memoh-connect-it.ai.svc.cluster.local:8421
+            - name: MEMOH_CONNECT_IT_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: memoh-connect-it-config
+                  key: api-token
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.toml
+              subPath: config.toml
+              readOnly: true
+            - name: containerd
+              mountPath: /var/lib/containerd
+            - name: cni
+              mountPath: /var/lib/cni
+            - name: data
+              mountPath: /opt/memoh/data
+          startupProbe:
+            exec:
+              command: [sh, -c, "wget -q --spider http://127.0.0.1:8080/health"]
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: [sh, -c, "wget -q --spider http://127.0.0.1:8080/health"]
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: [sh, -c, "wget -q --spider http://127.0.0.1:8080/health"]
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              memory: 8Gi
+      volumes:
+        - name: config
+          secret:
+            secretName: memoh-config
+        - name: containerd
+          persistentVolumeClaim:
+            claimName: memoh-containerd
+        - name: cni
+          emptyDir: {}
+        - name: data
+          persistentVolumeClaim:
+            claimName: memoh-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: memoh-server
+  namespace: ai
+  labels:
+    app.kubernetes.io/part-of: memoh
+spec:
+  selector:
+    app.kubernetes.io/name: memoh-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: channel
+      port: 8081
+      targetPort: channel
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memoh-web
+  namespace: ai
+  labels:
+    app.kubernetes.io/part-of: memoh
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: memoh-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: memoh-web
+        app.kubernetes.io/part-of: memoh
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: web
+          image: mirror.gcr.io/memohai/web:0.20.0
+          env:
+            - name: MEMOH_SERVER_UPSTREAM
+              value: memoh-server.ai.svc.cluster.local:8080
+            - name: MEMOH_CHANNEL_UPSTREAM
+              value: memoh-server.ai.svc.cluster.local:8081
+          ports:
+            - name: http
+              containerPort: 8082
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: memoh-web
+  namespace: ai
+  labels:
+    app.kubernetes.io/part-of: memoh
+spec:
+  selector:
+    app.kubernetes.io/name: memoh-web
+  ports:
+    - name: http
+      port: 8082
+      targetPort: http

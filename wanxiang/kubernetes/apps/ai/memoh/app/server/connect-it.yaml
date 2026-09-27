@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memoh-connect-it
+  namespace: ai
+  annotations:
+    secret.reloader.stakater.com/reload: memoh-connect-it-config
+  labels:
+    app.kubernetes.io/name: memoh-connect-it
+    app.kubernetes.io/part-of: memoh
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: memoh-connect-it
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: memoh-connect-it
+        app.kubernetes.io/part-of: memoh
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: connect-it
+          image: ghcr.io/felinics/connect-it@sha256:2abdde02b40874452123c6adb9b30e4178a1e734de7987ca48e8d67e0fd5ad8e
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: memoh-connect-it-config
+                  key: database-url
+            - name: CONNECT_IT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: memoh-connect-it-config
+                  key: secret-key
+            - name: COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: memoh-connect-it-config
+                  key: cookie-secret
+            - name: CONNECT_IT_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: memoh-connect-it-config
+                  key: admin-password
+            - name: CONNECT_IT_BOOTSTRAP_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: memoh-connect-it-config
+                  key: api-token
+            - name: CONNECT_IT_PUBLIC_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: memoh-connect-it-config
+                  key: public-base-url
+            - name: CONNECT_IT_BASE_URL
+              value: $(CONNECT_IT_PUBLIC_BASE_URL)
+          ports:
+            - name: http
+              containerPort: 8421
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: memoh-connect-it
+  namespace: ai
+  labels:
+    app.kubernetes.io/name: memoh-connect-it
+    app.kubernetes.io/part-of: memoh
+spec:
+  selector:
+    app.kubernetes.io/name: memoh-connect-it
+  ports:
+    - name: http
+      port: 8421
+      targetPort: http

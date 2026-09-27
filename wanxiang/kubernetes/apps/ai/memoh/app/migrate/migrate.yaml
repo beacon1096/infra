@@ -1,0 +1,36 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: memoh-migrate-0-20-0
+  namespace: ai
+  labels:
+    app.kubernetes.io/part-of: memoh
+spec:
+  backoffLimit: 4
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: memoh
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: mirror.gcr.io/memohai/server:0.20.0
+          command: [/app/memoh-server, migrate, up]
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.toml
+              subPath: config.toml
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: config
+          secret:
+            secretName: memoh-config
