@@ -30,7 +30,6 @@ in
   home.packages = [
     pkgs.code-server
     pkgs.gnupg
-    pkgs.tea
     multica
   ];
 

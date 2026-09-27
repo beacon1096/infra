@@ -1,10 +1,9 @@
 # Headless coding-agent tools shared by local shells and Coder workspaces.
-{
-  inputs,
-  pkgs,
-  lib,
-  osConfig,
-  ...
+{ inputs
+, pkgs
+, lib
+, osConfig
+, ...
 }:
 
 let
@@ -198,6 +197,7 @@ in
       spec-kit
       openspec
       gh
+      tea
       #  llm-agents.kimi-code
     ]
     ++ lib.optionals (unstablePkgs ? happy-coder) [
