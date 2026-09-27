@@ -87,6 +87,11 @@ in
   systemd.sockets.forgejo-tailnet-relay = {
     wantedBy = [ "sockets.target" ];
     listenStreams = [ "172.16.20.11:443" ];
+    # 172.16.20.11 can be briefly absent during DHCP renewal or a comin
+    # switch. Without FreeBind the socket fails with EADDRNOTAVAIL and
+    # never retries (socket units have no Restart=), taking the Taichu
+    # builders' Forgejo/Attic path down with it.
+    socketConfig.FreeBind = true;
   };
   systemd.services.forgejo-tailnet-relay = {
     requires = [ "tailscaled.service" ];
