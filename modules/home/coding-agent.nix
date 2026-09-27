@@ -56,6 +56,15 @@ let
     "xiaomi_mimo/mimo-v2.5-pro" = reasoningTextModel "MiMo V2.5 Pro" 1048576 131072;
     "zai/glm-5.2" = reasoningTextModel "GLM-5.2" 1048576 131072;
   };
+  # Pi's OpenAI-compatible adapter controls thinking only through `compat`. These
+  # LiteLLM routes land on vLLM/SGLang, which read `chat_template_kwargs`, so the
+  # default OpenAI `reasoning_effort` is ignored and "off" sends nothing at all.
+  piModelCompat = {
+    "thor/qwen3.8-27b" = {
+      compat.thinkingFormat = "qwen-chat-template";
+    };
+  };
+  piModels = lib.mapAttrs (id: model: model // (piModelCompat.${id} or { })) beacoworksModels;
   kdocsCliVersion = "2.5.17";
   kdocsCliTargets = {
     x86_64-linux = {
@@ -123,7 +132,7 @@ in
 
   beacon.pi = {
     enable = true;
-    models = beacoworksModels;
+    models = piModels;
     searchBaseURL = "https://search.beaco.works";
   };
 

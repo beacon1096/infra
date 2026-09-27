@@ -65,7 +65,8 @@ let
         cacheRead = 0;
         cacheWrite = 0;
       };
-    })
+    }
+    // lib.optionalAttrs (model ? compat) { inherit (model) compat; })
     cfg.models;
 in
 {

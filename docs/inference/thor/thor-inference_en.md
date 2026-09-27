@@ -41,6 +41,22 @@ The earlier capacity probes disabled thinking only to isolate retrieval.
 Do not route these long requests through the public Cloudflare endpoint:
 its own deadline is independent of the LiteLLM and Pi settings.
 
+Toggling thinking needs an explicit compatibility declaration in the model
+definition. The backend behind this route (vLLM/SGLang) reads thinking control
+from `chat_template_kwargs.enable_thinking`, while Pi sends OpenAI-style
+`reasoning_effort` by default: the backend ignores it, and with thinking off Pi
+sends no thinking field at all, so the model keeps reasoning on the chat
+template default. The Pi model definition for `thor/qwen3.8-27b` therefore
+carries `compat.thinkingFormat = "qwen-chat-template"` (declared in public infra
+`modules/home/coding-agent.nix`, forwarded to Pi's model table by
+`modules/home/pi.nix`). Measured on this route on 2026-09-27: without the
+declaration a `--thinking off` request still returned `reasoning_content`; with
+it the same prompt produced no thinking text. LiteLLM passes
+`chat_template_kwargs` through (`drop_params: true` does not drop it), whereas
+`reasoning_effort` and a top-level `enable_thinking` are ignored and
+`thinking_budget` is not honored by this deployment: low/medium/high are all
+equivalent to thinking on server-side, so only off/on actually differ.
+
 LiteLLM 1.90.0 uses model `stream_timeout` before `timeout` and honors
 `num_retries: 0`. The shared gateway enables
 `general_settings.cancel_on_disconnect: true`; this applies to all model
