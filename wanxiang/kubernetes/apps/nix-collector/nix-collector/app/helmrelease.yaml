@@ -30,10 +30,12 @@ spec:
       type: Recreate
 
     # Published by build-and-push.yaml (skopeo -> Forgejo registry).
+    # `latest` + Always so a rebuilt image is actually picked up on restart.
     image:
       registry: forgejo.beaco.works
       repository: infrastructure/nix-fleet/forgejo-runner-nix
       tag: "latest"
+      pullPolicy: Always
 
     # No privileged anywhere: host mode, no DinD.
     securityContext:

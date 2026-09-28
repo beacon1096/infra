@@ -10,6 +10,7 @@
   lib,
   buildEnv,
   dockerTools,
+  runCommand,
   nix,
   forgejo-runner,
   attic-client,
@@ -65,6 +66,12 @@ let
     pathsToLink = [ "/bin" ];
     ignoreCollisions = true;
   };
+
+  # Nix needs a writable /tmp; the runner uses HOME=/home/runner.
+  rootFiles = runCommand "forgejo-runner-nix-root" { } ''
+    mkdir -p $out/tmp $out/home/runner
+    chmod 1777 $out/tmp
+  '';
 in
 dockerTools.buildLayeredImage {
   name = "forgejo-runner-nix";
@@ -72,6 +79,7 @@ dockerTools.buildLayeredImage {
   contents = [
     env
     cacert
+    rootFiles
   ];
   config = {
     Env = [
