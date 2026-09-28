@@ -86,7 +86,14 @@ spec:
               # Run the daemon directly instead of waiting for dockerd.
               - op: replace
                 path: /spec/template/spec/containers/0/command
-                value: ["/bin/forgejo-runner", "--config", "/etc/runner/config.yaml", "daemon"]
+                value:
+                  - /bin/sh
+                  - -c
+                  - |
+                    mkdir -p /root/.ssh
+                    ssh-keyscan 172.16.101.31 172.16.101.32 172.16.101.33 \
+                      > /root/.ssh/known_hosts 2>/dev/null || true
+                    exec /bin/forgejo-runner --config /etc/runner/config.yaml daemon
               # Drop DOCKER_* env (no daemon to talk to).
               - op: remove
                 path: /spec/template/spec/containers/0/env
