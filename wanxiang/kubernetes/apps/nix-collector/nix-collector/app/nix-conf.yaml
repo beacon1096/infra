@@ -1,0 +1,19 @@
+---
+# Nix client config for the collector. It performs no local builds
+# (max-jobs = 0): evaluation/coordination happen here, compilation is
+# dispatched to the Taichu builders over ssh-ng. `netrc-file` and the
+# builder SSH key are mounted from Secrets by the HelmRelease.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nix-collector-nix-conf
+data:
+  nix.conf: |
+    experimental-features = nix-command flakes
+    http2 = false
+    builders-use-substitutes = true
+    max-jobs = 0
+    builders = ssh-ng://nixremote@172.16.101.31 x86_64-linux - 1 1 big-parallel,kvm ssh-ng://nixremote@172.16.101.32 x86_64-linux - 1 1 big-parallel,kvm ssh-ng://nixremote@172.16.101.33 x86_64-linux - 1 1 big-parallel,kvm
+    netrc-file = /etc/nix/netrc
+    substituters = http://attic.nix.svc.cluster.local:8080/nix-fleet https://cache.nixos.org
+    trusted-public-keys = nix-fleet:SFqnNaEmgQD5T6UUi6eWOrjBNe+6oPaDo0/1rH9u1ok= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=

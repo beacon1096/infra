@@ -1,0 +1,13 @@
+---
+# Wrenix forgejo-runner Helm chart, pulled directly from codeberg.org.
+# Reused as the packaging base for the host-mode collector. If codeberg.org
+# is unreachable at apply time, mirror the chart into LAN zot and update url.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: forgejo-runner
+spec:
+  interval: 1h
+  url: oci://codeberg.org/wrenix/helm-charts/forgejo-runner
+  ref:
+    tag: 0.7.6

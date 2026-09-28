@@ -1,0 +1,15 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # Required SOPS Secrets — create before the runner can start:
+  #   - nix-collector-secret       stringData: CONFIG_TOKEN / CONFIG_INSTANCE / CONFIG_NAME
+  #   - nix-collector-attic-netrc  stringData: netrc (machine attic.nix.svc.cluster.local)
+  #   - nix-collector-builder-ssh  stringData: id_ed25519 (collector -> builder ssh-ng key)
+  #                       + id_ed25519.pub / known_hosts as needed
+  #   - ./nix-collector-secret.sops.yaml
+  #   - ./nix-collector-attic-netrc.sops.yaml
+  #   - ./nix-collector-builder-ssh.sops.yaml
+  - ./ocirepository.yaml
+  - ./nix-conf.yaml
+  - ./helmrelease.yaml
