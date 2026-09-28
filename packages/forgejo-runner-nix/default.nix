@@ -75,6 +75,9 @@ let
     # has none, which makes ssh fail with "No user exists for uid 0".
     printf 'root:x:0:0:root:/root:/bin/bash\n' > $out/etc/passwd
     printf 'root:x:0:\n' > $out/etc/group
+    # Sentinel for the persistent-store seed step: changes whenever the
+    # toolchain closure changes, forcing a re-seed of the PVC.
+    printf '%s\n' "${env}" > $out/etc/forgejo-runner-nix-version
   '';
 in
 dockerTools.buildLayeredImage {

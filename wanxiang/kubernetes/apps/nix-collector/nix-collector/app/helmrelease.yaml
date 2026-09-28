@@ -154,8 +154,13 @@ spec:
                     - /bin/sh
                     - -c
                     - |
-                      if [ ! -e /pvc/store ]; then
+                      version="$(cat /etc/forgejo-runner-nix-version 2>/dev/null || echo unknown)"
+                      if [ ! -e /pvc/store ] || [ "$(cat /pvc/.seed-version 2>/dev/null)" != "$version" ]; then
+                        echo "seeding /nix from image ($version)"
+                        rm -rf /pvc/store /pvc/var /pvc/.seed-version
+                        mkdir -p /pvc
                         cp -a /nix/. /pvc/
+                        printf '%s' "$version" > /pvc/.seed-version
                       fi
                   volumeMounts:
                     - name: nix-store
