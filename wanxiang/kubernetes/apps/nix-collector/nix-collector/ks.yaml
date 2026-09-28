@@ -1,0 +1,28 @@
+---
+# nix-collector — Forgejo Actions runner (host mode, no DinD) that only
+# coordinates release builds: evaluate, query/seed Attic, and dispatch the
+# actual compilation to the Taichu Nix builders over ssh-ng. See
+# docs/infra-ops/nix-collector-build-split.md.
+#
+# No dependsOn: Forgejo, Attic, and Zot are runtime requirements; per repo
+# convention we let restart-on-failure handle the wait rather than enumerate
+# non-HelmRelease deps.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: nix-collector
+spec:
+  interval: 1h
+  path: ./wanxiang/kubernetes/apps/nix-collector/nix-collector/app
+  postBuild:
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: nix-collector
+  wait: false
+  timeout: 10m

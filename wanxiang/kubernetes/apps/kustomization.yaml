@@ -15,5 +15,6 @@ resources:
   - ./monitoring
   - ./network
   - ./nix
+  - ./nix-collector
   - ./registry
   - ./storage

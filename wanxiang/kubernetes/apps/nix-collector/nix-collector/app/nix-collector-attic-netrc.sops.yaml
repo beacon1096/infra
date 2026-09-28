@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nix-collector-attic-netrc
+type: Opaque
+stringData:
+  netrc: ENC[AES256_GCM,data:sBedcZiuZeYt/BD73f1gULtxgqsyUi3Kgxd1ocZ35zmLbX0SLIlAH3+WOI2lLEZFbY8wCPhBX7gOCz6cYELhqpzOCiRBj7bWJFHCwzHUuQ5RrD46t1+SwAv9JADaaEpa88Ht88re5yON7Yas9V6reOJrg1biTWs9kpqtgukzzetEIGOo21vdnjcATGb4vzQBrafF5fFxNrJOECAD6V45nG5kassyJFnle9Q7PNZm4Pe705noZRaAydEyEq34Gk+Bb3MbHDdL/NU8K6Vh+cmHi3EXXTWMUZqG9nSlKb+LEtleUdyBsF+e+gbVQJ0vLYEhDU877h600rO+vwlx9UrklMq/md4saUzYq6IQAMmXnPFnGdKXLYyZO+JkDI+yCS9YqhFoIwqZlpqiv9UAz1QN5+Nt2b66uANts4VXybm3Qx7BoPsHOFB4rCoe+LoNUfRtdzCRPLuzAdTe26q8o5Fpk0IIXB9YpMUn7XNK5m4AqUK38wGCLLwHF4oPWIYRPU9DraSkxSfMDNq5Js02AxCtdHGAv2972y++PkxwYDiusuVuyolm1gGH2hL29a1Boh/wJe1u2YNr0T31CuqqXxraFreqCNwU+cBWP/iSuA1aro4OCM4Uad1gzloUe4Jfo3UaFUzaygJcodgA+tWNRS8Gr8icVhzjSUbw6/+r7e9Gv8zNK/bNaya+BuwogBTF1Of2KVv06xM0GhB/Dm4RJcu0UisiWta60B4TfHmVSKdsMoRGs8M4h6sgl5WujNY0YxNRFxbmiI3D2ycBc9MqrxxKVQCCG/gcZHWAoRbf3bz7IFQx2lSl8I7kMvOtzXuQB4mBV7fqXiqJlxZIMgH9BJ/SBd9af9BuzfeYtUMk1bD8xbauvqkJzg7d2A3FiFC+MfA/ffbvaTyPjGnnBzwXXTktoDNqMQsnWAnPwoVAeHZHp2mkkXwcdQhOvuBgx1Bkf9yF1CRfXOtIoWgqVjVghzLIelsDgNoRqXjzNEj2/8EiYDQ7W4cNKbIlkENi4otQS9nvpoLJm8a+aGVrkvqymnwOEEyhG0azv6Wy2Jbp9ZjBbO/WQp1sKerUCS318aNoBWvLKnOdZuMobzyI3y7TMY8m4setCUKLuBb7Y1X9ZQnj3MexTw3x7OSZWZGHp4xgswV0qOdS6vFyKM655fwnFXyVnb7gKsc20fiIa43PsLZZhegekzazNByBtmFec+zWyoxBMmXxzP28kMQyG898HJuUXLPr7mhU8Q==,iv:TwsVeZIXTq0SpnvUkOH4MUEn26ivB0ASDI6ghX6pnA8=,tag:sYdqjcMMBdd6HfnSEjcZig==,type:str]
+sops:
+  age:
+    - enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBBUVFLZ0Y2cmxwUy9QMG9t
+        VG9MTERUUnhGTyt1TzFtWi80WjZmbFZ2dWlFCnkyS1krRHJNMWJLVWRIWUFwN2Vp
+        Q3UxTlBQVHg1OHV5UUl2TTBDUlcyL00KLS0tIDNxOG53Qytrdk9kbmxxYzhPUThs
+        OSt1cDZUbGdORmoxMzRIUzNTNU9tVUEK0P9j05cjS4+CDMhhFBlOg32SyHNbMUPE
+        4XES8wZ4p1sOwy8gcAAiQzuwYNQb5EzhhWXgmwUgGtibkvX8rcmaZg==
+        -----END AGE ENCRYPTED FILE-----
+      recipient: age19w3svwspecedu893ges7te9qc5qgj3r5tykpkqrl43f90ndlvg4qant4ej
+  encrypted_regex: ^(data|stringData)$
+  lastmodified: "2026-09-28T10:53:02Z"
+  mac: ENC[AES256_GCM,data:WmDkukB9PfL7xAxNOPdV2NQWvZAByhuawexEUkROXpSxRjzTelNqt1DglDbA8cEC2X07gySKZX9zNKkTcH5BU1Bskas1JFHZNQ3Ryt5PccrHmImDsIoQDbq3DIlBPFcAsMLQoP8+tb7/JAAyr61GhlrParmnX03h/YO2ED8sd/4=,iv:3odaiEn1BO1XzN6orqwPn4OAQEJp2jwnwIFypH4I2Hs=,tag:8AiJ8ja3oAKvMOQirBxcTA==,type:str]
+  mac_only_encrypted: true
+  version: 3.13.3

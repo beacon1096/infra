@@ -1,0 +1,127 @@
+---
+# Forgejo Actions runner for the release "collector".
+#
+# Uses the Wrenix forgejo-runner chart purely as packaging, but in HOST mode
+# with a custom image that carries Nix (`forgejo-runner-nix`). No DinD:
+#   - the chart's `dind` container is removed by postRenderer;
+#   - the `runner` container's command is replaced so it no longer waits for
+#     a Docker daemon at 127.0.0.1:2376;
+#   - `DOCKER_*` env is dropped and `privileged` stays false.
+#
+# Job execution: label `nix-collector:host` → jobs run inside this container,
+# where `nix build` dispatches to the Taichu builders (see the
+# `nix-collector-nix-conf` ConfigMap). Container-based CI is a separate,
+# future profile — not this app.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: nix-collector
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: forgejo-runner
+  interval: 1h
+  values:
+    knownLastVersion: true
+    # Deterministic Deployment name for the postRenderer target.
+    fullnameOverride: nix-collector
+    replicaCount: 1
+    strategy:
+      type: Recreate
+
+    # Published by build-and-push.yaml (skopeo -> Forgejo registry).
+    image:
+      registry: forgejo.beaco.works
+      repository: infrastructure/nix-fleet/forgejo-runner-nix
+      tag: "latest"
+
+    # No privileged anywhere: host mode, no DinD.
+    securityContext:
+      privileged: false
+
+    runner:
+      config:
+        create: true
+        existingInitSecret: "nix-collector-secret"
+        file:
+          runner:
+            capacity: 2
+            timeout: 12h
+            labels:
+              - "nix-collector:host"
+            envs:
+              # ssh-ng to the builders: explicit key + relaxed host checking
+              # (builders are disposable and re-keyed on rebuild).
+              NIX_SSHOPTS: "-i /etc/nix/builder-id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+
+    # Pod envelope. Compilation is offloaded, so the collector itself stays
+    # small; the generous ephemeral-storage limit covers the single largest
+    # artifact (installer-iso / OCI) plus the eval store headroom.
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+        ephemeral-storage: 1Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+        ephemeral-storage: 40Gi
+
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: nix-collector
+            patch: |
+              # Drop the DinD sidecar.
+              - op: remove
+                path: /spec/template/spec/containers/1
+              # Run the daemon directly instead of waiting for dockerd.
+              - op: replace
+                path: /spec/template/spec/containers/0/command
+                value: ["/bin/forgejo-runner", "--config", "/etc/runner/config.yaml", "daemon"]
+              # Drop DOCKER_* env (no daemon to talk to).
+              - op: remove
+                path: /spec/template/spec/containers/0/env
+              # Mount nix.conf / attic netrc / builder SSH key.
+              - op: add
+                path: /spec/template/spec/containers/0/volumeMounts/-
+                value:
+                  name: nix-conf
+                  mountPath: /etc/nix/nix.conf
+                  subPath: nix.conf
+                  readOnly: true
+              - op: add
+                path: /spec/template/spec/containers/0/volumeMounts/-
+                value:
+                  name: attic-netrc
+                  mountPath: /etc/nix/netrc
+                  subPath: netrc
+                  readOnly: true
+              - op: add
+                path: /spec/template/spec/containers/0/volumeMounts/-
+                value:
+                  name: builder-ssh
+                  mountPath: /etc/nix/builder-id_ed25519
+                  subPath: id_ed25519
+                  readOnly: true
+              - op: add
+                path: /spec/template/spec/volumes/-
+                value:
+                  name: nix-conf
+                  configMap:
+                    name: nix-collector-nix-conf
+              - op: add
+                path: /spec/template/spec/volumes/-
+                value:
+                  name: attic-netrc
+                  secret:
+                    secretName: nix-collector-attic-netrc
+              - op: add
+                path: /spec/template/spec/volumes/-
+                value:
+                  name: builder-ssh
+                  secret:
+                    secretName: nix-collector-builder-ssh
+                    defaultMode: 0400

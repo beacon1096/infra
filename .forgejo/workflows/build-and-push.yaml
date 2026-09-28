@@ -860,6 +860,65 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Image: \`forgejo.beaco.works/infrastructure/nix-fleet/multica-backend:0.4.24-beacon.1\`" >> "$GITHUB_STEP_SUMMARY"
 
+  # ── Collector runner image (Forgejo runner + Nix, host mode) ──
+  build-and-push-nix-collector-oci:
+    needs: warm-cache
+    runs-on: nix-builder
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Configure Attic
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+
+      - name: Build forgejo-runner-nix
+        run: |
+          set -euo pipefail
+          nix build --print-out-paths --out-link result-nix-collector \
+            .#forgejo-runner-nix-oci | tee nix-collector-store-path.txt
+          attic push "$ATTIC_CACHE" "$(cat nix-collector-store-path.txt)"
+
+      - name: Push to Forgejo Registry
+        env:
+          IMAGE_PATH: infrastructure/nix-fleet/forgejo-runner-nix
+          REGISTRY_USER: ${{ secrets.REPO_TOKEN_OWNER }}
+          REGISTRY_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          registry_host="${REGISTRY_ENDPOINT#http://}"
+          registry_host="${registry_host#https://}"
+          test -n "$REGISTRY_USER"
+          test -n "$REGISTRY_TOKEN"
+          auth_file="$PWD/.skopeo-auth.json"
+          trap 'rm -f "$auth_file"' EXIT
+          mkdir -p "$PWD/.skopeo-tmp"
+          printf '%s' "$REGISTRY_TOKEN" | nix shell nixpkgs#skopeo -c \
+            skopeo login --authfile "$auth_file" --username "$REGISTRY_USER" \
+            --password-stdin "$registry_host"
+          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
+            --retry-times 5 --retry-delay 10s \
+            --dest-authfile "$auth_file" \
+            docker-archive:result-nix-collector \
+            "docker://$registry_host/$IMAGE_PATH:latest"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
+              --retry-times 5 --retry-delay 10s \
+              --dest-authfile "$auth_file" \
+              docker-archive:result-nix-collector \
+              "docker://$registry_host/$IMAGE_PATH:$tag"
+          fi
+
+      - name: Summary
+        run: |
+          echo "### forgejo-runner-nix" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image: \`forgejo.beaco.works/infrastructure/nix-fleet/forgejo-runner-nix:latest\`" >> "$GITHUB_STEP_SUMMARY"
+
   update-prod-branch:
     if: startsWith(github.ref, 'refs/tags/')
     needs:
@@ -869,6 +928,7 @@ jobs:
       - build-installer-iso
       - build-and-push-coding-agent-oci
       - build-and-push-multica-backend-oci
+      - build-and-push-nix-collector-oci
     runs-on: nix-builder
     steps:
       - name: Checkout repository
