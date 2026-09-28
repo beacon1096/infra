@@ -138,3 +138,31 @@ spec:
                   secret:
                     secretName: nix-collector-builder-ssh
                     defaultMode: 0400
+              # Persistent, bounded Nix store so eval inputs/outputs survive
+              # across runs (emptyDir re-fetched them every release).
+              - op: add
+                path: /spec/template/spec/containers/0/volumeMounts/-
+                value:
+                  name: nix-store
+                  mountPath: /nix
+              - op: add
+                path: /spec/template/spec/initContainers/-
+                value:
+                  name: seed-nix-store
+                  image: forgejo.beaco.works/infrastructure/nix-fleet/forgejo-runner-nix:latest
+                  command:
+                    - /bin/sh
+                    - -c
+                    - |
+                      if [ ! -e /pvc/store ]; then
+                        cp -a /nix/. /pvc/
+                      fi
+                  volumeMounts:
+                    - name: nix-store
+                      mountPath: /pvc
+              - op: add
+                path: /spec/template/spec/volumes/-
+                value:
+                  name: nix-store
+                  persistentVolumeClaim:
+                    claimName: nix-collector-nix

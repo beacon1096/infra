@@ -1,0 +1,19 @@
+---
+# Dedicated 1-replica Longhorn class for the collector's persistent Nix store.
+# The store is a rebuildable cache, so replication is not worth the I/O and
+# space amplification (mirrors Taichu's nixbuilder-local rationale).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nix-collector-local
+provisioner: driver.longhorn.io
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+parameters:
+  numberOfReplicas: "1"
+  dataLocality: "best-effort"
+  fsType: "ext4"
+  staleReplicaTimeout: "30"
+  fromBackup: ""
+  dataEngine: "v1"
