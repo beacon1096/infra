@@ -14,8 +14,9 @@ data:
     builders-use-substitutes = true
     max-jobs = 0
     # Keep the persistent store bounded (GC below 20 GiB free, up to 50 GiB).
-    min-free = 20 GiB
-    max-free = 50 GiB
+    # Nix parses these as bytes, not human sizes.
+    min-free = 21474836480
+    max-free = 53687091200
     builders = ssh-ng://nixremote@172.16.101.31 x86_64-linux - 1 1 big-parallel,kvm ssh-ng://nixremote@172.16.101.32 x86_64-linux - 1 1 big-parallel,kvm ssh-ng://nixremote@172.16.101.33 x86_64-linux - 1 1 big-parallel,kvm
     netrc-file = /etc/nix/netrc
     substituters = http://attic.nix.svc.cluster.local:8080/nix-fleet https://cache.nixos.org
