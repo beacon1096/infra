@@ -33,7 +33,7 @@ env:
 jobs:
   # ── Stage 1: build shared closure and warm Attic cache ────
   warm-cache:
-    runs-on: nix-builder
+    runs-on: nix-collector
     timeout-minutes: 720
     steps:
       - name: Checkout repository
@@ -197,7 +197,7 @@ jobs:
   # ── Stage 2: system builds (parallel, cache-warm) ─────────
   build-systems:
     needs: warm-cache
-    runs-on: nix-builder
+    runs-on: nix-collector
     timeout-minutes: 720
     strategy:
       fail-fast: false
@@ -472,7 +472,7 @@ jobs:
 
   build-installer-iso:
     needs: warm-cache
-    runs-on: nix-builder
+    runs-on: nix-collector
     timeout-minutes: 720
     steps:
       - name: Checkout repository
@@ -652,7 +652,7 @@ jobs:
   # builder. Large workstation uploads through the public edge may time out.
   build-and-push-coding-agent-oci:
     needs: warm-cache
-    runs-on: nix-builder
+    runs-on: nix-collector
     timeout-minutes: 720
     steps:
       - name: Checkout repository
@@ -811,7 +811,7 @@ jobs:
 
   build-and-push-multica-backend-oci:
     needs: warm-cache
-    runs-on: nix-builder
+    runs-on: nix-collector
     timeout-minutes: 120
     steps:
       - name: Checkout repository
@@ -929,7 +929,7 @@ jobs:
       - build-and-push-coding-agent-oci
       - build-and-push-multica-backend-oci
       - build-and-push-nix-collector-oci
-    runs-on: nix-builder
+    runs-on: nix-collector
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
