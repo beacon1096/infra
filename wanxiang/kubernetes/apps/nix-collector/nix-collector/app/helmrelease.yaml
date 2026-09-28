@@ -45,6 +45,10 @@ spec:
         existingInitSecret: "nix-collector-secret"
         file:
           runner:
+            # The chart writes the registration to /data/.runner (emptyDir,
+            # copied there by the init container). Pin the absolute path so
+            # the daemon does not look for it in the image WORKDIR.
+            file: /data/.runner
             capacity: 2
             timeout: 12h
             labels:
