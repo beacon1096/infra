@@ -231,8 +231,35 @@ jobs:
       - name: Configure Attic
         run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
 
+      - name: Resolve output path
+        id: resolve
+        run: |
+          set -euo pipefail
+          nix eval --raw ".#${{ matrix.flake-attr }}.outPath" > roots.txt
+          cat roots.txt
+
+      - name: Attic closure preflight
+        id: preflight
+        run: |
+          set -uo pipefail
+          host="${ATTIC_ENDPOINT#http://}"
+          host="${host#https://}"
+          host="${host%%/*}"
+          umask 077
+          printf 'machine %s\n  login token\n  password %s\n' "$host" "$ATTIC_TOKEN" > "$PWD/.preflight.netrc"
+          if nix --option netrc-file "$PWD/.preflight.netrc" path-info \
+               --store "${ATTIC_ENDPOINT}/${ATTIC_CACHE}" \
+               --recursive --refresh "$(cat roots.txt)" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Attic closure complete — skipping build + seed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+          rm -f "$PWD/.preflight.netrc"
+
       - name: Build ${{ matrix.target }}
         id: build
+        if: steps.preflight.outputs.skip != 'true'
         continue-on-error: true
         run: |
           set -o pipefail
@@ -240,7 +267,7 @@ jobs:
             .#${{ matrix.flake-attr }} 2> >(tee nix-build.log >&2) | tee store-path.txt
 
       - name: Collect failed Nix logs
-        if: always()
+        if: always() && steps.preflight.outputs.skip != 'true'
         run: |
           set +e
           : > nix-failed-drvs.log
@@ -269,7 +296,7 @@ jobs:
             failed-drvs.txt
 
       - name: Seed Attic (best-effort — partial closure on failure)
-        if: always()
+        if: always() && steps.preflight.outputs.skip != 'true'
         run: |
           set +e
           : > attic-seed-paths.txt
@@ -465,8 +492,35 @@ jobs:
       - name: Configure Attic
         run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
 
+      - name: Resolve output path
+        id: resolve
+        run: |
+          set -euo pipefail
+          nix eval --raw ".#packages.x86_64-linux.installer-iso.outPath" > roots.txt
+          cat roots.txt
+
+      - name: Attic closure preflight
+        id: preflight
+        run: |
+          set -uo pipefail
+          host="${ATTIC_ENDPOINT#http://}"
+          host="${host#https://}"
+          host="${host%%/*}"
+          umask 077
+          printf 'machine %s\n  login token\n  password %s\n' "$host" "$ATTIC_TOKEN" > "$PWD/.preflight.netrc"
+          if nix --option netrc-file "$PWD/.preflight.netrc" path-info \
+               --store "${ATTIC_ENDPOINT}/${ATTIC_CACHE}" \
+               --recursive --refresh "$(cat roots.txt)" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Attic closure complete — skipping build + seed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+          rm -f "$PWD/.preflight.netrc"
+
       - name: Build installer ISO
         id: build
+        if: steps.preflight.outputs.skip != 'true'
         continue-on-error: true
         run: |
           set -o pipefail
@@ -474,7 +528,7 @@ jobs:
             .#packages.x86_64-linux.installer-iso 2> >(tee nix-build.log >&2) | tee store-path.txt
 
       - name: Collect failed Nix logs
-        if: always()
+        if: always() && steps.preflight.outputs.skip != 'true'
         run: |
           set +e
           : > nix-failed-drvs.log
@@ -503,7 +557,7 @@ jobs:
             failed-drvs.txt
 
       - name: Seed Attic (best-effort — partial closure on failure)
-        if: always()
+        if: always() && steps.preflight.outputs.skip != 'true'
         run: |
           set +e
           : > attic-seed-paths.txt
