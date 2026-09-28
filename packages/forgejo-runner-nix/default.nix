@@ -69,8 +69,12 @@ let
 
   # Nix needs a writable /tmp; the runner uses HOME=/home/runner.
   rootFiles = runCommand "forgejo-runner-nix-root" { } ''
-    mkdir -p $out/tmp $out/home/runner
+    mkdir -p $out/tmp $out/home/runner $out/etc
     chmod 1777 $out/tmp
+    # ssh needs a passwd/group entry for uid 0; the minimal dockerTools image
+    # has none, which makes ssh fail with "No user exists for uid 0".
+    printf 'root:x:0:0:root:/root:/bin/bash\n' > $out/etc/passwd
+    printf 'root:x:0:\n' > $out/etc/group
   '';
 in
 dockerTools.buildLayeredImage {

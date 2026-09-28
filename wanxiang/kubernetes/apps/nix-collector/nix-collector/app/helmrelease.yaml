@@ -58,7 +58,7 @@ spec:
             envs:
               # ssh-ng to the builders: explicit key + relaxed host checking
               # (builders are disposable and re-keyed on rebuild).
-              NIX_SSHOPTS: "-i /etc/nix/builder-id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+              NIX_SSHOPTS: "-i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
     # Pod envelope. Compilation is offloaded, so the collector itself stays
     # small; the generous ephemeral-storage limit covers the single largest
@@ -109,7 +109,7 @@ spec:
                 path: /spec/template/spec/containers/0/volumeMounts/-
                 value:
                   name: builder-ssh
-                  mountPath: /etc/nix/builder-id_ed25519
+                  mountPath: /root/.ssh/id_ed25519
                   subPath: id_ed25519
                   readOnly: true
               - op: add
