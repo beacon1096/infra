@@ -1,0 +1,30 @@
+---
+# nix-check-runner — read-only Forgejo Actions runner for the PR / check path
+# (Nix Validation, Check Secrets, Check Docs i18n, prune). Built on the shared
+# forgejo-runner-nix base; unlike nix-collector it holds NO write credentials
+# (no Attic push, no registry push, no prod/deploy keys) and uses a separate
+# `ci-pr` builder identity.
+#
+# It replaces the temporary arrangement where PR checks ran on the Taichu
+# builders' Forgejo runner. Label `nix-check` (given at adopt time we chose a
+# distinct label over reusing `nix-builder`, so the workflow explicitly names
+# the read-only executor).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: nix-check-runner
+spec:
+  interval: 1h
+  path: ./wanxiang/kubernetes/apps/nix-check-runner/nix-check-runner/app
+  postBuild:
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: nix-check-runner
+  wait: false
+  timeout: 10m

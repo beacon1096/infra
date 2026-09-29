@@ -1,0 +1,13 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nix-check-runner
+  labels:
+    # Host-mode runner, no DinD: keep PSA at `baseline` so it cannot silently
+    # gain privileges. This profile has no write credentials.
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled

@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: forgejo-runner-attic-netrc
+stringData:
+    netrc: ENC[AES256_GCM,data:fwlWpEvMqpf+h4QkiShwD3QqOh0AAXSxJ1qCTjyRcstmGhb6RHvRNAuTD1XfTQbIFJCtWefDg+y2Fu2DnJKbZby5CS5jADYM9xT0Ne24xasfQJ2NHEqu9NhZ8kWu04dtxQaR+XVVNeI3NtBFXlPO5pFRKYjZkFH4Y9cx+QE95F1HGXNle/opKlPB6rsEidGEBaougg==,iv:a5+yRnLwuGu4ZoOGEGJM+Fj2xRmN3CSoOG9Bnuswaew=,tag:FfKLtFcDV7D6gKFAXnXojQ==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBZVW9EYXM0Nm9JRGZ6bXpQ
+            SWhHNjNlb01OMkcrV0t3M2tIQ1U2eC80Zm5nCitKcGVQaGYxSDRNaUswMUtFWE5D
+            bi9kWFhISlVJQVJ2UXoxN01IVXpsbnMKLS0tIDcvL2R2MlFmK2YxMkFRRU15OEFL
+            OVczMkx6VXkyYTdrVTNEUEpFVXhHNk0Ka42HVgPt6nfto3eVrKqBNINH5JqwifC7
+            xun7KfFBcuV2gXaYdwA0pV6JNDasmKx9YJ/fihzDY43t2zeubL1XMg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age19w3svwspecedu893ges7te9qc5qgj3r5tykpkqrl43f90ndlvg4qant4ej
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-29T19:19:01Z"
+    mac: ENC[AES256_GCM,data:YLLBDQHrFhoBlCj7bgpKNNjwDdCzK+vbUgc0k0V1FhIS3CBjJ1UBkBl1Rx0gs6RAJJi3kgUAq3jALOE6kueeDR+xwEEBYHWq01LZEUEu0ZudxL+UhFDE+Rx+08BcjvphDdwTkaxzUTfaYYrUP3m59sApGZqJ0246bLo+Fz7xsOU=,iv:SGC1ghQv8PZFAU0FDteJRGEgXzPLolF5ZQE9Shks0fQ=,tag:DfJIf4Em+2rLXkdZknqdQA==,type:str]
+    version: 3.13.3

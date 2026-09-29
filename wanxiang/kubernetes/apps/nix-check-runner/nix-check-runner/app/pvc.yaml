@@ -1,0 +1,15 @@
+---
+# Persistent Nix store for the PR check runner, seeded from the image on first
+# run (shared seed init container). Reuses the 1-replica Longhorn class the
+# release collector introduced; the store is a rebuildable cache.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: forgejo-runner-nix
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: nix-collector-local
+  resources:
+    requests:
+      storage: 200Gi
