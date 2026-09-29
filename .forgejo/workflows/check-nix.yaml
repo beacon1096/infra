@@ -7,7 +7,7 @@ on:
 
 jobs:
   nix-evaluation:
-    runs-on: nix-builder
+    runs-on: nix-check
     timeout-minutes: 720
     env:
       REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT || 'https://forgejo.beaco.works' }}

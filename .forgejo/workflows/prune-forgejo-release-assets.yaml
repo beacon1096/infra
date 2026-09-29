@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   prune:
-    runs-on: nix-builder
+    runs-on: nix-check
     timeout-minutes: 30
     steps:
       - name: Prune release assets

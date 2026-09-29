@@ -801,7 +801,7 @@ jobs:
   # ── Collector runner image (Forgejo runner + Nix, host mode) ──
   build-and-push-nix-collector-oci:
     needs: warm-cache
-    runs-on: nix-builder
+    runs-on: nix-collector
     timeout-minutes: 120
     steps:
       - name: Checkout repository
