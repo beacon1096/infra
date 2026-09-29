@@ -18,6 +18,8 @@ Coder 编码代理工作区使用精简的单用户 Nix 安装。镜像有意设
 
 Coder 模板按摘要固定编码代理镜像。更改此配置后，等待 `build-and-push-coding-agent-oci` 发布镜像，解析新的镜像仓库摘要，更新模板中的固定摘要，并重新创建或重启受影响的工作区。仅发布 `latest` 不会改变现有工作区或其模板中固定的版本。
 
+`coder templates push` 默认会沿用当前激活版本存储的 Terraform 变量值，因此只修改 `main.tf` 中 `image` 的 `default` 并推送新版本不会改变实际部署的摘要。必须在推送时显式覆盖，例如 `coder templates push coding-agent -d <模板目录> --variable 'image=<仓库>@sha256:<摘要>'`（等价地使用 `--always-prompt`）。推送后用 `coder templates pull --version active` 核对固定摘要，再重启或重建工作区。
+
 ## 中期方案
 
 ### 继续使用 Forgejo CI
