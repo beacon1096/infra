@@ -32,7 +32,7 @@
 
 ## 本地模型能力补全顺序
 
-2026-09-29 将近期优先级调整为 **Embedding → ASR → TTS → Rerank**：
+2026-09-29 将近期优先级调整为 **Embedding → ASR → TTS → Rerank**，候选模型与 oMLX 统一服务方案见 [本地模型能力选型](local-model-selection.md)：
 
 1. **Embedding**：先在 M4 部署轻量候选并接入 Memoh，以 graph-only 为基线。使用 100–300 条真实查询及对应 memory ID 组成检索集，覆盖中文、英文、中英混合、别名、主机名、型号、路径和时间关系；比较 Recall@5/10/20、MRR、nDCG@10 与 p50/p95 延迟。
 2. **ASR**：从 Paseo 与 Agent 的真实短指令建立语料，人工录制 30–60 分钟作为主测试集。除中文 CER、英文 WER 和延迟外，单独统计主机名、CLI、模型名、数字等技术实体的识别准确率。合成音频只能用于扩充和回归，不替代真实录音。

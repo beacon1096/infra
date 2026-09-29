@@ -6,6 +6,7 @@
 - [AI 算力设备盘点](ai-compute-inventory.md)：宿主机与 GPU 的现状、约束和待办。
 - [oMLX 容量记录](omlx-model-capacity.md)：Mac mini M4 已退役部署的容量与管理经验；不是当前可用模型清单。
 - [OpenViking 部署评估](openviking-evaluation.md)：单节点 PoC 方案、Memoh v0.20.0 集成限制与转正门槛；[English](openviking-evaluation_en.md)。
+- [本地模型能力选型](local-model-selection.md)：Embedding / ASR / TTS 的 oMLX 统一服务方案、候选模型与 Memoh v0.20.0 接口约束。
 
 目前只有 Thor 的 Qwen3.8 27B 被记录为本地主力生产推理。实验结果均保留测试日期、负载和运行时条件；它们不自动证明当前服务在线，也不能跨场景直接排名。
 

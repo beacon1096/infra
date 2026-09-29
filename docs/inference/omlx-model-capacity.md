@@ -6,6 +6,8 @@
 
 `darwinModules.omlx` 导出独立的 nix-darwin 模块。`packages/omlx/default.nix` 固定官方 oMLX 应用版本与 DMG 校验值，复用应用内的 Python、MLX 和 Metal 运行环境。在 Mac 上可用 `nix build .#omlx` 单独构建程序。默认包适用于 macOS 26/27；macOS 15 可用 `pkgs.callPackage ./packages/omlx { macosVersion = "15"; }` 设置 `services.omlx.package`。
 
+包版本当前为 `0.7.0rc1`（2026-09-29 从 `0.6.4` 升级；上游尚无 0.7.0 正式版，此为当前最新发布）。该版本保留 Embedding / ASR / TTS 路由与模型识别，详见 [本地模型能力选型](local-model-selection.md)。
+
 M4 的 `services.omlx.models` 声明模型仓库、完整 commit revision 和受管推理参数。权重保存在运行目录，不进入 Nix store。新增模型时先在 Mac 上构建并下载，再应用服务配置：
 
 ```bash
