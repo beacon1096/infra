@@ -10,7 +10,11 @@ jobs:
     runs-on: nix-check
     timeout-minutes: 720
     env:
-      REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT || 'https://forgejo.beaco.works' }}
+      # The smoke-push step runs on the in-cluster nix-check runner, so push
+      # via the cluster Service (plain HTTP) instead of the Cloudflare-fronted
+      # public host — the latter hangs on large chunked uploads and blocked the
+      # runner.
+      REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT_INTERNAL || 'http://forgejo-http.development.svc.cluster.local:3000' }}
       NIX_CONFIG: |
         eval-cache = false
       NIX_CURL_FLAGS: --ipv4
@@ -50,6 +54,13 @@ jobs:
 
           registry_host="${REGISTRY_ENDPOINT#http://}"
           registry_host="${registry_host#https://}"
+          skopeo_args=(--retry-times 5 --retry-delay 10s)
+          login_args=(--username "$REGISTRY_USER" --password-stdin)
+          # In-cluster Service is plain HTTP; skopeo defaults to HTTPS.
+          if [[ "$registry_host" == *"svc.cluster.local"* ]]; then
+            skopeo_args+=(--dest-tls-verify=false)
+            login_args+=(--tls-verify=false)
+          fi
           auth_file="$PWD/.skopeo-ci-auth.json"
           trap 'rm -f "$auth_file"' EXIT
           mkdir -p "$PWD/.skopeo-ci-tmp" "$HOME/.config/containers"
@@ -57,16 +68,15 @@ jobs:
             > "$HOME/.config/containers/policy.json"
 
           printf '%s' "$REGISTRY_TOKEN" | nix shell nixpkgs#skopeo -c \
-            skopeo login --authfile "$auth_file" --username "$REGISTRY_USER" \
-            --password-stdin "$registry_host"
+            skopeo login --authfile "$auth_file" "${login_args[@]}" "$registry_host"
 
           nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-ci-tmp" copy \
-            --retry-times 5 --retry-delay 10s \
+            "${skopeo_args[@]}" \
             --dest-authfile "$auth_file" \
             docker-archive:result-ci-coding-agent \
             "docker://$registry_host/ci-publisher/nix-fleet/coding-agent:ci-scratch"
           nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-ci-tmp" copy \
-            --retry-times 5 --retry-delay 10s \
+            "${skopeo_args[@]}" \
             --dest-authfile "$auth_file" \
             docker-archive:result-ci-multica \
             "docker://$registry_host/ci-publisher/nix-fleet/multica-backend:ci-scratch"
