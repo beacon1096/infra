@@ -63,14 +63,19 @@ spec:
     # Pod envelope. Compilation is offloaded, so the collector itself stays
     # small; the generous ephemeral-storage limit covers the single largest
     # artifact (installer-iso / OCI) plus the eval store headroom.
+    #
+    # Memory is the binding constraint: with runner capacity 2, two
+    # `nix build .#nixosConfigurations.<host>` evaluations run concurrently and
+    # each peaks well over 1 GiB, so a 4 GiB limit OOMKilled the pod mid-job
+    # (exit 137) and failed the running build-systems jobs.
     resources:
       requests:
         cpu: 500m
-        memory: 1Gi
+        memory: 2Gi
         ephemeral-storage: 1Gi
       limits:
-        cpu: "2"
-        memory: 4Gi
+        cpu: "4"
+        memory: 12Gi
         ephemeral-storage: 40Gi
 
   postRenderers:
