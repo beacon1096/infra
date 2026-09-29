@@ -1,5 +1,11 @@
 # Forgejo Actions runner — talos-ii operations runbook
 
+> **已废弃（2026-09-29）**：talos-ii DinD runner 及其 app
+> （`wanxiang/kubernetes/apps/forgejo-runner/`）已撤除。release 路径已迁到万象
+> `nix-collector`（host 模式、无 DinD），见
+> [nix-collector / nix-builder 拆分设计基线](../../../docs/infra-ops/nix-collector-build-split.md)。
+> 本页仅作历史参考。
+
 ## What this is
 
 Operations runbook for the Forgejo Actions runner on talos-ii — the

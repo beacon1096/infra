@@ -378,7 +378,8 @@ Phase 1a 已落地并在 release 路径验证通过。collector 以 host 模式�
   种子导入 Nix DB，或跑 `nix-store --verify --repair` 重新注册。
 - **ATTIC write 尚未收敛（遗留）**：`ATTIC_TOKEN` 仍在 workflow 顶层 `env`，Phase 1a
   清单要求的「read 常驻、write 仅 seed step」尚未落地。
-- **旧 `wanxiang/kubernetes/apps/forgejo-runner/` 仍在（遗留）**：talos-ii runner 未注销。
+- **旧 `wanxiang/kubernetes/apps/forgejo-runner/` 已撤除**（talos-ii DinD runner）；
+  其 namespace 带 `prune: disabled`，需手动删除；Forgejo 侧的 talos-ii runner 注销待办。
 
 Phase 1b 待做：新增只读 PR runner 或把 `check-nix.yaml` 落到只读 collector，再摘除
 太初 Forgejo runner；同时处理 PR 特有风险（eval 非沙箱、FOD egress 边界）。

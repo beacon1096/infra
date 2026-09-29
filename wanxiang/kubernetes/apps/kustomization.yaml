@@ -9,7 +9,6 @@ resources:
   - ./default
   - ./development
   - ./flux-system
-  - ./forgejo-runner
   - ./identity
   - ./kube-system
   - ./monitoring
