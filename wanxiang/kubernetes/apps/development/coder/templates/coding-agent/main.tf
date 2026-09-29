@@ -21,7 +21,7 @@ variable "image" {
   # cert (machineconfig extraHostEntries), whereas 172.16.87.51:5000 is only
   # reachable via a mirror that Spegel shadows, so zot-only images fail to
   # pull. See the coding-agent-oci image in the NixOS flake.
-  default = "forgejo.beaco.works/infrastructure/nix-fleet/coding-agent@sha256:e4c5c686f898511fc72a1575ab156c2b7cd9f67ebf691418d74a3327e6eecd53"
+  default = "forgejo.beaco.works/infrastructure/nix-fleet/coding-agent@sha256:1eceafbda364fe767e4c02671ee800128ece1174c1074a158633d722f6134d6f"
 }
 
 variable "home_disk_size" {
