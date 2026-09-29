@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Secret
 metadata:
-  name: nix-collector-builder-ssh
+  name: forgejo-runner-builder-ssh
 type: Opaque
 stringData:
   id_ed25519: ENC[AES256_GCM,data:2/XuROYCIBQ2oxa8kWINAHQNfGJYpaOmeL8DiiKhwEKv0XrTU+wQv1q70SaGbQgGjkOUj7qhedPhf4Gto3VK4ePJUwmzyGfB+5i9poLdTwsUHtNlFD+Tymh7/aSUicl/GJTgO0nplHv+Jt/84hFoepCR0lY6xlbXWSry8tcmpR+d5retGy4PNC+8VoCFUxH+5t+/dwYKfXqoA/LRYur1DSmB/+9kGmEFN128dK1fo0M0+SNtIewbI1GU2uC2jJyDS58hWbh82PZzsoilVBJxcmEav479zEJUGPB71xsQDtnic0q9Vb5Zj+sKh3iX0y+9poJoD/mYbICw9sGTkyyJVEr5iqIYLOhZtpXp+kMf+P0ybm6UYEaMH6zp2sPYZSbKHDFuqsh++DrVezkDgm9Bu9RUKS8gaEnnOgKjXVRWkO47Lpam72nJwj7QqTqLPz/v3yfsnEC6f5Gd+8v+HkB8ZLUDkRAFDaXXFde6c6KJ1VJJ2LrYEHXtZqKDCW4bQk75CyH/E/4TfRqHEkc9r4Hh8JiDIbSTBWts74gAIVPP4SfgSak=,iv:7GOsHnqNwCqXI/w8oNltAerJKCPYjycJps4PyBG2xHA=,tag:mutSxmbWcSYY2h6Wz1OEeA==,type:str]

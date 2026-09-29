@@ -377,6 +377,13 @@ Phase 1a 已落地并在 release 路径验证通过。collector 以 host 模式�
 `warm-cache`、`build-systems`、`build-installer-iso` 与三个 `build-and-push-*-oci`
 均落到 collector（label `nix-collector:host`）。运维发现：
 
+- **runner 抽成共享底座 component**：runner 的打包（Wrenix chart、host 模式
+  postRenderer、`nix.conf`、pinned known_hosts、seed store）抽到 Kustomize component
+  `wanxiang/kubernetes/components/forgejo-runner-nix`；`nix-collector`（release、有写
+  凭据）与新 `nix-check-runner`（PR、只读）作为 **profile** 复用它，各自只提供
+  namespace/Secret/PVC 和少量 patch（runner label、capacity、resources）。新增 runner
+  时不必复制整套 HelmRelease。
+
 - **builder host key 已 pin**：collector 的 `NIX_SSHOPTS` 改用
   `StrictHostKeyChecking=yes` + pinned known_hosts（ConfigMap，公钥来自 infra-private
   escrow `secrets/infrastructure/nixbuilder-0{1,2,3}-host-key.yaml`），并去掉启动时的

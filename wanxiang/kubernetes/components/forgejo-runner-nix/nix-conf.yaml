@@ -1,12 +1,13 @@
 ---
-# Nix client config for the collector. It performs no local builds
-# (max-jobs = 0): evaluation/coordination happen here, compilation is
-# dispatched to the Taichu builders over ssh-ng. `netrc-file` and the
-# builder SSH key are mounted from Secrets by the HelmRelease.
+# Nix client config shared by all host-mode runner profiles. They perform no
+# local builds (max-jobs = 0): evaluation/coordination happen in the runner,
+# compilation is dispatched to the Taichu builders over ssh-ng. `netrc-file`
+# and the builder SSH key are mounted from per-profile Secrets by the
+# HelmRelease.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: nix-collector-nix-conf
+  name: forgejo-runner-nix-conf
 data:
   nix.conf: |
     experimental-features = nix-command flakes

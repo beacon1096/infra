@@ -5,7 +5,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: nix-collector-nix
+  name: forgejo-runner-nix
 spec:
   accessModes:
     - ReadWriteOnce

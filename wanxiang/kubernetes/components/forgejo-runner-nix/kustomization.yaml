@@ -1,0 +1,13 @@
+---
+# Shared base for host-mode Forgejo runners built on the `forgejo-runner-nix`
+# image (Nix-capable, no DinD). Profiles include this component and supply
+# namespace, secrets, PVC and small patches; see nix-collector (release) and
+# nix-check-runner (read-only PR) under apps/. Names are generic on purpose so
+# each profile can reuse them inside its own namespace.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - ./ocirepository.yaml
+  - ./nix-conf.yaml
+  - ./builder-known-hosts.yaml
+  - ./helmrelease.yaml

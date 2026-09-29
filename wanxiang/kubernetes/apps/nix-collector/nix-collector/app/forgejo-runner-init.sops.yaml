@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Secret
 metadata:
-  name: nix-collector-secret
+  name: forgejo-runner-init
 type: Opaque
 stringData:
   CONFIG_TOKEN: ENC[AES256_GCM,data:ygcqYYLstmrYsrhGSZJjmx1JIvpHwPcXY6k6HkEnHqbfyX9QTLOYbwEwPQ==,iv:WVMxNJ/jI8Ex3WMYH7QWRBxh2nwnOENpn31YAy1br20=,tag:vqhbstdhP8y3kr/hHadDMw==,type:str]

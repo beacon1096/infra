@@ -1,21 +1,28 @@
 ---
-# Forgejo Actions runner for the release "collector".
+# Shared base: a Forgejo Actions runner in HOST mode (no DinD) built on the
+# Wrenix forgejo-runner chart and the custom `forgejo-runner-nix` image that
+# carries Nix. Instances (profiles) include this component and supply their
+# own namespace, secrets (registration, Attic netrc, builder ssh key), and a
+# persistent Nix store PVC, then patch the small per-profile differences
+# (runner label, capacity, resources).
 #
-# Uses the Wrenix forgejo-runner chart purely as packaging, but in HOST mode
-# with a custom image that carries Nix (`forgejo-runner-nix`). No DinD:
-#   - the chart's `dind` container is removed by postRenderer;
-#   - the `runner` container's command is replaced so it no longer waits for
-#     a Docker daemon at 127.0.0.1:2376;
+# Why host mode: stock runner images lack Nix, and privileged DinD bypassed
+# the nested resource boundary (it once exhausted a control-plane node). See
+# docs/infra-ops/nix-collector-build-split.md.
+#
+# The chart is used purely as packaging:
+#   - the `dind` container is removed by postRenderer;
+#   - the `runner` container command is replaced so it no longer waits for a
+#     Docker daemon at 127.0.0.1:2376;
 #   - `DOCKER_*` env is dropped and `privileged` stays false.
 #
-# Job execution: label `nix-collector:host` → jobs run inside this container,
-# where `nix build` dispatches to the Taichu builders (see the
-# `nix-collector-nix-conf` ConfigMap). Container-based CI is a separate,
-# future profile — not this app.
+# Jobs run inside this container and dispatch `nix build` to the Taichu
+# builders over ssh-ng (see the `forgejo-runner-nix-conf` ConfigMap). Names
+# here are generic so every profile can reuse them in its own namespace.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: nix-collector
+  name: forgejo-runner
 spec:
   chartRef:
     kind: OCIRepository
@@ -24,7 +31,7 @@ spec:
   values:
     knownLastVersion: true
     # Deterministic Deployment name for the postRenderer target.
-    fullnameOverride: nix-collector
+    fullnameOverride: forgejo-runner
     replicaCount: 1
     strategy:
       type: Recreate
@@ -44,17 +51,17 @@ spec:
     runner:
       config:
         create: true
-        existingInitSecret: "nix-collector-secret"
+        existingInitSecret: "forgejo-runner-init"
         file:
           runner:
             # The chart writes the registration to /data/.runner (emptyDir,
             # copied there by the init container). Pin the absolute path so
             # the daemon does not look for it in the image WORKDIR.
             file: /data/.runner
-            capacity: 2
+            capacity: 1
             timeout: 12h
             labels:
-              - "nix-collector:host"
+              - "forgejo-runner:host"
             envs:
               # ssh-ng to the builders: explicit key and pinned host keys
               # (no TOFU, no runtime ssh-keyscan). The pin is restored across
@@ -62,22 +69,16 @@ spec:
               # builder-known-hosts.yaml.
               NIX_SSHOPTS: "-i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/nix/builder-known-hosts"
 
-    # Pod envelope. Compilation is offloaded, so the collector itself stays
-    # small; the generous ephemeral-storage limit covers the single largest
-    # artifact (installer-iso / OCI) plus the eval store headroom.
-    #
-    # Memory is the binding constraint: with runner capacity 2, two
-    # `nix build .#nixosConfigurations.<host>` evaluations run concurrently and
-    # each peaks well over 1 GiB, so a 4 GiB limit OOMKilled the pod mid-job
-    # (exit 137) and failed the running build-systems jobs.
+    # Conservative defaults; profiles with concurrent heavy eval raise the
+    # memory limit (the collector uses 12Gi for two concurrent NixOS evals).
     resources:
       requests:
-        cpu: 500m
-        memory: 2Gi
+        cpu: 250m
+        memory: 1Gi
         ephemeral-storage: 1Gi
       limits:
-        cpu: "4"
-        memory: 12Gi
+        cpu: "2"
+        memory: 4Gi
         ephemeral-storage: 40Gi
 
   postRenderers:
@@ -85,7 +86,7 @@ spec:
         patches:
           - target:
               kind: Deployment
-              name: nix-collector
+              name: forgejo-runner
             patch: |
               # Drop the DinD sidecar.
               - op: remove
@@ -98,7 +99,7 @@ spec:
               # Drop DOCKER_* env (no daemon to talk to).
               - op: remove
                 path: /spec/template/spec/containers/0/env
-              # Mount nix.conf / attic netrc / builder SSH key.
+              # Mount nix.conf / attic netrc / builder ssh key / known hosts.
               - op: add
                 path: /spec/template/spec/containers/0/volumeMounts/-
                 value:
@@ -132,26 +133,26 @@ spec:
                 value:
                   name: nix-conf
                   configMap:
-                    name: nix-collector-nix-conf
+                    name: forgejo-runner-nix-conf
               - op: add
                 path: /spec/template/spec/volumes/-
                 value:
                   name: attic-netrc
                   secret:
-                    secretName: nix-collector-attic-netrc
+                    secretName: forgejo-runner-attic-netrc
               - op: add
                 path: /spec/template/spec/volumes/-
                 value:
                   name: builder-ssh
                   secret:
-                    secretName: nix-collector-builder-ssh
+                    secretName: forgejo-runner-builder-ssh
                     defaultMode: 0400
               - op: add
                 path: /spec/template/spec/volumes/-
                 value:
                   name: builder-known-hosts
                   configMap:
-                    name: nix-collector-builder-known-hosts
+                    name: forgejo-runner-known-hosts
               # Persistent, bounded Nix store so eval inputs/outputs survive
               # across runs (emptyDir re-fetched them every release).
               - op: add
@@ -184,4 +185,4 @@ spec:
                 value:
                   name: nix-store
                   persistentVolumeClaim:
-                    claimName: nix-collector-nix
+                    claimName: forgejo-runner-nix

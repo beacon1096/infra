@@ -1,17 +1,18 @@
 ---
-# Pinned SSH host keys for the Taichu nix-builders the collector uses as
-# remote build targets. The split design requires the keys to be pinned, not
-# accepted on first connect (no TOFU, no runtime ssh-keyscan).
+# Pinned SSH host keys for the Taichu nix-builders, shared by all runner
+# profiles that use them as remote build targets. The split design requires
+# the keys to be pinned, not accepted on first connect (no TOFU, no runtime
+# ssh-keyscan).
 #
 # These ed25519 host keys are backed by the infra-private escrow
 # (secrets/infrastructure/nixbuilder-0{1,2,3}-host-key.yaml), which restores
 # the same host key across disposable builder rebuilds. If a builder is ever
-# re-keyed, update this ConfigMap and restart the collector so the
+# re-keyed, update this ConfigMap and restart the runner pods so the
 # subPath-mounted file is re-projected.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: nix-collector-builder-known-hosts
+  name: forgejo-runner-known-hosts
 data:
   known_hosts: |
     172.16.101.31 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPES6nlhfYix8xFxsDthfzlRvEpb7FdJu1kEo1SvNNTV
