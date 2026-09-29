@@ -57,6 +57,21 @@
     longer traverse Cloudflare and the private path has equivalent
     observability and availability.
 
+## Container image push ingress
+
+- [ ] Move the collector's OCI image push onto self-hosted ingress or a
+  reverse proxy instead of the Cloudflare-fronted public path.
+  - Today: pushing large image layers to public `forgejo.beaco.works` (the
+    Cloudflare tunnel) returns `502 Bad Gateway` (skopeo `uploading layer
+    chunked`), which failed the coding-agent publish job; the push was moved to
+    the in-cluster `forgejo-http.development.svc.cluster.local:3000` (plain
+    HTTP, needs `--tls-verify=false`) as a stopgap.
+  - Goal: run the reverse proxy on our own infrastructure and restore a
+    single, certificate-verified registry endpoint, removing
+    `--tls-verify=false` and the hard-coded `svc.cluster.local` target.
+  - The endpoint must serve both in-cluster runners and the out-of-cluster
+    Taichu builder used by `build-and-push-nix-collector-oci`.
+
 ## Renovate review continuation
 
 - [ ] Add a first-class continuation path after a Renovate review returns

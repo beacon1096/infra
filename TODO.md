@@ -44,6 +44,21 @@
   - 只有在 agent 不再经过 Cloudflare、且私有路径具备同等可观测性与
     可用性之后，才移除回调专用的 User-Agent 变通措施。
 
+## 容器镜像推送入口
+
+- [ ] 将 collector 的 OCI 镜像推送迁到自建入口/反向代理，替代经
+  Cloudflare 的公网路径。
+  - 现状：推送大镜像层时，公网 `forgejo.beaco.works`（Cloudflare tunnel）
+    返回 `502 Bad Gateway`（skopeo `uploading layer chunked`），曾使
+    coding-agent 发布 job 失败；临时改走集群内
+    `forgejo-http.development.svc.cluster.local:3000`（明文 HTTP，需
+    `--tls-verify=false`），属权宜之计。
+  - 目标：在我们自己的设施上运行反向代理，恢复单一且带校验证书的
+    registry endpoint，移除 `--tls-verify=false` 与硬编码的
+    `svc.cluster.local` 目标。
+  - 该入口需同时服务集群内 runner 与集群外的 Taichu builder
+    （`build-and-push-nix-collector-oci` 目前仍走公网 endpoint）。
+
 ## Renovate 评审续期
 
 - [ ] 为 Renovate 评审返回 `human_required` 后添加一等续期路径。
