@@ -356,6 +356,11 @@ Phase 1a 已落地并在 release 路径验证通过。collector 以 host 模式�
 `warm-cache`、`build-systems`、`build-installer-iso` 与三个 `build-and-push-*-oci`
 均落到 collector（label `nix-collector:host`）。运维发现：
 
+- **builder host key 已 pin**：collector 的 `NIX_SSHOPTS` 改用
+  `StrictHostKeyChecking=yes` + pinned known_hosts（ConfigMap，公钥来自 infra-private
+  escrow `secrets/infrastructure/nixbuilder-0{1,2,3}-host-key.yaml`），并去掉启动时的
+  `ssh-keyscan`。满足验收里的「预先 pin、不在首次连接现场 accept」；escrow 让
+  disposable 重建后仍为同一 host key，如需轮换则更新 ConfigMap 并重启 collector。
 - **机器规格必须 `;`/换行分隔**：`builders` 值以空格分隔多台时被解析为**单台**机器，
   第二台的 URI 落到 mandatory-features 列、system 落到 base64 host-key 列，构建期
   build hook 报 `invalid character in Base64 string`。正确写法见 Phase 1a 清单。

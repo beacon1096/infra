@@ -9,6 +9,7 @@ resources:
   - ./nix-collector-builder-ssh.sops.yaml
   - ./ocirepository.yaml
   - ./nix-conf.yaml
+  - ./builder-known-hosts.yaml
   - ./storageclass.yaml
   - ./pvc.yaml
   - ./helmrelease.yaml

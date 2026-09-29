@@ -56,9 +56,11 @@ spec:
             labels:
               - "nix-collector:host"
             envs:
-              # ssh-ng to the builders: explicit key + relaxed host checking
-              # (builders are disposable and re-keyed on rebuild).
-              NIX_SSHOPTS: "-i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+              # ssh-ng to the builders: explicit key and pinned host keys
+              # (no TOFU, no runtime ssh-keyscan). The pin is restored across
+              # disposable builder rebuilds via the infra-private escrow; see
+              # builder-known-hosts.yaml.
+              NIX_SSHOPTS: "-i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/nix/builder-known-hosts"
 
     # Pod envelope. Compilation is offloaded, so the collector itself stays
     # small; the generous ephemeral-storage limit covers the single largest
@@ -88,17 +90,11 @@ spec:
               # Drop the DinD sidecar.
               - op: remove
                 path: /spec/template/spec/containers/1
-              # Run the daemon directly instead of waiting for dockerd.
+              # Run the daemon directly instead of waiting for dockerd. Host
+              # keys are pinned via NIX_SSHOPTS, so no startup ssh-keyscan.
               - op: replace
                 path: /spec/template/spec/containers/0/command
-                value:
-                  - /bin/sh
-                  - -c
-                  - |
-                    mkdir -p /root/.ssh
-                    ssh-keyscan 172.16.101.31 172.16.101.32 172.16.101.33 \
-                      > /root/.ssh/known_hosts 2>/dev/null || true
-                    exec /bin/forgejo-runner --config /etc/runner/config.yaml daemon
+                value: ["/bin/forgejo-runner", "--config", "/etc/runner/config.yaml", "daemon"]
               # Drop DOCKER_* env (no daemon to talk to).
               - op: remove
                 path: /spec/template/spec/containers/0/env
@@ -125,6 +121,13 @@ spec:
                   subPath: id_ed25519
                   readOnly: true
               - op: add
+                path: /spec/template/spec/containers/0/volumeMounts/-
+                value:
+                  name: builder-known-hosts
+                  mountPath: /etc/nix/builder-known-hosts
+                  subPath: known_hosts
+                  readOnly: true
+              - op: add
                 path: /spec/template/spec/volumes/-
                 value:
                   name: nix-conf
@@ -143,6 +146,12 @@ spec:
                   secret:
                     secretName: nix-collector-builder-ssh
                     defaultMode: 0400
+              - op: add
+                path: /spec/template/spec/volumes/-
+                value:
+                  name: builder-known-hosts
+                  configMap:
+                    name: nix-collector-builder-known-hosts
               # Persistent, bounded Nix store so eval inputs/outputs survive
               # across runs (emptyDir re-fetched them every release).
               - op: add
