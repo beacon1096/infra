@@ -68,6 +68,10 @@ spec:
               # disposable builder rebuilds via the infra-private escrow; see
               # builder-known-hosts.yaml.
               NIX_SSHOPTS: "-i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/nix/builder-known-hosts"
+              # In-cluster runners reach Forgejo's SSH via the cluster Service
+              # (the public/tailnet hostname is not routable from the cluster).
+              # Consumed by the infra-private `setup-infra-ssh` CI action.
+              FORGEJO_SSH_HOST: "forgejo-ssh.development.svc.cluster.local"
 
     # Conservative defaults; profiles with concurrent heavy eval raise the
     # memory limit (the collector uses 12Gi for two concurrent NixOS evals).
