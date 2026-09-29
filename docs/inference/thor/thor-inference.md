@@ -32,17 +32,33 @@
 
 `httpIdleTimeoutMs` 位于顶层，控制 undici 的 headers/body 空闲期限；仅修改 provider 超时仍会留下默认的 300000 ms 空闲上限。将 provider `baseUrl` 设为上述 Tailnet URL，模型 ID 设为 `thor/qwen3.8-27b`，`contextWindow` 设为 262144，`maxTokens` 设为 8192。普通对话轮次请求 4096 输出 token；推理也消耗同一输出预算。编码任务应保留模型正常的 thinking 行为。先前的容量探测只为隔离检索而关闭 thinking。不要通过公网 Cloudflare 端点发送这些长请求：它的期限独立于 LiteLLM 和 Pi 设置。
 
-思考开关需要模型定义里显式的兼容声明。该路由的后端（vLLM/SGLang）从
-`chat_template_kwargs.enable_thinking` 读取思考控制，而 pi 默认按 OpenAI 形式发送
+思考控制需要模型定义里显式的兼容声明。该路由的后端（vLLM/SGLang）从
+`chat_template_kwargs.enable_thinking` 读取思考开关，而 pi 默认按 OpenAI 形式发送
 `reasoning_effort`：后端忽略它，关闭思考时 pi 甚至不发送任何字段，模型继续按 chat
 template 默认值推理。因此 `thor/qwen3.8-27b` 的 Pi 模型定义须带
-`compat.thinkingFormat = "qwen-chat-template"`（声明于公共 infra 的
-`modules/home/coding-agent.nix`，由 `modules/home/pi.nix` 透传给 pi 的模型表）。
-2026-09-27 在本路由上实测：无该声明时 `--thinking off` 的请求仍返回
+`compat.thinkingFormat = "chat-template"` 和 `compat.chatTemplateKwargs`，并由模型级
+`thinkingLevelMap` 把 pi 的思考档位映射到模板接受的 `reasoning_effort` 值（声明于
+公共 infra 的 `modules/home/coding-agent.nix`，由 `modules/home/pi.nix` 把 `compat`
+和 `thinkingLevelMap` 一并透传给 pi 的模型表）。
+2026-09-27 在本路由上实测：无兼容声明时 `--thinking off` 的请求仍返回
 `reasoning_content`；加上后同一提示词不再产生思考文本。`chat_template_kwargs` 能穿过
-LiteLLM（`drop_params: true` 不丢弃它），而 `reasoning_effort` 与顶层
-`enable_thinking` 都被忽略，`thinking_budget` 也不被该部署采纳：low/medium/high
-在服务端等价于开启思考，实际只有 off/on 两档生效。
+LiteLLM（`drop_params: true` 不丢弃它），而顶层 `reasoning_effort` 与
+`enable_thinking` 都被忽略，`thinking_budget` 也不被该部署采纳。
+2026-09-29 又用同一提示词、8192 token 上限直接实测
+`chat_template_kwargs.reasoning_effort`：模板默认的 xhigh 两次都耗尽 8192 个
+reasoning token、没有正文并以 `finish_reason: length` 结束（273 s / 251 s）；
+`medium` 以 5,395 reasoning + 2,727 正文正常 `stop`（240 s），`low` 为
+1,284 reasoning + 1,734 正文（92 s）。因此 low/medium/high 并不等价于开启思考：
+Pi 实际暴露 off/low/medium/high，其中 `high` 映射 xhigh、`minimal` 映射 low，不显式
+指定档位时仍是模板自身的 xhigh 默认。
+
+sampling 参数没有在任一环节固定：`sglang.launch_server` 未设置，Pi 的模型定义没有
+`samplingParams`（截获的请求不携带任何 sampling 字段），LiteLLM 记录也没有
+temperature/top_p。SGLang 的 `sampling_defaults` 为 `model`，即回退到 checkpoint 的
+`generation_config.json`；Thor 上该文件为 `temperature=1.0, top_p=0.95, top_k=20`，
+正是 Qwen 官方的 thinking 采样推荐，min_p 0 与 presence/frequency/repetition 默认值
+同样与推荐一致。因此默认输出带有真实的采样随机性；需要确定性复现时必须显式传
+`temperature=0`。
 
 LiteLLM 1.90.0 优先使用模型 `stream_timeout`，其次才是 `timeout`，并遵守 `num_retries: 0`。共享网关启用了 `general_settings.cancel_on_disconnect: true`；它适用于所有模型路由，会在等待上游初始响应期间客户端断开时取消工作。客户端取消已沿链路测试到 Thor。此设置声明于公共 infra 的 `wanxiang/kubernetes/apps/ai/litellm/app/configmap.yaml`；修改这项通过 subPath 挂载的配置后需重启 Deployment。Thor 还回移植了 SGLang 生命周期修复，使已派发请求在客户端消失后中止，而非继续运行；参见 [Thor SGLang 客户端断开中止修复](thor-sglang-abort-fix.md)。
 

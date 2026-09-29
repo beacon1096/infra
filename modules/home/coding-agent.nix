@@ -59,9 +59,26 @@ let
   # Pi's OpenAI-compatible adapter controls thinking only through `compat`. These
   # LiteLLM routes land on vLLM/SGLang, which read `chat_template_kwargs`, so the
   # default OpenAI `reasoning_effort` is ignored and "off" sends nothing at all.
+  # The deployed Qwen3.8 chat template accepts reasoning_effort=xhigh|medium|low,
+  # so map pi's levels onto those values instead of collapsing them to on/off.
   piModelCompat = {
     "thor/qwen3.8-27b" = {
-      compat.thinkingFormat = "qwen-chat-template";
+      thinkingLevelMap = {
+        minimal = "low";
+        low = "low";
+        medium = "medium";
+        high = "xhigh";
+        xhigh = "xhigh";
+        max = "xhigh";
+      };
+      compat = {
+        thinkingFormat = "chat-template";
+        chatTemplateKwargs = {
+          enable_thinking = { "$var" = "thinking.enabled"; };
+          reasoning_effort = { "$var" = "thinking.effort"; omitWhenOff = true; };
+          preserve_thinking = true;
+        };
+      };
     };
   };
   piModels = lib.mapAttrs (id: model: model // (piModelCompat.${id} or { })) beacoworksModels;

@@ -42,20 +42,39 @@ Do not route these long requests through the public Cloudflare endpoint:
 its own deadline is independent of the LiteLLM and Pi settings.
 
 Toggling thinking needs an explicit compatibility declaration in the model
-definition. The backend behind this route (vLLM/SGLang) reads thinking control
-from `chat_template_kwargs.enable_thinking`, while Pi sends OpenAI-style
+definition. The backend behind this route (vLLM/SGLang) reads the thinking
+switch from `chat_template_kwargs.enable_thinking`, while Pi sends OpenAI-style
 `reasoning_effort` by default: the backend ignores it, and with thinking off Pi
 sends no thinking field at all, so the model keeps reasoning on the chat
 template default. The Pi model definition for `thor/qwen3.8-27b` therefore
-carries `compat.thinkingFormat = "qwen-chat-template"` (declared in public infra
-`modules/home/coding-agent.nix`, forwarded to Pi's model table by
-`modules/home/pi.nix`). Measured on this route on 2026-09-27: without the
-declaration a `--thinking off` request still returned `reasoning_content`; with
-it the same prompt produced no thinking text. LiteLLM passes
-`chat_template_kwargs` through (`drop_params: true` does not drop it), whereas
-`reasoning_effort` and a top-level `enable_thinking` are ignored and
-`thinking_budget` is not honored by this deployment: low/medium/high are all
-equivalent to thinking on server-side, so only off/on actually differ.
+carries `compat.thinkingFormat = "chat-template"` with `compat.chatTemplateKwargs`,
+and a model-level `thinkingLevelMap` maps Pi's thinking levels onto the
+`reasoning_effort` values the template accepts (declared in public infra
+`modules/home/coding-agent.nix`; `modules/home/pi.nix` forwards both `compat`
+and `thinkingLevelMap` to Pi's model table). Measured on this route on
+2026-09-27: without the declaration a `--thinking off` request still returned
+`reasoning_content`; with it the same prompt produced no thinking text. LiteLLM
+passes `chat_template_kwargs` through (`drop_params: true` does not drop it),
+whereas a top-level `reasoning_effort` and `enable_thinking` are ignored and
+`thinking_budget` is not honored by this deployment. A follow-up probe on
+2026-09-29 exercised `chat_template_kwargs.reasoning_effort` directly with the
+same prompt and an 8192-token cap: the template default xhigh ended with 8192
+reasoning tokens, no text, and `finish_reason: length` in both runs (273 s and
+251 s); `medium` finished normally with 5,395 reasoning plus 2,727 text tokens
+(240 s), and `low` with 1,284 plus 1,734 (92 s). low/medium/high are therefore
+not equivalent to thinking on: Pi exposes off/low/medium/high, where `high` maps
+to xhigh and `minimal` maps to low, and a level that is not set still uses the
+template's own xhigh default.
+
+Sampling parameters are not pinned at any layer: `sglang.launch_server` sets none,
+the Pi model definitions have no `samplingParams` (captured requests carry no
+sampling fields), and the LiteLLM record sets no temperature/top_p. SGLang runs
+with `sampling_defaults: "model"`, so it falls back to the checkpoint's
+`generation_config.json`, which on Thor is `temperature=1.0, top_p=0.95,
+top_k=20` — Qwen's official thinking recommendation — while min_p 0 and the
+presence/frequency/repetition defaults also match it. Output is therefore
+genuinely sampled; deterministic experiments must pass `temperature=0`
+explicitly.
 
 LiteLLM 1.90.0 uses model `stream_timeout` before `timeout` and honors
 `num_retries: 0`. The shared gateway enables

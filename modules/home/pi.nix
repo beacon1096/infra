@@ -66,7 +66,8 @@ let
         cacheWrite = 0;
       };
     }
-    // lib.optionalAttrs (model ? compat) { inherit (model) compat; })
+    // lib.optionalAttrs (model ? compat) { inherit (model) compat; }
+    // lib.optionalAttrs (model ? thinkingLevelMap) { inherit (model) thinkingLevelMap; })
     cfg.models;
 in
 {
