@@ -4,18 +4,18 @@ let
   variants = {
     "15" = {
       name = "macos15-sequoia";
-      hash = "sha256-WpDHrko/TKi/ENzIPX9zlSgeL/sqhdYwyV6XIISOR80=";
+      hash = "sha256-Ufa0/AiE9khgQVdYagTCMiM94JO223a0OMfSzMmjnL0=";
     };
     "26" = {
       name = "macos26-27";
-      hash = "sha256-U/FQbCOF6JIKZxmLctH+CTUcGzU4vpxr3reOUnfQbZM=";
+      hash = "sha256-gsHqTYghU7stpc0nk+lQYgstLrgbLpBpUnLoeL55uDo=";
     };
   };
   variant = variants.${macosVersion};
 in
 stdenvNoCC.mkDerivation rec {
   pname = "omlx";
-  version = "0.6.4";
+  version = "0.7.0rc1";
   src = fetchurl {
     url = "https://github.com/jundot/omlx/releases/download/v${version}/oMLX-${version}-${variant.name}.dmg";
     inherit (variant) hash;
