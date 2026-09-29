@@ -14,3 +14,4 @@
 
 - [Forgejo Runner nix-builder 维护窗口](./runner-maintenance.md)
 - [Forgejo 产物生命周期](./forgejo-artifact-lifecycle.md)
+- [nix-collector / nix-builder 拆分设计基线](./nix-collector-build-split.md)

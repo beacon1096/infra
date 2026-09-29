@@ -1,0 +1,77 @@
+name: Attic Closure Probe (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      attr:
+        description: 'Flake attr whose runtime closure is probed'
+        required: true
+        default: 'nixosConfigurations.m920x.config.system.build.toplevel'
+      ref:
+        description: 'Branch, tag, or commit SHA to evaluate'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  probe:
+    runs-on: nix-collector
+    timeout-minutes: 60
+    env:
+      ATTIC_ENDPOINT: https://nix.beaco.works
+      ATTIC_CACHE: ${{ secrets.ATTIC_CACHE }}
+      ATTIC_TOKEN: ${{ secrets.ATTIC_TOKEN }}
+      NIX_CONFIG: |
+        eval-cache = false
+      NIX_CURL_FLAGS: --ipv4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Resolve output path
+        run: |
+          set -euo pipefail
+          nix eval --raw ".#${{ inputs.attr }}.outPath" > roots.txt
+          test -s roots.txt
+          printf 'root: %s\n' "$(cat roots.txt)"
+
+      - name: Write Attic netrc
+        run: |
+          set -euo pipefail
+          host="${ATTIC_ENDPOINT#http://}"
+          host="${host#https://}"
+          host="${host%%/*}"
+          umask 077
+          printf 'machine %s\n  login token\n  password %s\n' "$host" "$ATTIC_TOKEN" > "$PWD/attic-probe.netrc"
+
+      - name: Probe Attic closure (metadata only)
+        run: |
+          set -uo pipefail
+          store="${ATTIC_ENDPOINT}/${ATTIC_CACHE}"
+          mapfile -t roots < roots.txt
+          if nix --option netrc-file "$PWD/attic-probe.netrc" path-info \
+               --store "$store" --recursive --refresh "${roots[@]}" \
+               > attic-closure.txt 2> attic-probe.err; then
+            echo "ATTIC_CLOSURE_COMPLETE=1"
+            echo "closure_paths=$(wc -l < attic-closure.txt)"
+            echo "result=HIT (skip build + seed)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ATTIC_CLOSURE_COMPLETE=0"
+            sed -n '1,20p' attic-probe.err
+            echo "result=MISS (fallback to nix build + attic push)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          rm -f "$PWD/attic-probe.netrc"
+
+      - name: Upload probe output
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: attic-closure-probe
+          path: |
+            roots.txt
+            attic-closure.txt
+            attic-probe.err
