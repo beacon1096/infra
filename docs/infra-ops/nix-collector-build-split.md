@@ -6,8 +6,8 @@ builder」的方案基线，供跨 agent 评审与后续实施引用。它与
 一致：runner 承担控制/求值，构建交给一组无状态 remote builder，Attic 仍是唯一
 持久 cache。
 
-状态：**Phase 1a 已实施并验证**（2026-09-29，release 路径在 collector 上跑通），
-Phase 1b（收编 PR runner）待做。评审记录（ChatGPT 审查）已折入本页；实施与运维
+状态：**Phase 1a 与 1b 均已实施并验证**（2026-09-29）：release 在 collector、检查在只读
+runner，太初只剩 `ssh-ng` 远程构建身份。评审记录（ChatGPT 审查）已折入本页；实施与运维
 发现见文末[实施记录](#实施记录2026-09-29)。
 
 ## 现状
@@ -404,13 +404,31 @@ Phase 1a 已落地并在 release 路径验证通过。collector 以 host 模式�
   个别路径未注册（`9jsz…-nix-2.34.8` 为 `not valid`），曾把不完整闭包发给 builder，
   导致远端 `nix: error while loading shared libraries: libboost_url.so.1.89.0`。需让
   种子导入 Nix DB，或跑 `nix-store --verify --repair` 重新注册。
-- **ATTIC write 尚未收敛（遗留）**：`ATTIC_TOKEN` 仍在 workflow 顶层 `env`，Phase 1a
-  清单要求的「read 常驻、write 仅 seed step」尚未落地。
-- **旧 `wanxiang/kubernetes/apps/forgejo-runner/` 已撤除**（talos-ii DinD runner）；
-  其 namespace 带 `prune: disabled`，需手动删除；Forgejo 侧的 talos-ii runner 注销待办。
+- **ATTIC write 已收敛**：公开 `build-and-push.yaml` 顶层改为只读 `ATTIC_READ_TOKEN`
+  （新铸 `--pull nix-fleet` token，存 Forgejo Actions secret + 记入 Attic token 台账）；
+  写 token 仅在 ~10 个 `attic push` step 通过 `${{ secrets.ATTIC_TOKEN }}` 注入。collector
+  的 `nix` netrc 经核对为只读（claims `sub=nix-daemon`、`caches.nix-fleet.r=1`）。
+- **旧 runner 清理完成**：`wanxiang/kubernetes/apps/forgejo-runner/`（talos-ii DinD）已撤除、
+  namespace 删除；Forgejo 里 talos-ii、旧 swarm-runner、重复的 nixbuilder/gen10plus/Mac 记录
+  均已注销（仅保留 `nix-collector`、`nix-check`、Mac 三个活动 runner）。
 
-Phase 1b 待做：新增只读 PR runner 或把 `check-nix.yaml` 落到只读 collector，再摘除
-太初 Forgejo runner；同时处理 PR 特有风险（eval 非沙箱、FOD egress 边界）。
+### Phase 1b（已完成，2026-09-29）
+
+- **公开仓**：`check-nix`/`check-secrets`/`check-docs-i18n`/`prune` → `runs-on: nix-check`；
+  其余系统/ISO/OCI job 在 `nix-collector`；`check-nix` 的 smoke-push 改走集群内 endpoint。
+- **私有仓**：只读检查（check-nix x86_64 / check-secrets / harness-checks / prune）→ `nix-check`；
+  写/发布（build-and-push / update-nchnroutes）→ `nix-collector`；darwin 留 Mac。**已无 workflow
+  使用 `nix-builder`**。
+- **`setup-infra-ssh` 适配 in-cluster**：无法访问 tailnet Forgejo SSH 时改用集群
+  `forgejo-ssh` Service（runner 注入 `FORGEJO_SSH_HOST`）+ 静态 pin host key + Nix git
+  `insteadOf` 重写，使私有 PR 构建能在集群内拉取 `infra` input。
+- **太初三台移除 Forgejo runner**：删 `services.gitea-actions-runner` 与 runner token，只保留
+  `nixremote` ssh-ng 远程构建身份；drain/resume 与 maintenance marker 删除，store GC 改为按
+  「无进行中 Nix build」（`nix-daemon --stdio` / `nix` / `nix-store` 进程）门控。
+- **验证**：`ci-pr` key 在三台 builder 生效（strict `ssh-ng` ping `Trusted:1`）；私有
+  `check-nix` x86_64 在 `nix-check` 上跑通；私有 release（tag `20260929-2202`）在
+  `nix-collector` 上跑通并推进 prod。
+- **余留**：collector store 种子 DB 注册；registry 自建反代（`TODO.md`「容器镜像推送入口」）。
 
 ## 验收
 

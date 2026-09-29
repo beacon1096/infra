@@ -59,6 +59,15 @@
   - 该入口需同时服务集群内 runner 与集群外的 Taichu builder
     （`build-and-push-nix-collector-oci` 目前仍走公网 endpoint）。
 
+## nix-collector store 种子
+
+- [ ] 让 collector（及 nix-check）的 Nix store 种子导入 Nix DB，或跑
+  `nix-store --verify --repair` 重新注册。
+  - 现状：300 GiB PVC 的种子是文件级拷贝，个别路径未注册（`9jsz…-nix-2.34.8`
+    为 `not valid`），曾把不完整闭包发给 builder，触发远端
+    `nix: error while loading shared libraries: libboost_url.so.1.89.0`。
+  - 目标：种子后 store path 全部 valid，remote build 不会缺依赖。
+
 ## Renovate 评审续期
 
 - [ ] 为 Renovate 评审返回 `human_required` 后添加一等续期路径。

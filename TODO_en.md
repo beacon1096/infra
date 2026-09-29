@@ -72,6 +72,17 @@
   - The endpoint must serve both in-cluster runners and the out-of-cluster
     Taichu builder used by `build-and-push-nix-collector-oci`.
 
+## nix-collector store seed
+
+- [ ] Import the Nix DB for the collector (and nix-check) store seed, or run
+  `nix-store --verify --repair` to re-register.
+  - Today: the 300 GiB PVC seed is a file-level copy, so some paths are not
+    registered (e.g. `9jsz…-nix-2.34.8` is `not valid`); this once sent an
+    incomplete closure to a builder, triggering a remote
+    `nix: error while loading shared libraries: libboost_url.so.1.89.0`.
+  - Goal: every seeded store path is valid so remote builds never miss a
+    dependency.
+
 ## Renovate review continuation
 
 - [ ] Add a first-class continuation path after a Renovate review returns
