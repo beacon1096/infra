@@ -129,6 +129,8 @@
       };
     };
 
+    lib.beacoworksModels = import ./modules/home/beacoworks-models.nix { inherit (nixpkgs) lib; };
+
     homeManagerModules.pi = ./modules/home/pi.nix;
 
     darwinModules.omlx = ./modules/darwin/omlx;
