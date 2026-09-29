@@ -21,7 +21,9 @@ concurrency:
 env:
   ATTIC_ENDPOINT: https://nix.beaco.works
   ATTIC_CACHE: ${{ secrets.ATTIC_CACHE }}
-  ATTIC_TOKEN: ${{ secrets.ATTIC_TOKEN }}
+  # Read-only by default. The write token is injected only into the push
+  # steps below (step-level env) so build/eval steps never hold write.
+  ATTIC_READ_TOKEN: ${{ secrets.ATTIC_READ_TOKEN }}
   REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT || 'https://forgejo.beaco.works' }}
   # Runner GC can delete derivations referenced only by a persistent eval cache.
   NIX_CONFIG: |
@@ -51,7 +53,7 @@ jobs:
           echo "Resolved commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure Attic
-        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_READ_TOKEN"
 
 
       - name: Build common NixOS closure
@@ -116,6 +118,7 @@ jobs:
             fi
           done < attic-seed-paths.txt
           wc -l attic-seed-valid-paths.txt attic-seed-invalid-paths.txt
+          attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "${{ secrets.ATTIC_TOKEN }}"
           xargs -r attic push "$ATTIC_CACHE" < attic-seed-valid-paths.txt || true
 
       - name: Upload Attic seed diagnostics
@@ -146,7 +149,7 @@ jobs:
           fetch-depth: 0
 
       - name: Configure Attic
-        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_READ_TOKEN"
 
       - name: Build common aarch64-darwin closure
         run: |
@@ -156,7 +159,9 @@ jobs:
             2> >(tee nix-build-darwin.log >&2) | tee store-path-darwin.txt
 
       - name: Push common aarch64-darwin closure to Attic
-        run: attic push "$ATTIC_CACHE" ./result-darwin
+        run: |
+          attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "${{ secrets.ATTIC_TOKEN }}"
+          attic push "$ATTIC_CACHE" ./result-darwin
 
       - name: Build common aarch64-linux closure
         run: |
@@ -166,7 +171,9 @@ jobs:
             2> >(tee nix-build-linux.log >&2) | tee store-path-linux.txt
 
       - name: Push common aarch64-linux closure to Attic
-        run: attic push "$ATTIC_CACHE" ./result-linux
+        run: |
+          attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "${{ secrets.ATTIC_TOKEN }}"
+          attic push "$ATTIC_CACHE" ./result-linux
 
   # ── Stage 2: system builds (parallel, cache-warm) ─────────
   build-systems:
@@ -203,7 +210,7 @@ jobs:
           echo "Resolved commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure Attic
-        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_READ_TOKEN"
 
 
       - name: Build ${{ matrix.target }}
@@ -268,6 +275,7 @@ jobs:
             fi
           done < attic-seed-paths.txt
           wc -l attic-seed-valid-paths.txt attic-seed-invalid-paths.txt
+          attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "${{ secrets.ATTIC_TOKEN }}"
           xargs -r attic push "$ATTIC_CACHE" < attic-seed-valid-paths.txt || true
 
       - name: Upload Attic seed diagnostics
@@ -324,7 +332,7 @@ jobs:
           echo "Resolved commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure Attic
-        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_READ_TOKEN"
 
       - name: Build ${{ matrix.target }}
         id: build
@@ -381,6 +389,7 @@ jobs:
             [ -n "$path" ] || continue
             nix path-info "$path" >/dev/null 2>&1 && echo "$path" >> attic-seed-valid-paths.txt
           done < attic-seed-paths.txt
+          attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "${{ secrets.ATTIC_TOKEN }}"
           xargs -r attic push "$ATTIC_CACHE" < attic-seed-valid-paths.txt || true
 
       - name: Surface build failure (after attic seed)
@@ -407,7 +416,7 @@ jobs:
           fetch-depth: 0
 
       - name: Configure Attic
-        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_READ_TOKEN"
 
       - name: Build ${{ matrix.target }}
         run: |
@@ -416,7 +425,9 @@ jobs:
             .#${{ matrix.flake-attr }} 2> >(tee nix-build.log >&2) | tee store-path.txt
 
       - name: Push system closure to Attic
-        run: attic push "$ATTIC_CACHE" ./result
+        run: |
+          attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "${{ secrets.ATTIC_TOKEN }}"
+          attic push "$ATTIC_CACHE" ./result
 
   build-installer-iso:
     needs: warm-cache
@@ -438,7 +449,7 @@ jobs:
           echo "Resolved commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure Attic
-        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_READ_TOKEN"
 
 
       - name: Build installer ISO
@@ -503,6 +514,7 @@ jobs:
             fi
           done < attic-seed-paths.txt
           wc -l attic-seed-valid-paths.txt attic-seed-invalid-paths.txt
+          attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "${{ secrets.ATTIC_TOKEN }}"
           xargs -r attic push "$ATTIC_CACHE" < attic-seed-valid-paths.txt || true
 
       - name: Installer build failure (after attic seed)
@@ -598,7 +610,7 @@ jobs:
           echo "Resolved commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure Attic
-        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_READ_TOKEN"
 
       - name: Build OCI image
         id: build
@@ -662,6 +674,7 @@ jobs:
             fi
           done < attic-seed-paths.txt
           wc -l attic-seed-valid-paths.txt attic-seed-invalid-paths.txt
+          attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "${{ secrets.ATTIC_TOKEN }}"
           xargs -r attic push "$ATTIC_CACHE" < attic-seed-valid-paths.txt || true
 
       - name: Upload Attic seed diagnostics
@@ -754,13 +767,14 @@ jobs:
           fetch-depth: 0
 
       - name: Configure Attic
-        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_READ_TOKEN"
 
       - name: Build patched Multica backend
         run: |
           set -euo pipefail
           nix build --print-out-paths --out-link result-multica \
             .#multica-backend-oci | tee multica-store-path.txt
+          attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "${{ secrets.ATTIC_TOKEN }}"
           attic push "$ATTIC_CACHE" "$(cat multica-store-path.txt)"
 
       - name: Push to Forgejo Registry
@@ -811,13 +825,14 @@ jobs:
           fetch-depth: 0
 
       - name: Configure Attic
-        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_TOKEN"
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_READ_TOKEN"
 
       - name: Build forgejo-runner-nix
         run: |
           set -euo pipefail
           nix build --print-out-paths --out-link result-nix-collector \
             .#forgejo-runner-nix-oci | tee nix-collector-store-path.txt
+          attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "${{ secrets.ATTIC_TOKEN }}"
           attic push "$ATTIC_CACHE" "$(cat nix-collector-store-path.txt)"
 
       - name: Push to Forgejo Registry
