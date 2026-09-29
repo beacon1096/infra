@@ -1,0 +1,92 @@
+name: Prune old Forgejo release assets
+
+# Release installer ISOs (nixos-minimal-*.iso, ~1.4 GiB each) are uploaded
+# to every tag by build-and-push.yaml. Nothing prunes them, so they are the
+# dominant consumer of the forgejo-data PVC. Keep the assets of the newest
+# releases per repository and delete the rest; git tags and release records
+# are left intact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep:
+        description: 'Number of newest releases whose assets to keep'
+        required: false
+        default: '3'
+        type: string
+      dry_run:
+        description: 'Only list what would be deleted'
+        required: false
+        default: 'false'
+        type: string
+  schedule:
+    - cron: '17 4 * * 0'
+
+concurrency:
+  group: prune-forgejo-release-assets
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: nix-builder
+    timeout-minutes: 30
+    steps:
+      - name: Prune release assets
+        env:
+          TOKEN: ${{ secrets.REPO_TOKEN }}
+          KEEP: ${{ inputs.keep || '3' }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          jq_path="$(nix build nixpkgs#jq --print-out-paths --no-link)"
+          export PATH="${jq_path}/bin:${PATH}"
+          api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+
+          page=1
+          : > "$work/releases.jsonl"
+          while :; do
+            count=$(curl -fsSL -H "Authorization: token ${TOKEN}" \
+              "${api}/releases?page=${page}&limit=50" \
+              | tee "$work/page.json" | jq 'length')
+            jq -c '.[]' "$work/page.json" >> "$work/releases.jsonl"
+            if [ "$count" -lt 50 ]; then
+              break
+            fi
+            page=$((page + 1))
+          done
+
+          jq -s 'sort_by(.created_at) | reverse' "$work/releases.jsonl" > "$work/sorted.json"
+          jq -r --argjson keep "${KEEP}" \
+            '.[$keep:][] | .id as $r | .tag_name as $t
+             | (.assets // [])[] | "\($r)\t\($t)\t\(.id)\t\(.name)\t\(.size)"' \
+            "$work/sorted.json" > "$work/targets.tsv"
+
+          kept=$(jq -r --argjson keep "${KEEP}" \
+            '.[:$keep] | map(.tag_name) | join(", ")' "$work/sorted.json")
+          echo "keeping assets of: ${kept:-<none>}"
+
+          if [ ! -s "$work/targets.tsv" ]; then
+            echo "nothing to prune"
+            exit 0
+          fi
+
+          while IFS=$'\t' read -r rid tag aid name size; do
+            printf '%s: %s (%.2f GiB)\n' "$tag" "$name" \
+              "$(awk "BEGIN { printf \"%f\", $size/1073741824 }")"
+            if [ "$DRY_RUN" = "true" ]; then
+              continue
+            fi
+            code=$(curl -sSL -o /dev/null -w '%{http_code}' -X DELETE \
+              -H "Authorization: token ${TOKEN}" \
+              "${api}/releases/${rid}/assets/${aid}")
+            if [ "$code" != "204" ]; then
+              echo "::error::deleting asset ${aid} from release ${tag} failed (HTTP ${code})"
+              exit 1
+            fi
+          done < "$work/targets.tsv"
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "dry run: no assets deleted"
+          fi
