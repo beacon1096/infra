@@ -306,6 +306,22 @@ resource "kubernetes_pod" "workspace" {
         }
       }
 
+      # Token-based Forgejo auth for `tea` (never OAuth, see the startup
+      # script). Optional so an agent secret without the key still schedules.
+      dynamic "env" {
+        for_each = local.agent_secret == "" ? [] : [local.agent_secret]
+        content {
+          name = "FORGEJO_API_TOKEN"
+          value_from {
+            secret_key_ref {
+              name     = env.value
+              key      = "FORGEJO_API_TOKEN"
+              optional = true
+            }
+          }
+        }
+      }
+
       resources {
         requests = {
           cpu    = var.cpu_request

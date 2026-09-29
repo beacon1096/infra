@@ -6,6 +6,7 @@
     ./tools.nix
     ./desktop-tools.nix
     ./git.nix
+    ./forgejo.nix
     ./coding.nix
     ./chrome.nix
     ./firefox.nix

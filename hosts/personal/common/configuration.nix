@@ -1,5 +1,5 @@
 # Personal — shared system configuration for all Beacon's Macs
-{ pkgs, config, ... }:
+{ pkgs, config, lib, ... }:
 
 {
   imports = [
@@ -34,6 +34,16 @@
   sops.secrets."personal/git/email" = {
     sopsFile = ../../../secrets/personal/git.yaml;
   };
+
+  # Shared beacon1096 PAT for `tea` (see modules/home/forgejo.nix). Declared
+  # only when the encrypted file is present so the tree evaluates before the
+  # secret is added; the operator creates secrets/personal/forgejo.yaml.
+  sops.secrets."personal/forgejo/token" =
+    lib.mkIf (builtins.pathExists ../../../secrets/personal/forgejo.yaml) {
+      sopsFile = ../../../secrets/personal/forgejo.yaml;
+      owner = "beacon";
+      mode = "0400";
+    };
 
   sops.templates."git-personal.inc" = {
     owner = "beacon";

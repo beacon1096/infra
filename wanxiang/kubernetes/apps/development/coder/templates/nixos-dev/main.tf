@@ -81,6 +81,10 @@ locals {
   owner_slug      = lower(replace(data.coder_workspace_owner.me.name, "/[^a-zA-Z0-9-]/", "-"))
   app             = "coder-${local.owner_slug}-${local.workspace_slug}"
   infra_workspace = var.infra_workspace_id != "" && data.coder_workspace.me.id == var.infra_workspace_id
+  # `infra-maintainer` is a human space sharing the beacon1096 identity. It gets
+  # a dedicated secret (with a Forgejo PAT) so other nixos-dev workspaces do not
+  # inherit the human token. See docs/agentic/workflow/infra-ops/forgejo-service-accounts.md.
+  agent_secret = (data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "infra-maintainer") ? "coder-workspace-infra-maintainer" : var.agent_secret_name
   # The image's Home Manager profile bin — where code-server and the rest of
   # the toolchain live. The entrypoint already puts this on PATH, but the
   # startup script prepends it defensively in case the agent resets PATH.
@@ -120,6 +124,16 @@ resource "coder_agent" "main" {
     install_secret GH_HOSTS_YML /home/coder/.config/gh/hosts.yml
     install_secret FORGEJO_GIT_CREDENTIALS /home/coder/.config/git/credentials
     git config --global credential.https://forgejo.beaco.works.helper 'store --file /home/coder/.config/git/credentials'
+
+    # Token-based Forgejo auth for `tea` (never OAuth: a shared built-in client
+    # id cannot survive Forgejo's refresh-token replay protection across hosts).
+    if [ -s /run/coder-agent-secrets/FORGEJO_API_TOKEN ] && command -v tea >/dev/null 2>&1; then
+      tea login delete forgejo >/dev/null 2>&1 || true
+      if ! GITEA_SERVER_TOKEN="$(cat /run/coder-agent-secrets/FORGEJO_API_TOKEN)" \
+        tea login add --name forgejo --url https://forgejo.beaco.works --no-version-check; then
+        echo "tea Forgejo login failed" >&2
+      fi
+    fi
 
     if [ -f /run/coder-git-ssh/id_ed25519 ]; then
       install -d -m 0700 /home/coder/.ssh/runtime
@@ -188,7 +202,7 @@ resource "kubernetes_persistent_volume_claim" "home" {
   lifecycle {
     precondition {
       condition = (
-        var.agent_secret_name == "" ||
+        local.agent_secret == "" ||
         timecmp(timestamp(), var.tailscale_auth_key_expires_at) < 0
       )
       error_message = "The Tailscale auth key has expired; rotate the Kubernetes Secret and update tailscale_auth_key_expires_at."
@@ -257,7 +271,7 @@ resource "kubernetes_pod" "workspace" {
       }
 
       dynamic "env" {
-        for_each = var.agent_secret_name == "" ? [] : [var.agent_secret_name]
+        for_each = local.agent_secret == "" ? [] : [local.agent_secret]
         content {
           name = "TS_AUTHKEY"
           value_from {
@@ -280,7 +294,7 @@ resource "kubernetes_pod" "workspace" {
       }
 
       dynamic "env" {
-        for_each = var.agent_secret_name == "" ? [] : [
+        for_each = local.agent_secret == "" ? [] : [
           "BEACOWORKS_MODELS_API_KEY",
           "TAVILY_API_KEY",
         ]
@@ -288,8 +302,24 @@ resource "kubernetes_pod" "workspace" {
           name = env.value
           value_from {
             secret_key_ref {
-              name = var.agent_secret_name
+              name = local.agent_secret
               key  = env.value
+            }
+          }
+        }
+      }
+
+      # Token-based Forgejo auth for `tea`; optional so secrets without the key
+      # still schedule. Pairs with the startup-script login below.
+      dynamic "env" {
+        for_each = local.agent_secret == "" ? [] : [local.agent_secret]
+        content {
+          name = "FORGEJO_API_TOKEN"
+          value_from {
+            secret_key_ref {
+              name     = env.value
+              key      = "FORGEJO_API_TOKEN"
+              optional = true
             }
           }
         }
@@ -325,7 +355,7 @@ resource "kubernetes_pod" "workspace" {
       }
 
       dynamic "volume_mount" {
-        for_each = var.agent_secret_name == "" ? [] : [var.agent_secret_name]
+        for_each = local.agent_secret == "" ? [] : [local.agent_secret]
         content {
           name       = "agent-secrets"
           mount_path = "/run/coder-agent-secrets"
@@ -366,7 +396,7 @@ resource "kubernetes_pod" "workspace" {
     }
 
     dynamic "volume" {
-      for_each = var.agent_secret_name == "" ? [] : [var.agent_secret_name]
+      for_each = local.agent_secret == "" ? [] : [local.agent_secret]
       content {
         name = "agent-secrets"
         secret {

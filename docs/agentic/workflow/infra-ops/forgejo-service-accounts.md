@@ -40,7 +40,7 @@ GPG 指纹为 `B2FAAFEAC5E4727FB4AF35784932794C9ED791BE`，SSH 推送密钥指�
 
 Nix 打包维护者的 Forgejo 账号为 `multica-nix-packager`，GPG 指纹为 `8F57D2F99F73669B937CC52E93BF0D5DA19E76C2`，SSH 推送密钥指纹为 `SHA256:hhj50kXhTq/2Q03jqu4wjHe+OqKRN4+F8/s03sYTrPY`。其独立工作区只挂载专用 Agent 和 Git SSH Secret，不挂载 kubeconfig、Talos 配置或 SOPS age 密钥。该账号的 Forgejo PAT 仅有 `write:repository` scope；上游仓库权限为可读，自有 fork 可写。
 
-Coder `coding-agent` 模板只为 `gitops-agent`、`nix-packager-agent` 和仍供其他 Agent 使用的旧 `nixos-agent-coder` 工作区映射凭据；其他新工作区默认不挂载 Agent、Git SSH 或基础设施 Secret。
+Coder `coding-agent` 模板为 `gitops-agent`、`nix-packager-agent`、人类空间 `infra-maintainer` 和仍供其他 Agent 使用的旧 `nixos-agent-coder` 工作区映射凭据；其他新工作区默认不挂载 Agent、Git SSH 或基础设施 Secret。
 
 每个 Agent 配置至少应隔离：
 
@@ -55,3 +55,17 @@ Coder `coding-agent` 模板只为 `gitops-agent`、`nix-packager-agent` 和仍�
 `CODEOWNERS` 用于请求路径所有者审查。普通编码 Agent 只获得自己 fork 的写权限；`policy/merge-gate` 在接受人工精确 SHA 审核后核对 PR 作者、来源 fork 和相对 merge base 的完整文件变更。`multica-nix-packager` 只可从 `multica-nix-packager/infra` 提交、且只修改公开仓 `packages/` 的 PR；其他普通作者默认拒绝。`beacon1096` 和 GitOps 主 Agent `multica-gitops` 可跨 Agent 范围修改。该规则只限制进入基础设施仓库 `main` 的 PR，不限制 Agent 在自己 fork 上推送。此前仅适用于 Clerk 的规则已移除。
 
 在独立身份建立前，经明确授权的 Agent 可以使用 `beacon1096` 身份。Forgejo 和合并门禁必然将其视为与人类操作员相同的主体。由这一共享身份创建的 PR 无法在 Forgejo 中自我审查；操作员改为在 PR 下发布精确的 `/approve <full-head-SHA>` 评论，由 n8n 通过 API 重新读取。这样可以绑定具体修订并留下可审计的第二次操作，但**不是独立审查**，不能称作独立审查。
+
+## tea CLI 与 PAT 分派
+
+`tea` 统一使用 Personal Access Token（`tea login add --token`），**不使用 OAuth**。原因是 Forgejo 对每个 `(user, application)` 只保留一个 OAuth grant，且默认 `[oauth2] INVALIDATE_REFRESH_TOKENS = true` 会轮换 refresh token：多台机器/容器用同一个内置 `tea` client id 登录时共用同一个 grant，互相把对方的 refresh token 顶掉（API 报 `token was already used`），最终只有一个能续期。
+
+PAT 按使用者身份分派，不按设备或容器：
+
+- `multica-gitops`、`multica-nix-packager`：各自的专用账号 PAT，分别注入对应的 `gitops-agent`、`nix-packager-agent` 工作区（私有仓 SOPS Secret 的 `FORGEJO_API_TOKEN`）。
+- `beacon1096`（人类）：一个共享 PAT（最小 scope `write:repository`、`write:issue`、`read:user`），注入人类空间 `infra-maintainer` 与所有个人设备。工作区侧使用**专属** Secret `coder-workspace-infra-maintainer`（私有仓，与旧 `nixos-agent-coder` 使用的 `coder-workspace-agent` 隔离）的 `FORGEJO_API_TOKEN`，并以环境变量形式注入容器；个人设备侧经 `secrets/personal/forgejo.yaml`（`personal/forgejo/token`），由 `modules/home/forgejo.nix` 在 activation 时执行 `tea login add --token`。
+- 没有专用 Agent 账号的 coder 工作区：不申请 PAT。
+
+### 缺口
+
+名为 `coding-agent` 的 coder 工作区目前没有专用 Agent 身份，也没有 PAT 接线；本轮刻意不处理。启用前需要先确定其身份归属，再按上面的分派补上。
