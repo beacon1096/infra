@@ -228,6 +228,27 @@ kubelet/etcd/Cilium 及其它 workload 仍正常。** 三台 ms01 均控制面�
 - 可选：`attic watch-store` 先在 release collector 试（Phase 1.1），
   **绝不与 PR working store 混用**，否则 PR 产物会被自动写入可信 Attic。
 
+### Phase 1b 依赖与前置（2026-09-29 核对）
+
+- **maintenance timer 与 runner 绑定**：`hosts/server/nixbuilder/common.nix` 的
+  `nixbuilder-runner-drain` → `-store-maintenance`（仅当 runner `inactive` 时才 GC）→
+  `-runner-resume` 三条 timer 以「停掉 Forgejo runner」为门控。1b 摘除 runner 后它们
+  会失去对象，必须把 GC 门控改成「无进行中的 remote build」或类似活动判定，否则会
+  边构建边 GC。
+- **comin 现状（已恢复）**：三台 builder 的 `comin` 当前 active，
+  `/var/lib/nixbuilder-comin-enabled` 与 `-runner-enabled` marker 均在，私有 guest
+  配置可经 GitOps 收敛。1b 若改 `nixremote.authorizedKeys`/host key，需与
+  infra-private 轮换后的新身份（age、host-key escrow）对齐并走 comin 收敛。
+- **builder → Forgejo 依赖 gen10plus 中转**：`common.nix` 把 `forgejo.beaco.works`
+  硬编码到 `172.16.20.11`（gen10plus）。1b 处理 **FOD egress 边界**时必须记录该依赖，
+  不能当作 builder 直连 Forgejo。
+- **talos-ii runner 注销（遗留）**：删 app/namespace 不会自动注销 runner；强删
+  namespace 后大概率残留一条 offline runner，需经 Forgejo UI（org → Actions →
+  Runners）或 admin API 删除。普通 repo token 无此权限。
+- **验收基线可复用**：legacy 运行时证据（drain → GC `-49.1 GiB` → resume、Attic
+  substitution 命中、store 非单调增长、collector 12 GiB 生效）可作为 1b 的对照基线，
+  避免重复压测。
+
 ## Builder 身份与 Interactive builder
 
 ### 两类 builder，身份与池都不共用
