@@ -55,6 +55,27 @@ spec:
         actions:
           ENABLED: true
           ENDLESS_TASK_TIMEOUT: 12h
+          # CI artifacts (nix logs, attic-seed diagnostics) and logs are
+          # written on every workflow run. Expire them aggressively so
+          # forgejo-data does not fill up; the nightly cron below does the
+          # actual deletion.
+          ARTIFACT_RETENTION_DAYS: 14
+          LOG_RETENTION_DAYS: 30
+        # Cleanup tasks are enabled by default, but set explicitly so the
+        # retention above is actually enforced.
+        cron.cleanup_actions:
+          ENABLED: true
+          RUN_AT_START: true
+          SCHEDULE: "@midnight"
+        cron.cleanup_packages:
+          ENABLED: true
+          RUN_AT_START: true
+          SCHEDULE: "@midnight"
+          OLDER_THAN: 24h
+        # Note: per-package version retention is a separate "cleanup rule"
+        # managed from Admin settings -> Packages (there is no app.ini/repo
+        # option for it). The rule keeps the newest versions per package and
+        # is enforced by cron.cleanup_packages above.
         proxy:
           PROXY_ENABLED: false
         database:

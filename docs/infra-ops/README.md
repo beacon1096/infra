@@ -13,3 +13,4 @@
 ## 目录
 
 - [Forgejo Runner nix-builder 维护窗口](./runner-maintenance.md)
+- [Forgejo 产物生命周期](./forgejo-artifact-lifecycle.md)
