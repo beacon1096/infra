@@ -576,6 +576,12 @@ jobs:
     needs: warm-cache
     runs-on: nix-collector
     timeout-minutes: 720
+    # Push the large image over the in-cluster registry Service: the public
+    # forgejo.beaco.works host fronts Cloudflare, whose gateway 502s on
+    # chunked uploads of large layers. The runner can't use svc.cluster.local,
+    # so it keeps the public endpoint (see build-and-push-nix-collector-oci).
+    env:
+      REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT_INTERNAL || 'http://forgejo-http.development.svc.cluster.local:3000' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -698,17 +704,18 @@ jobs:
           registry_host="${REGISTRY_ENDPOINT#http://}"
           registry_host="${registry_host#https://}"
           skopeo_args=(--retry-times 5 --retry-delay 10s)
+          login_args=(--username "$REGISTRY_USER" --password-stdin)
+          # The in-cluster Service serves plain HTTP; skopeo defaults to HTTPS.
+          if [[ "$registry_host" == *"svc.cluster.local"* ]]; then
+            skopeo_args+=(--dest-tls-verify=false)
+            login_args+=(--tls-verify=false)
+          fi
           auth_file="$PWD/.skopeo-auth.json"
           trap 'rm -f "$auth_file"' EXIT
           mkdir -p "$PWD/.skopeo-tmp"
 
           printf '%s' "$REGISTRY_TOKEN" | nix shell nixpkgs#skopeo -c \
-            skopeo login --authfile "$auth_file" --username "$REGISTRY_USER" \
-            --password-stdin "$registry_host"
-
-          if [[ "$registry_host" == *"svc.cluster.local"* ]]; then
-            skopeo_args+=(--dest-tls-verify=false)
-          fi
+            skopeo login --authfile "$auth_file" "${login_args[@]}" "$registry_host"
 
           nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
             "${skopeo_args[@]}" \
@@ -735,6 +742,10 @@ jobs:
     needs: warm-cache
     runs-on: nix-collector
     timeout-minutes: 120
+    # See build-and-push-coding-agent-oci: use the in-cluster registry Service
+    # so the push bypasses Cloudflare.
+    env:
+      REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT_INTERNAL || 'http://forgejo-http.development.svc.cluster.local:3000' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -764,14 +775,19 @@ jobs:
           registry_host="${registry_host#https://}"
           test -n "$REGISTRY_USER"
           test -n "$REGISTRY_TOKEN"
+          skopeo_args=(--retry-times 5 --retry-delay 10s)
+          login_args=(--username "$REGISTRY_USER" --password-stdin)
+          if [[ "$registry_host" == *"svc.cluster.local"* ]]; then
+            skopeo_args+=(--dest-tls-verify=false)
+            login_args+=(--tls-verify=false)
+          fi
           auth_file="$PWD/.skopeo-auth.json"
           trap 'rm -f "$auth_file"' EXIT
           mkdir -p "$PWD/.skopeo-tmp"
           printf '%s' "$REGISTRY_TOKEN" | nix shell nixpkgs#skopeo -c \
-            skopeo login --authfile "$auth_file" --username "$REGISTRY_USER" \
-            --password-stdin "$registry_host"
+            skopeo login --authfile "$auth_file" "${login_args[@]}" "$registry_host"
           nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
-            --retry-times 5 --retry-delay 10s \
+            "${skopeo_args[@]}" \
             --dest-authfile "$auth_file" \
             docker-archive:result-multica \
             "docker://$registry_host/$IMAGE_PATH:$IMAGE_TAG"
