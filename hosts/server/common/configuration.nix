@@ -7,6 +7,7 @@
 
 {
   imports = [
+    ../../../modules/nixos/gitops-root-access.nix
     ../../../modules/common/nix.nix
     ../../../modules/common/remote-builder.nix
     ../../../modules/common/packages.nix

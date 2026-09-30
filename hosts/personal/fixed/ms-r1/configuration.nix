@@ -6,6 +6,7 @@
 
 {
   imports = [
+    ../../../../modules/nixos/gitops-root-access.nix
     ./hardware-configuration.nix
     ./disko.nix
     ../../../../modules/common/nix.nix

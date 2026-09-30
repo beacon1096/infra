@@ -8,6 +8,7 @@ let
 in
 {
   imports = [
+    ../../../../modules/nixos/gitops-root-access.nix
     ./fan-control.nix
     ./hardware-configuration.nix
     ./inference.nix
