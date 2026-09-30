@@ -10,6 +10,22 @@
   ];
 
   networking.hostName = "beacon-mac-mini-m4";
+  # GitOps + 运维 runtime root SSH access (BEACO-2).
+  # macOS has no NixOS-style users.users.root.openssh option, so the key is
+  # written by an activation script. The file is rewritten on each activation,
+  # so rotation/removal stay declarative. Root key login must be verified on
+  # the Mac (the root account may also need `dsenableroot`).
+  services.openssh.extraConfig = ''
+    PermitRootLogin prohibit-password
+  '';
+
+  system.activationScripts.gitopsRootAuthorizedKeys.text = ''
+    install -d -m 700 /var/root/.ssh
+    printf '%s\n' \
+      'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBwxZlOGdS5wy5dWPvAaI7d0dXt9+aGz+p8XTzZG+y6Q multica-gitops-push' \
+      > /var/root/.ssh/authorized_keys
+    chmod 600 /var/root/.ssh/authorized_keys
+  '';
   networking.computerName = "beacon-mac-mini-m4";
   networking.localHostName = "beacon-mac-mini-m4";
   system.activationScripts.postActivation.text = ''
