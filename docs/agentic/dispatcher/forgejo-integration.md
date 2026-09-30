@@ -11,11 +11,12 @@
 - 工作区已有一条 connection：`aa9af3ad-9b11-449e-8a91-c1e15af45c97`，provider `forgejo`，`instance_url=https://forgejo.beaco.works`，`account_login=multica`，workspace `143a067c-ff0d-420a-8c6a-497c4786c747`。
 - webhook 路径为 `/api/webhooks/vcs/<connectionId>`；两个仓库的 hook 均已存在：`infra-private`（id 3，原有）与 `infra`（id 6，本次补上），共用同一 connection 的一次性 secret（已轮换并同步）。
 - 镜像表 `vcs_pull_request` 中的 75 行全部来自 `infra-private`，印证 `infra` 侧此前从未投递。
+- 已升级到 chart `0.6.0`、后端镜像 `0.6.0-beacon.1`，库迁移到 `563`；临时的 `reference_only` 列已 DROP。
 
 ### 本次修复的两个问题
 
 1. **`infrastructure/infra` 没有 Multica webhook**：只有 n8n 的 automaton hook，导致 `infra` 的 PR 从未被镜像。已在 `infra` 上创建同一 connection 的 Gitea 类型 hook。
-2. **数据库 schema 领先于运行镜像（版本偏斜）**：Multica 的 `schema_migrations` 已应用到 `490_drop_triage_status_key_reservation`（含 `468_drop_reference_only_column`，于 2026-09-16 应用），即 `reference_only` 列是被后续迁移**主动删除**的；而运行中的后端镜像 `0.4.24-beacon.1` 的代码仍在查询该列，于是 `GET /api/issues/{id}/pull-requests` 返回 500——这才是「无法加载对应 Forgejo PR」的直接原因。临时把该列加回（`ADD COLUMN IF NOT EXISTS ... DEFAULT FALSE`）让旧镜像恢复 200；**真正的修复是把后端镜像升级到与库结构匹配的版本**（见下方升级计划，`468` 之后代码不再使用该列）。
+2. **数据库 schema 领先于运行镜像（版本偏斜）**：Multica 的 `schema_migrations` 已应用到 `490_drop_triage_status_key_reservation`（含 `468_drop_reference_only_column`，于 2026-09-16 应用），即 `reference_only` 列是被后续迁移**主动删除**的；而运行中的后端镜像 `0.4.24-beacon.1` 的代码仍在查询该列，于是 `GET /api/issues/{id}/pull-requests` 返回 500——这才是「无法加载对应 Forgejo PR」的直接原因。临时把该列加回（`ADD COLUMN IF NOT EXISTS ... DEFAULT FALSE`）让旧镜像恢复 200；真正的修复是把后端镜像升级到与库结构匹配的版本——已于 2026-09-30 升级到 `0.6.0-beacon.1` 并 DROP 该列（见下）。
 
 ### 链接规则
 
@@ -54,30 +55,19 @@ Paseo `v0.9.2` 原生列出 `forgejo`、`gitea` 与 `codeberg`（`packages/proto
 
 上游在 `gitea-service.ts` 自注 Forgejo 软件探测「未在真实自建实例验证」。补齐方案与验证项待 [Paseo TODO](paseo/TODO.md) 展开；本文暂不实施。
 
-## Multica 升级计划
+## Multica 升级（已完成）
 
-目标版本：**v0.6.0**（2026-09-28，最新；服务端迁移到 `563`）。库已到 `490`，升级会应用 `491..563`；这也顺带消除版本偏斜——后端代码与库结构对齐后不再使用 `reference_only`，升级后可 `DROP COLUMN` 恢复与上游一致。
+**已完成（2026-09-30）**：chart `0.6.0`、后端镜像 `0.6.0-beacon.1`（下游镜像，带 webhook 去重补丁）、库迁移到 `563`；`reference_only` 临时列已 DROP。实际步骤：
 
-影响面：
+1. `packages/multica-backend` 升到 `v0.6.0`（版本 `0.6.0-beacon.1`）。v0.6.0 的 `go.mod` 要求 `go >= 1.26.6`，而本 flake 的 nixos-26.05 只有 1.26.5，故在 `flake.nix` 用 nixpkgs-unstable 的 go 1.26.7 构建该包。
+2. 下游补丁 `multica-webhook-issue-dedup.patch` 对 v0.6.0 **干净套用**，无需重切。
+3. chart `charts/multica:0.6.0` 从 `ghcr.io/multica-ai/charts` 拉到 in-cluster zot：`helm pull` + `helm push … oci://172.16.87.51:5000/charts --plain-http`（用 SOPS 里的 `zot-secret` admin 凭据）。
+4. 后端镜像由 CI `build-and-push` 发布到 `forgejo.beaco.works/infrastructure/nix-fleet/multica-backend:0.6.0-beacon.1`。发布前该流水线被 home-manager 的 tea 版本冲突卡在 `warm-cache`（`modules/home/forgejo.nix` 的 `pkgs.tea` 0.14.0 与 `coding-agent.nix` 的 unstable 0.15.1 进同一 `buildEnv`），已在 `forgejo.nix` 统一用 unstable tea 修复。
+5. 合并 chart/镜像 tag 变更后 Flux 协调、迁移应用 `491..563`；随后 `DROP COLUMN reference_only`（`issue_pull_request` 与 `issue_vcs_pull_request`）。验证 `GET /api/issues/{id}/pull-requests` 返回 200。
 
-- `packages/multica-backend/default.nix`：`version`（如 `0.6.0-beacon.1`）、`rev = v0.6.0`、`fetchFromGitHub.hash`、`vendorHash`；下游补丁 `multica-webhook-issue-dedup.patch` 需重切。
-- `wanxiang/kubernetes/apps/development/multica/app/ocirepository.yaml`：chart `tag: 0.6.0`。
-- 同目录 `helmrelease.yaml`：后端镜像 tag `0.6.0-beacon.1`（前端与 chart appVersion 跟随，无需改）。
-- `hosts/agents/coding/home.nix`：`multica` CLI 升到 `0.6.0` 并更新 hash（release 资产 `multica-cli-0.6.0-linux-amd64.tar.gz` 存在）。
+**仍然保留**：`multica-webhook-issue-dedup.patch` —— v0.6.0 的 `dispatchCreateIssue` 仍无条件调用 `LockAndFindRecentAutopilotDuplicate`（标题级去重），而 `AdmitAutopilotWebhookDelivery`/`webhook_delivery_id` 已存在；上游未修，故继续由下游镜像携带，并待提交上游（见 [`TODO.md`](../../../../TODO.md) §Multica 上游）。
 
-已核实的上游差异：
-
-- 迁移：v0.6.0 含 `442`/`462`/`468`，最大 `563`。库已过 `468`，升级不会重跑它；临时补的列不会被自动删除，需升级后手动 drop。
-- 去重补丁：v0.6.0 的 `dispatchCreateIssue` **仍**无条件调用 `LockAndFindRecentAutopilotDuplicate`（标题级 recent-duplicate guard），而 `AdmitAutopilotWebhookDelivery`/`webhook_delivery_id` 已存在。因此下游补丁仍需保留，但 v0.6.0 的 `dispatchCreateIssue` 已带 `run` 形参，需按其新上下文重切。
-- Chart：v0.6.0 的 values 键与我们使用的集合一致，且仍**不**暴露 `MULTICA_PUBLIC_URL`（`webhook_url` 回退到 UI origin，行为不变）。
-
-切换顺序与风险：
-
-1. 更新 `packages/multica-backend` 并构建/推送镜像，确认注册表可匿名拉取；
-2. 更新 chart tag 与镜像 tag，让 Flux 协调；
-3. 观察 `migrate up`（`491..563`）完成、Pod 健康；
-4. 升级后 `DROP COLUMN reference_only`（旧代码已不在），再验证 `pull-requests` 与链接；
-5. 风险：从 `0.4.24` 跨约 40 个版本，需核对 chart values、VCS/daemon 协议与凭据加密 key 不变；`0.4.24-beacon.1` 上的 webhook 去重补丁行为必须在新版本重验（`utils/test-*` 与线上冒烟）。
+**待办**：coding-agent 的 `multica` CLI 升到 `0.6.0`（`hosts/agents/coding/home.nix` 已改）；合并后 CI 重建 `coding-agent:latest`，再用新 digest 更新 `wanxiang/kubernetes/apps/development/coder/templates/coding-agent/main.tf` 的镜像 pin。
 
 ## Terraform 评估结论：不采用
 
@@ -86,5 +76,4 @@ Paseo `v0.9.2` 原生列出 `forgejo`、`gitea` 与 `codeberg`（`packages/proto
 ## 待核实
 
 - Multica 是否有受支持的 commit-status webhook 事件可订阅。
-- 升级目标版本与 chart values 差异。
 - `tea` 版本对 `tea api -i /api/forgejo/v1/version` 的支持（影响 Paseo 的 Forgejo 探测）。

@@ -4,10 +4,10 @@
 let
   multica = pkgs.stdenvNoCC.mkDerivation {
     pname = "multica";
-    version = "0.4.24";
+    version = "0.6.0";
     src = pkgs.fetchurl {
-      url = "https://github.com/multica-ai/multica/releases/download/v0.4.24/multica-cli-0.4.24-linux-amd64.tar.gz";
-      hash = "sha256-c23SIrtDBbod0PVIPI1SzSgbrPVc/wQoW53aWpbioUA=";
+      url = "https://github.com/multica-ai/multica/releases/download/v0.6.0/multica-cli-0.6.0-linux-amd64.tar.gz";
+      hash = "sha256-eITj5sZ4rEhcryC85MyYNT6SxvWG7I3z3z/ry3yOnls=";
     };
     dontUnpack = true;
     installPhase = ''
