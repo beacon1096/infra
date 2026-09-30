@@ -40,7 +40,9 @@ GPG 指纹为 `B2FAAFEAC5E4727FB4AF35784932794C9ED791BE`，SSH 推送密钥指�
 
 Nix 打包维护者的 Forgejo 账号为 `multica-nix-packager`，GPG 指纹为 `8F57D2F99F73669B937CC52E93BF0D5DA19E76C2`，SSH 推送密钥指纹为 `SHA256:hhj50kXhTq/2Q03jqu4wjHe+OqKRN4+F8/s03sYTrPY`。其独立工作区只挂载专用 Agent 和 Git SSH Secret，不挂载 kubeconfig、Talos 配置或 SOPS age 密钥。该账号的 Forgejo PAT 仅有 `write:repository` scope；上游仓库权限为可读，自有 fork 可写。
 
-Coder `coding-agent` 模板为 `gitops-agent`、`nix-packager-agent`、人类空间 `infra-maintainer` 和仍供其他 Agent 使用的旧 `nixos-agent-coder` 工作区映射凭据；其他新工作区默认不挂载 Agent、Git SSH 或基础设施 Secret。
+Homelab 巡检（只读巡检 Autopilot）已从共享的 `nixos-agent-coder` 工作区迁往专用 `homelab-inspection-agent` 工作区，不再与外部模型顾问 Agent 共用同一容器及其 `coding-agent` 共享 SSH key。它不写仓库，因此没有 Forgejo 账号、PAT 或提交签名密钥；独立身份体现为每工作区独立的运行时 SSH key，公钥指纹为 `SHA256:yd4OW495urjUBQYF86aOEuI8qRqQwh3iAvmWI2fhAEY`（注释 `multica-homelab-inspection`）。为采集集群只读证据，它与 GitOps 工作区一样挂载 `coder-workspace-infra`（kubeconfig、talosconfig、SOPS age）。
+
+Coder `coding-agent` 模板为 `gitops-agent`、`nix-packager-agent`、`homelab-inspection-agent`、人类空间 `infra-maintainer` 和仍供其他 Agent 使用的旧 `nixos-agent-coder` 工作区映射凭据；其他新工作区默认不挂载 Agent、Git SSH 或基础设施 Secret。
 
 每个 Agent 配置至少应隔离：
 
@@ -68,4 +70,4 @@ PAT 按使用者身份分派，不按设备或容器：
 
 ### 缺口
 
-名为 `coding-agent` 的 coder 工作区目前没有专用 Agent 身份，也没有 PAT 接线；本轮刻意不处理。启用前需要先确定其身份归属，再按上面的分派补上。
+旧的 `nixos-agent-coder` 工作区在 Homelab 巡检迁出后，仍服务外部模型顾问 Agent（`专家: GPT 5.6 Sol xhigh`、`专家: Deepseek V4.1 Flash High`、`Pi Thor`）与 `Mika`。这些身份没有专用 Agent 账号与 PAT 接线；本轮刻意不处理。启用前需要先确定其身份归属，再按上面的分派补上。

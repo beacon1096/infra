@@ -64,20 +64,21 @@ data "coder_workspace" "me" {}
 data "coder_workspace_owner" "me" {}
 
 locals {
-  workspace_slug         = lower(replace(data.coder_workspace.me.name, "/[^a-zA-Z0-9-]/", "-"))
-  owner_slug             = lower(replace(data.coder_workspace_owner.me.name, "/[^a-zA-Z0-9-]/", "-"))
-  app                    = "coder-${local.owner_slug}-${local.workspace_slug}"
-  copilot_workspace      = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "infra-maintainer"
-  gitops_workspace       = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "gitops-agent"
-  nix_packager_workspace = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "nix-packager-agent"
-  legacy_workspace       = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "nixos-agent-coder"
-  agent_secret           = local.gitops_workspace ? "coder-workspace-gitops-agent" : local.nix_packager_workspace ? "coder-workspace-nix-packager-agent" : local.legacy_workspace ? var.agent_secret_name : ""
-  git_ssh_secret         = local.gitops_workspace ? "coder-workspace-gitops-git-ssh" : local.nix_packager_workspace ? "coder-workspace-nix-packager-git-ssh" : local.legacy_workspace ? var.git_ssh_secret_name : ""
-  infra_secret           = local.gitops_workspace || local.legacy_workspace ? var.infra_secret_name : ""
-  git_identity_workspace = local.copilot_workspace || local.gitops_workspace || local.nix_packager_workspace
-  git_user_name          = local.copilot_workspace ? "beacon1096" : local.nix_packager_workspace ? "Nix 打包维护者 @ Beacoworks" : "GitOps + 运维 @ Beacoworks"
-  git_user_email         = local.copilot_workspace ? "beacon1096@beacoworks.xyz" : local.nix_packager_workspace ? "multica-nix-packager.no-reply@beacoworks.xyz" : "multica-gitops.no-reply@beacoworks.xyz"
-  git_signing_key        = local.copilot_workspace ? "/home/coder/.ssh/beacon1096-copilot/id_ed25519" : local.nix_packager_workspace ? "8F57D2F99F73669B937CC52E93BF0D5DA19E76C2" : "B2FAAFEAC5E4727FB4AF35784932794C9ED791BE"
+  workspace_slug               = lower(replace(data.coder_workspace.me.name, "/[^a-zA-Z0-9-]/", "-"))
+  owner_slug                   = lower(replace(data.coder_workspace_owner.me.name, "/[^a-zA-Z0-9-]/", "-"))
+  app                          = "coder-${local.owner_slug}-${local.workspace_slug}"
+  copilot_workspace            = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "infra-maintainer"
+  gitops_workspace             = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "gitops-agent"
+  nix_packager_workspace       = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "nix-packager-agent"
+  homelab_inspection_workspace = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "homelab-inspection-agent"
+  legacy_workspace             = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "nixos-agent-coder"
+  agent_secret                 = local.gitops_workspace ? "coder-workspace-gitops-agent" : local.nix_packager_workspace ? "coder-workspace-nix-packager-agent" : local.homelab_inspection_workspace ? "coder-workspace-homelab-inspection-agent" : local.legacy_workspace ? var.agent_secret_name : ""
+  git_ssh_secret               = local.gitops_workspace ? "coder-workspace-gitops-git-ssh" : local.nix_packager_workspace ? "coder-workspace-nix-packager-git-ssh" : local.homelab_inspection_workspace ? "coder-workspace-homelab-inspection-git-ssh" : local.legacy_workspace ? var.git_ssh_secret_name : ""
+  infra_secret                 = local.gitops_workspace || local.legacy_workspace || local.homelab_inspection_workspace ? var.infra_secret_name : ""
+  git_identity_workspace       = local.copilot_workspace || local.gitops_workspace || local.nix_packager_workspace
+  git_user_name                = local.copilot_workspace ? "beacon1096" : local.nix_packager_workspace ? "Nix 打包维护者 @ Beacoworks" : "GitOps + 运维 @ Beacoworks"
+  git_user_email               = local.copilot_workspace ? "beacon1096@beacoworks.xyz" : local.nix_packager_workspace ? "multica-nix-packager.no-reply@beacoworks.xyz" : "multica-gitops.no-reply@beacoworks.xyz"
+  git_signing_key              = local.copilot_workspace ? "/home/coder/.ssh/beacon1096-copilot/id_ed25519" : local.nix_packager_workspace ? "8F57D2F99F73669B937CC52E93BF0D5DA19E76C2" : "B2FAAFEAC5E4727FB4AF35784932794C9ED791BE"
 }
 
 resource "coder_agent" "main" {
