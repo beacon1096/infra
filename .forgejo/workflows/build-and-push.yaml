@@ -780,7 +780,7 @@ jobs:
       - name: Push to Forgejo Registry
         env:
           IMAGE_PATH: infrastructure/nix-fleet/multica-backend
-          IMAGE_TAG: 0.4.24-beacon.1
+          IMAGE_TAG: 0.6.0-beacon.1
           REGISTRY_USER: ${{ secrets.REPO_TOKEN_OWNER }}
           REGISTRY_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -810,7 +810,7 @@ jobs:
         run: |
           echo "### multica-backend-oci" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Image: \`forgejo.beaco.works/infrastructure/nix-fleet/multica-backend:0.4.24-beacon.1\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image: \`forgejo.beaco.works/infrastructure/nix-fleet/multica-backend:0.6.0-beacon.1\`" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Collector runner image (Forgejo runner + Nix, host mode) ──
   build-and-push-nix-collector-oci:

@@ -336,7 +336,13 @@
 
       gh-proxy = pkgs.callPackage ./packages/gh-proxy { };
 
-      multica-backend-oci = pkgs.callPackage ./packages/multica-backend { };
+      # v0.6.0's go.mod requires go >= 1.26.6, but this flake's nixos-26.05
+      # pin provides go 1.26.5. Build with the unstable toolchain instead.
+      multica-backend-oci = pkgs.callPackage ./packages/multica-backend {
+        buildGoModule = pkgs.buildGoModule.override {
+          go = inputs.nixpkgs-unstable.legacyPackages.x86_64-linux.go;
+        };
+      };
 
       # Forgejo runner + Nix image for the Wanxiang nix-collector (see
       # docs/infra-ops/nix-collector-build-split.md).

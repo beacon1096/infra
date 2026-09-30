@@ -1,14 +1,14 @@
 { buildGoModule, fetchFromGitHub, applyPatches, dockerTools, runCommand, busybox, cacert, tzdata }:
 
 let
-  version = "0.4.24-beacon.1";
+  version = "0.6.0-beacon.1";
   source = applyPatches {
     name = "multica-${version}-source";
     src = fetchFromGitHub {
       owner = "multica-ai";
       repo = "multica";
-      rev = "v0.4.24";
-      hash = "sha256-yFplqLsJz+1xWtFAmNkTHq0YXT1g4oyp322hir89tpI=";
+      rev = "v0.6.0";
+      hash = "sha256-yAE0+IIHpckYOi0jhdQLeyGIpoXA7jPrLfVAFjbj50I=";
     };
     patches = [ ../../docs/ci-cd/patches/multica-webhook-issue-dedup.patch ];
   };
@@ -17,7 +17,7 @@ let
     inherit version;
     src = source;
     sourceRoot = "${source.name}/server";
-    vendorHash = "sha256-SL//NLuzLV+faAjD7SR9f9j0AaDHel2haZajLJpsj5s=";
+    vendorHash = "sha256-b6elV4j+7R6L29q8tbCI3MAOY8X63ndzlmCMv7jo7mM=";
     subPackages = [
       "cmd/server"
       "cmd/multica"
