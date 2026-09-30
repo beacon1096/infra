@@ -3416,6 +3416,202 @@
         "retryOnFail": true,
         "maxTries": 3,
         "waitBetweenTries": 2000
+      },
+      {
+        "id": "b1d15f00-0001-4001-8001-000000000001",
+        "name": "Get Dispatch For Link",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1232,
+          1152
+        ],
+        "alwaysOutputData": true,
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT autopilot_id::text, run_id::text FROM multica_review_dispatches WHERE jti = $1::uuid;",
+          "options": {
+            "queryBatching": "single",
+            "queryReplacement": "={{ [$\"Validate Multica Review\".first().json.JTI] }}"
+          }
+        },
+        "credentials": {
+          "postgres": {
+            "id": "reviewCapabilityPg",
+            "name": "Review Capability PostgreSQL"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "id": "b1d15f00-0002-4002-8002-000000000002",
+        "name": "Get Run For Link",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1456,
+          1152
+        ],
+        "parameters": {
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "url": "={{ 'https://multica.beaco.works/api/autopilots/' + $json.autopilot_id + '/runs/' + $json.run_id }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Workspace-Slug",
+                "value": "beacoworks"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaCloser01",
+            "name": "Multica Issue Closer"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "id": "b1d15f00-0003-4003-8003-000000000003",
+        "name": "Get Issue For Link",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1680,
+          1152
+        ],
+        "parameters": {
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "url": "={{ 'https://multica.beaco.works/api/issues/' + $json.issue_id }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Workspace-Slug",
+                "value": "beacoworks"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "multicaCloser01",
+            "name": "Multica Issue Closer"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "id": "b1d15f00-0004-4004-8004-000000000004",
+        "name": "Compose Linked PR Body",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1904,
+          1152
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const read = (name) => { try { return $(name).first().json ?? {}; } catch { return {}; } };\nconst review = read('Verify Current Renovate PR');\nconst prEnvelope = read('Get Current Renovate PR');\nconst pr = prEnvelope.body ?? {};\nconst issue = read('Get Issue For Link');\nconst identifier = String(issue.identifier ?? '').trim();\nconst title = String(pr.title ?? '');\nconst body = String(pr.body ?? '');\nconst branch = String(pr.head?.ref ?? '');\nif (!identifier) return { json: { ...review, LINK_NEEDED: false, LINK_REASON: 'no identifier' } };\nconst present = [title, body, branch].some((value) => value.toLowerCase().includes(identifier.toLowerCase()));\nif (present) return { json: { ...review, LINK_NEEDED: false, LINK_REASON: 'identifier already present' } };\nconst trimmed = body.replace(/\\s+$/, '');\nreturn { json: { ...review, LINK_NEEDED: true, IDENTIFIER: identifier, PR_BODY_NEW: (trimmed ? trimmed + '\\n\\n' : '') + 'Closes ' + identifier } };\n"
+        }
+      },
+      {
+        "id": "b1d15f00-0005-4005-8005-000000000005",
+        "name": "Link Needed?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2128,
+          1152
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ Boolean($json.LINK_NEEDED) }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "b1d15f00-0006-4006-8006-000000000006",
+        "name": "Edit Renovate PR Body",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2352,
+          1088
+        ],
+        "parameters": {
+          "method": "PATCH",
+          "url": "={{ 'https://forgejo.beaco.works/api/v1/repos/' + $(\"Validate Multica Review\").first().json.REPO + '/pulls/' + $(\"Validate Multica Review\").first().json.PR_NUMBER }}",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "keypair",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "body",
+                "value": "={{ $json.PR_BODY_NEW }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'token ' + $env.FORGEJO_GATE_TOKEN }}"
+              }
+            ]
+          }
+        },
+        "onError": "continueRegularOutput",
+        "retryOnFail": true,
+        "maxTries": 2,
+        "waitBetweenTries": 1000
+      },
+      {
+        "id": "b1d15f00-0007-4007-8007-000000000007",
+        "name": "Emit Review For Status",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2576,
+          1152
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const read = (name) => { try { return $(name).first().json ?? {}; } catch { return {}; } };\nreturn { json: { ...read('Verify Current Renovate PR') } };\n"
+        }
       }
     ],
     "connections": {
@@ -3855,7 +4051,7 @@
         "main": [
           [
             {
-              "node": "Set Multica Review Status",
+              "node": "Get Dispatch For Link",
               "type": "main",
               "index": 0
             }
@@ -4753,6 +4949,90 @@
           [
             {
               "node": "Build Policy Notice",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Dispatch For Link": {
+        "main": [
+          [
+            {
+              "node": "Get Run For Link",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Run For Link": {
+        "main": [
+          [
+            {
+              "node": "Get Issue For Link",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Issue For Link": {
+        "main": [
+          [
+            {
+              "node": "Compose Linked PR Body",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Compose Linked PR Body": {
+        "main": [
+          [
+            {
+              "node": "Link Needed?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Link Needed?": {
+        "main": [
+          [
+            {
+              "node": "Edit Renovate PR Body",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Emit Review For Status",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Edit Renovate PR Body": {
+        "main": [
+          [
+            {
+              "node": "Emit Review For Status",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Emit Review For Status": {
+        "main": [
+          [
+            {
+              "node": "Set Multica Review Status",
               "type": "main",
               "index": 0
             }

@@ -10,6 +10,7 @@
 | `multica-gitops` | `multica-gitops.no-reply@beacoworks.xyz` | GitOps + 运维主 Agent 编码、推送分支和创建 PR | 两个基础设施仓库的写入协作者；无合并白名单权限 |
 | `multica-nix-packager` | `multica-nix-packager.no-reply@beacoworks.xyz` | Nix 打包维护者编码、推送自有 fork 和创建 PR | `infrastructure/infra` 可读协作者；仅自有 fork 可写；无合并白名单权限 |
 | `ci-publisher` | `ci-publisher.no-reply@beacoworks.xyz` | 发布可丢弃的 OCI 冒烟测试镜像 | 不属于仓库或组织；只拥有 `ci-publisher/` 下的软件包 |
+| `multica` | `multica@noreply.forgejo.beaco.works` | Multica Forgejo VCS 集成的连接凭据（校验与只读） | 只读；webhook 由管理员在仓库上创建，不依赖该账号的仓库权限 |
 
 `multica-gate` 不能通过自动化流程合并 PR。其 PAT 只有 `write:repository` 和 `read:issue` 权限，保存在加密的 n8n SOPS Secret 中。`read:issue` 用于重新读取与 SHA 绑定的作者确认评论；不能仅信任 webhook 内容。Multica Agent 只获得向 n8n 提交审查结果的凭据，不持有 Forgejo PAT。
 
@@ -37,6 +38,8 @@ Forgejo 对 `infrastructure/infra` 和 `infrastructure/infra-private` 的 `main`
 GitOps + 运维主 Agent 已以 `multica-gitops` 作为首个独立编码身份。其专用 Coder 工作区从 SOPS Secret 获取 SSH 推送密钥、GPG 提交签名密钥与 Forgejo API 令牌；提交邮箱为 `multica-gitops.no-reply@beacoworks.xyz`。签名密钥与 SSH 推送密钥分开，GPG 公钥已在 Forgejo 验证。其他 Agent 的身份隔离仍需逐项完成。
 
 GPG 指纹为 `B2FAAFEAC5E4727FB4AF35784932794C9ED791BE`，SSH 推送密钥指纹为 `SHA256:sH+YsSs8xbe3YNlzjsc0ZMhu1RBO977sSWv6JnARkhc`。Multica daemon 的专用 PAT 只用于工作区首次配置；持久 home 中保留其自动续期结果，启动脚本不会覆盖它。
+
+Multica 的 Forgejo VCS 集成使用既有的 `multica` 账号作为连接凭据，不复用 `multica-gate`、`multica-merger` 或 `multica-gitops`；该连接只做校验与 webhook 镜像，仓库 webhook 由管理员创建。机制、现状和补齐步骤见 [Paseo 与 Multica 的 Forgejo 集成](../../dispatcher/forgejo-integration.md)。
 
 Nix 打包维护者的 Forgejo 账号为 `multica-nix-packager`，GPG 指纹为 `8F57D2F99F73669B937CC52E93BF0D5DA19E76C2`，SSH 推送密钥指纹为 `SHA256:hhj50kXhTq/2Q03jqu4wjHe+OqKRN4+F8/s03sYTrPY`。其独立工作区只挂载专用 Agent 和 Git SSH Secret，不挂载 kubeconfig、Talos 配置或 SOPS age 密钥。该账号的 Forgejo PAT 仅有 `write:repository` scope；上游仓库权限为可读，自有 fork 可写。
 

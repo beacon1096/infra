@@ -9,5 +9,6 @@
 - [Paseo relay](paseo/relay.md)：自建转发与 Tailnet 直连的区别。
 - [Paseo 待核实项](paseo/TODO.md)：语音、访问控制、配对与升级验证。
 - [AstrBot → Multica 中继](astrbot/README.md)：Issue 入口的权限边界与执行沙箱。
+- [Paseo 与 Multica 的 Forgejo 集成](forgejo-integration.md)：读取 Forgejo PR 的机制、现状缺口与补齐步骤。
 
 Forgejo、n8n 与 Multica 的具体 CI/CD 门禁见 [infra-ops](../workflow/infra-ops/README.md)。

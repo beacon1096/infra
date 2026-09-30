@@ -991,4 +991,94 @@ assert.deepEqual(
   [["Get Current Renovate PR"], ["Build Policy Notice"]],
 );
 
+// ── Renovate link-back: write the Multica issue identifier into the PR body ──
+const dispatchForLink = nodes.get("Get Dispatch For Link");
+assert.equal(dispatchForLink.credentials.postgres.id, "reviewCapabilityPg");
+assert.match(dispatchForLink.parameters.query, /multica_review_dispatches/);
+assert.match(dispatchForLink.parameters.options.queryReplacement, /JTI/);
+assert.equal(dispatchForLink.onError, "continueRegularOutput");
+assert.equal(dispatchForLink.alwaysOutputData, true);
+
+for (const name of ["Get Run For Link", "Get Issue For Link"]) {
+  assert.equal(nodes.get(name).credentials.httpHeaderAuth.id, "multicaCloser01");
+  assert.equal(nodes.get(name).onError, "continueRegularOutput");
+}
+assert.match(nodes.get("Get Run For Link").parameters.url, /autopilots/);
+assert.match(nodes.get("Get Run For Link").parameters.url, /run_id/);
+assert.match(nodes.get("Get Issue For Link").parameters.url, /\/api\/issues\//);
+
+const editBody = nodes.get("Edit Renovate PR Body");
+assert.equal(editBody.parameters.method, "PATCH");
+assert.match(editBody.parameters.url, /\/pulls\//);
+assert.match(
+  editBody.parameters.headerParameters.parameters.find(({ name }) => name === "Authorization").value,
+  /FORGEJO_GATE_TOKEN/,
+);
+assert.equal(editBody.onError, "continueRegularOutput");
+assert.equal(
+  editBody.parameters.bodyParameters.parameters.find(({ name }) => name === "body").value,
+  "={{ $json.PR_BODY_NEW }}",
+);
+
+const composeBody = (identifier, pr) =>
+  execute("Compose Linked PR Body", {
+    $: (name) => ({
+      first: () => ({
+        json: name === "Verify Current Renovate PR"
+          ? { ...event, VERDICT: "approve", SUMMARY: "summary" }
+          : name === "Get Current Renovate PR"
+            ? { statusCode: 200, body: pr }
+            : name === "Get Issue For Link"
+              ? (identifier ? { identifier } : {})
+              : {},
+      }),
+    }),
+  }).json;
+
+const linked = composeBody("BEACO-153", {
+  title: "chore(deps): update x",
+  body: "This PR contains updates.",
+  head: { ref: "renovate/x" },
+});
+assert.equal(linked.LINK_NEEDED, true);
+assert.equal(linked.IDENTIFIER, "BEACO-153");
+assert.equal(linked.PR_BODY_NEW, "This PR contains updates.\n\nCloses BEACO-153");
+assert.equal(linked.REPO, event.REPO, "review fields must survive for Set Multica Review Status");
+assert.equal(
+  composeBody("BEACO-7", { title: "x", body: "", head: { ref: "renovate/x" } }).PR_BODY_NEW,
+  "Closes BEACO-7",
+);
+assert.equal(
+  composeBody("BEACO-153", { title: "x", body: "Closes BEACO-153", head: { ref: "renovate/x" } }).LINK_NEEDED,
+  false,
+);
+assert.equal(
+  composeBody("BEACO-153", { title: "x", body: "b", head: { ref: "beaco-153-fix" } }).LINK_NEEDED,
+  false,
+);
+assert.equal(composeBody("", { title: "x", body: "b", head: { ref: "renovate/x" } }).LINK_NEEDED, false);
+
+const emitted = execute("Emit Review For Status", {
+  $: (name) => ({
+    first: () => ({ json: name === "Verify Current Renovate PR" ? { ...event, VERDICT: "reject" } : {} }),
+  }),
+}).json;
+assert.equal(emitted.VERDICT, "reject");
+assert.equal(emitted.REPO, event.REPO);
+
+assert.deepEqual(
+  workflow.connections["Current Renovate PR Matches"].main.map((branch) =>
+    branch.map(({ node }) => node)),
+  [["Get Dispatch For Link"], ["Build Policy Notice"]],
+);
+assert.deepEqual(
+  workflow.connections["Link Needed?"].main.map((branch) =>
+    branch.map(({ node }) => node)),
+  [["Edit Renovate PR Body"], ["Emit Review For Status"]],
+);
+assert.deepEqual(
+  workflow.connections["Emit Review For Status"].main[0].map(({ node }) => node),
+  ["Set Multica Review Status"],
+);
+
 console.log("n8n infra CI workflow checks passed");
