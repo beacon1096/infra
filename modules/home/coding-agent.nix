@@ -1,6 +1,7 @@
 # Headless coding-agent tools shared by local shells and Coder workspaces.
 { inputs
 , config
+, SECRET_DOMAIN_01
 , pkgs
 , lib
 , osConfig
@@ -93,6 +94,7 @@ in
   beacon.pi = {
     enable = true;
     models = piModels;
+    modelBaseURL = "https://models.${SECRET_DOMAIN_01}/v1";
     rulesFile = agentContextFile;
     searchBaseURL = "https://search.beaco.works";
   };

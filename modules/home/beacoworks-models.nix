@@ -38,6 +38,9 @@ let
     "xiaomi_mimo/mimo-v2.5" = reasoningVisionTextModel "MiMo V2.5" 1048576 131072;
     "xiaomi_mimo/mimo-v2.5-pro" = reasoningTextModel "MiMo V2.5 Pro" 1048576 131072;
     "zai/glm-5.2" = reasoningTextModel "GLM-5.2" 1048576 131072;
+    "lcai/qwen-3.8-27b-uncensored" = reasoningTextModel "Qwen3.8 27B Uncensored" 512000 65536;
+    "lcai/qwen-3.8-flash-next-uncensored" = reasoningTextModel "Qwen3.8 Flash Next Uncensored" 256000 65536;
+    "thor/qwen3.8-auto" = reasoningTextModel "Thor Qwen3.8 Auto" 256000 65536;
   };
   # Pi's OpenAI-compatible adapter controls thinking only through `compat`. These
   # LiteLLM routes land on vLLM/SGLang, which read `chat_template_kwargs`, so the
