@@ -15,7 +15,7 @@
 ### 本次修复的两个问题
 
 1. **`infrastructure/infra` 没有 Multica webhook**：只有 n8n 的 automaton hook，导致 `infra` 的 PR 从未被镜像。已在 `infra` 上创建同一 connection 的 Gitea 类型 hook。
-2. **数据库 schema 漂移**：`issue_vcs_pull_request` 与 `issue_pull_request` 缺少 `reference_only` 列（更早的构建先建了表，而迁移 216 用 `CREATE TABLE IF NOT EXISTS`，重跑补不上），使 `GET /api/issues/{id}/pull-requests` 返回 500——即「无法加载对应 Forgejo PR」的直接原因。部署镜像 `0.4.24-beacon.1` 的迁移只到 `284`，不含修复迁移 `442`。已手动执行迁移 127/442 的等价 SQL（`ADD COLUMN IF NOT EXISTS ... DEFAULT FALSE`），接口恢复 200。
+2. **数据库 schema 领先于运行镜像（版本偏斜）**：Multica 的 `schema_migrations` 已应用到 `490_drop_triage_status_key_reservation`（含 `468_drop_reference_only_column`，于 2026-09-16 应用），即 `reference_only` 列是被后续迁移**主动删除**的；而运行中的后端镜像 `0.4.24-beacon.1` 的代码仍在查询该列，于是 `GET /api/issues/{id}/pull-requests` 返回 500——这才是「无法加载对应 Forgejo PR」的直接原因。临时把该列加回（`ADD COLUMN IF NOT EXISTS ... DEFAULT FALSE`）让旧镜像恢复 200；**真正的修复是把后端镜像升级到与库结构匹配的版本**（见下方升级计划，`468` 之后代码不再使用该列）。
 
 ### 链接规则
 
@@ -56,19 +56,28 @@ Paseo `v0.9.2` 原生列出 `forgejo`、`gitea` 与 `codeberg`（`packages/proto
 
 ## Multica 升级计划
 
-目标：升到含迁移 `442+`（且 webhook 去重补丁已上游化）的版本，让 schema 修复可重放，并跟随上游功能/安全更新。
+目标版本：**v0.6.0**（2026-09-28，最新；服务端迁移到 `563`）。库已到 `490`，升级会应用 `491..563`；这也顺带消除版本偏斜——后端代码与库结构对齐后不再使用 `reference_only`，升级后可 `DROP COLUMN` 恢复与上游一致。
 
 影响面：
 
-- `wanxiang/kubernetes/apps/development/multica/app/ocirepository.yaml` 的 chart tag；
-- `helmrelease.yaml` 的后端镜像 tag；
-- `packages/multica-backend` 的版本、`vendorHash` 与 `multica-webhook-issue-dedup.patch` 是否仍需保留；
-- 前端镜像 tag；
-- `hosts/agents/coding/home.nix` 固定的 `multica` CLI 版本。
+- `packages/multica-backend/default.nix`：`version`（如 `0.6.0-beacon.1`）、`rev = v0.6.0`、`fetchFromGitHub.hash`、`vendorHash`；下游补丁 `multica-webhook-issue-dedup.patch` 需重切。
+- `wanxiang/kubernetes/apps/development/multica/app/ocirepository.yaml`：chart `tag: 0.6.0`。
+- 同目录 `helmrelease.yaml`：后端镜像 tag `0.6.0-beacon.1`（前端与 chart appVersion 跟随，无需改）。
+- `hosts/agents/coding/home.nix`：`multica` CLI 升到 `0.6.0` 并更新 hash（release 资产 `multica-cli-0.6.0-linux-amd64.tar.gz` 存在）。
 
-关于列修复：**不要把 442 单独塞进旧镜像**——那会在 `schema_migrations` 里留下 `284` 到 `442` 的版本间隙，使升级时跳过 `285..441`。当前的手动列修复与将来升级兼容：`migrate up` 会依次执行 `285..442`（442 为 `IF NOT EXISTS`，安全）乃至 `468`（删除该列）。
+已核实的上游差异：
 
-切换顺序：镜像先发布并可匿名拉取 → 再改 HelmRelease → 观察迁移完成。风险：跨多个小版本，需核对 chart values、迁移、CLI/daemon 与凭据加密 key 不变。
+- 迁移：v0.6.0 含 `442`/`462`/`468`，最大 `563`。库已过 `468`，升级不会重跑它；临时补的列不会被自动删除，需升级后手动 drop。
+- 去重补丁：v0.6.0 的 `dispatchCreateIssue` **仍**无条件调用 `LockAndFindRecentAutopilotDuplicate`（标题级 recent-duplicate guard），而 `AdmitAutopilotWebhookDelivery`/`webhook_delivery_id` 已存在。因此下游补丁仍需保留，但 v0.6.0 的 `dispatchCreateIssue` 已带 `run` 形参，需按其新上下文重切。
+- Chart：v0.6.0 的 values 键与我们使用的集合一致，且仍**不**暴露 `MULTICA_PUBLIC_URL`（`webhook_url` 回退到 UI origin，行为不变）。
+
+切换顺序与风险：
+
+1. 更新 `packages/multica-backend` 并构建/推送镜像，确认注册表可匿名拉取；
+2. 更新 chart tag 与镜像 tag，让 Flux 协调；
+3. 观察 `migrate up`（`491..563`）完成、Pod 健康；
+4. 升级后 `DROP COLUMN reference_only`（旧代码已不在），再验证 `pull-requests` 与链接；
+5. 风险：从 `0.4.24` 跨约 40 个版本，需核对 chart values、VCS/daemon 协议与凭据加密 key 不变；`0.4.24-beacon.1` 上的 webhook 去重补丁行为必须在新版本重验（`utils/test-*` 与线上冒烟）。
 
 ## Terraform 评估结论：不采用
 
