@@ -11,11 +11,11 @@ Deploy one self-hosted ArchiveBox collection on the wanxiang (formerly talos-ii)
 so that references cited in our own documentation — for example ChatGPT share links —
 can be snapshotted and replayed after the original URL rots or changes.
 
-The MVP is intentionally narrow: a single Flux-managed ArchiveBox container reachable
-only through the Tailscale-internal Gateway (`envoy-internal`), a replicated Longhorn
-volume for the collection, SOPS-managed admin credentials, and ArchiveBox's own admin
-login. Public exposure, subdomain-per-snapshot replay isolation, scheduled crawls,
-external storage backends, and SSO integration are deferred.
+The MVP is intentionally narrow: a single Flux-managed ArchiveBox container reachable at
+`wayback.${SECRET_DOMAIN}` (public via `envoy-external`, also on the Tailscale-internal
+`envoy-internal`), a replicated Longhorn volume for the collection, SOPS-managed admin
+credentials, and ArchiveBox's own admin login. Subdomain-per-snapshot replay isolation,
+scheduled crawls, external storage backends, and SSO integration are deferred.
 
 This is a new service. It does not replace, migrate, or import any existing archive.
 
@@ -37,7 +37,7 @@ and its files exist after a pod restart.
 
 1. **Given** Flux has reconciled the ArchiveBox manifests, **When** an allowed tailnet
    identity opens the admin hostname, **Then** the request routes through
-   `envoy-internal` to the ArchiveBox service on port 5797 and returns the admin UI.
+   the Gateway to the ArchiveBox service on port 5797 and returns the admin UI.
 2. **Given** `ADMIN_USERNAME`/`ADMIN_PASSWORD` are provided, **When** the collection is
    first initialized, **Then** an admin superuser is created and login succeeds without
    manual `kubectl exec`.
@@ -76,8 +76,9 @@ renders without privileged controls, and that replay JS is neutered.
 1. **Given** `SERVER_SECURITY_MODE=safe-onedomain-nojsreplay`, **When** a snapshot is
    replayed, **Then** risky replay JavaScript is neutered and the admin control plane
    stays behind its own login.
-2. **Given** the service is exposed only on `envoy-internal`, **When** an anonymous
-   tailnet client connects, **Then** it cannot reach any public ingress path.
+2. **Given** `PUBLIC_INDEX=true` and `SERVER_SECURITY_MODE=safe-onedomain-nojsreplay`,
+   **When** an anonymous visitor opens a snapshot, **Then** the replay loads without
+   privileged controls and the admin control plane remains behind login.
 
 ### Edge Cases
 
@@ -101,7 +102,8 @@ renders without privileged controls, and that replay JS is neutered.
   this repository, using the shared `bjw-s` `app-template` chart like the other apps.
 - **FR-002**: The collection MUST persist on a `longhorn-r3` `PersistentVolumeClaim`.
 - **FR-003**: The service MUST be exposed through Gateway API HTTPRoute as
-  `wayback.${SECRET_DOMAIN}` on `envoy-internal` (Tailscale). No public route in the MVP.
+  `wayback.${SECRET_DOMAIN}` on `envoy-external` (public, via Cloudflare Tunnel) and
+  `envoy-internal`.
 - **FR-004**: The admin password MUST be SOPS-encrypted; no plaintext credential may be
   committed.
 - **FR-005**: `BASE_URL` MUST be set to the external hostname so links and CSRF checks
@@ -122,7 +124,7 @@ renders without privileged controls, and that replay JS is neutered.
 - **ArchiveBox collection**: `/data` holding `index.sqlite3`, per-snapshot folders,
   logs, and browser personas.
 - **Admin account**: superuser created once from `ADMIN_USERNAME`/`ADMIN_PASSWORD`.
-- **HTTPRoute**: `wayback.${SECRET_DOMAIN}` on the `envoy-internal` gateway.
+- **HTTPRoute**: `wayback.${SECRET_DOMAIN}` on the `envoy-external` and `envoy-internal` gateways.
 - **SOPS Secret**: `archivebox-secret` in the `archive` namespace.
 
 ## Success Criteria

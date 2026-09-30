@@ -25,8 +25,14 @@ under the shared `bjw-s` `app-template` chart.
 
 - Collection data lives on a `longhorn-r3` `ReadWriteOnce` PVC; `strategy: Recreate`
   enforces the single-writer contract.
-- Exposed as `wayback.${SECRET_DOMAIN}` on `envoy-internal` (Tailscale) only. There is no
-  public route in the MVP.
+- Exposed as `wayback.${SECRET_DOMAIN}` on both `envoy-external` (public Cloudflare
+  Tunnel) and `envoy-internal`, so document links resolve from a normal browser. The
+  public route was added after the initial internal-only MVP proved unreachable by name:
+  `cloudflare-dns` only publishes `envoy-external` hostnames, and `*.beaco.works` does not
+  resolve over the tailnet.
+- `PUBLIC_INDEX=true`: the snapshot list and snapshots are readable without login; only
+  the admin control plane requires the SOPS-managed credential. The collection should be
+  treated as public.
 - `SERVER_SECURITY_MODE=safe-onedomain-nojsreplay`: the admin control plane stays behind
   its own login, archived pages do not execute risky replay JS, and no wildcard DNS/TLS
   is required.
@@ -39,8 +45,10 @@ under the shared `bjw-s` `app-template` chart.
 - **Subdomain-per-snapshot isolation (`safe-subdomains-fullreplay`)** — stronger replay
   fidelity and origin isolation, but needs wildcard routing for snapshot subdomains.
   Deferred; revisit if `nojsreplay` proves too lossy for JS-heavy pages.
-- **Public exposure on `envoy-external`** — deferred. Serving untrusted archived content
-  publicly should be a reviewed decision, not a default.
+- **Public exposure on `envoy-external`** — initially deferred, then adopted (see
+  Decision) once the internal-only deployment proved unreachable by its documented
+  hostname. Archived content is therefore public-read; `nojsreplay` and the admin login
+  remain the safety boundary.
 
 ## Consequences
 

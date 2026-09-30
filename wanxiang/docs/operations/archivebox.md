@@ -1,7 +1,8 @@
 # ArchiveBox — self-hosted web archiving
 
 **Namespace**: `archive` · **Flux Kustomization**: `flux-system/archivebox` ·
-**Hostname**: `wayback.${SECRET_DOMAIN}` (Tailscale-internal, `envoy-internal`) ·
+**Hostname**: `wayback.${SECRET_DOMAIN}` (public via Cloudflare Tunnel →
+`envoy-external`; also on `envoy-internal`) ·
 **Storage**: `archivebox-data` (`longhorn-r3`, 50Gi RWO) ·
 **Image**: `mirror.gcr.io/archivebox/archivebox:0.9.71`
 
@@ -9,8 +10,10 @@
 
 A single ArchiveBox collection used to preserve references cited in our own
 documentation — for example ChatGPT share links — so they can be replayed after the
-source URL rots or changes. It is not a general public web archive and is not exposed
-on the public ingress.
+source URL rots or changes. It is published on the public ingress so those links are
+usable from rendered docs; `PUBLIC_INDEX=true` means the snapshot list and snapshots are
+readable without a login, while the admin control plane stays behind its own login.
+Treat anything archived here as effectively public.
 
 ## How it runs
 

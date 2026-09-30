@@ -9,7 +9,7 @@ Add a new `archive` namespace and an `archivebox` Flux Kustomization to
 the shared `bjw-s` `app-template` chart (the same chart family as `kasm-browser`,
 `searxng`, `syncthing`, `n8n` and `forgejo`). It mounts a `longhorn-r3` PVC at `/data`,
 a memory-backed `/dev/shm` for Chrome, and an `emptyDir` at `/tmp/archivebox`, and is
-routed on `envoy-internal` as `wayback.${SECRET_DOMAIN}`.
+routed at `wayback.${SECRET_DOMAIN}` on `envoy-external` (public) and `envoy-internal`.
 
 The upstream container contract was verified against ArchiveBox `v0.9.71`
 (Dockerfile `CMD ["archivebox", "server", "--init", "0.0.0.0:5797"]`, `EXPOSE 5797`,
@@ -26,18 +26,18 @@ are read directly, unprefixed.
 - **Chart**: `oci://zot.registry.svc.cluster.local:5000/charts/app-template` tag `4.6.2`.
 - **Image**: `mirror.gcr.io/archivebox/archivebox:0.9.71` (Zot pull-through of Docker Hub).
 - **Storage**: `archivebox-data`, `longhorn-r3`, 50Gi `ReadWriteOnce`.
-- **Ingress**: HTTPRoute on `envoy-internal`, hostname `wayback.${SECRET_DOMAIN}`.
+- **Ingress**: HTTPRoute on `envoy-external` (public) and `envoy-internal`, hostname `wayback.${SECRET_DOMAIN}`.
 - **Secrets**: `archivebox-secret` SOPS-encrypted with the wanxiang `.sops.yaml`
   (`encrypted_regex: ^(data|stringData)$`).
 - **Reconciler**: Flux `Kustomization` with `postBuild.substituteFrom: cluster-secrets`
   for `${SECRET_DOMAIN}`.
-- **Constraints**: no public route, no machine-config change, no destructive storage
+- **Constraints**: no machine-config change, no destructive storage
   operations, no plaintext secrets, no NodePort.
 
 ## Conformance
 
 - **Storage**: Longhorn `longhorn-r3`; no PVC deletion or resize in this change.
-- **Network**: Cilium + Gateway API; Tailscale-internal exposure only.
+- **Network**: Cilium + Gateway API; public via Cloudflare Tunnel (`envoy-external`) plus Tailscale-internal.
 - **Image factory**: untouched.
 - **Secrets**: all credentials SOPS-encrypted; the secret scanner must pass.
 - **GitOps**: all resources are declarative under `kubernetes/apps/*`; no manual apply.
@@ -54,8 +54,10 @@ are read directly, unprefixed.
   control plane enabled, neuters risky replay JS, and avoids requiring wildcard DNS/TLS
   for subdomain-per-snapshot isolation. Full-JS replay would require
   `safe-subdomains-fullreplay` plus wildcard routing, deferred to a later change.
-- **`envoy-internal`**: archived third-party content and personal references are not
-  published in the MVP; the replay surface can be reviewed before any public route.
+- **Public exposure**: added on `envoy-external` after the internal-only MVP proved
+  unreachable by its documented hostname. Archived content is public-read
+  (`PUBLIC_INDEX=true`), so this should be treated as a public archive; the admin control
+  plane stays behind login.
 - **Root then drop**: matching upstream and `kasm-browser`; root is used only to repair
   `/data` ownership, then the process drops to uid/gid 911.
 - **Unconfined seccomp + `/dev/shm`**: required for the Chromium-based extractors.

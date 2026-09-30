@@ -103,7 +103,14 @@ spec:
     route:
       app:
         hostnames: ["wayback.${SECRET_DOMAIN}"]
+        # envoy-external is the public Cloudflare-Tunnel path; external-dns
+        # (cloudflare-dns, --gateway-name=envoy-external) publishes the CNAME
+        # from the HTTPRoute. envoy-internal is kept for in-cluster/LAN access,
+        # matching forgejo/attic.
         parentRefs:
+          - name: envoy-external
+            namespace: network
+            sectionName: https
           - name: envoy-internal
             namespace: network
             sectionName: https
