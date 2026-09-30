@@ -97,9 +97,11 @@ spec:
                 path: /spec/template/spec/containers/1
               # Run the daemon directly instead of waiting for dockerd. Host
               # keys are pinned via NIX_SSHOPTS, so no startup ssh-keyscan.
+              # Create /var/tmp (skopeo uses it for docker-archive temp files)
+              # in case a pod runs an image built before it shipped /var/tmp.
               - op: replace
                 path: /spec/template/spec/containers/0/command
-                value: ["/bin/forgejo-runner", "--config", "/etc/runner/config.yaml", "daemon"]
+                value: ["/bin/sh", "-c", "mkdir -p /var/tmp; exec /bin/forgejo-runner --config /etc/runner/config.yaml daemon"]
               # Drop DOCKER_* env (no daemon to talk to).
               - op: remove
                 path: /spec/template/spec/containers/0/env

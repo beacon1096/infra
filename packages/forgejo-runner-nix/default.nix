@@ -67,10 +67,11 @@ let
     ignoreCollisions = true;
   };
 
-  # Nix needs a writable /tmp; the runner uses HOME=/home/runner.
+  # Nix needs a writable /tmp; skopeo (OCI push) also uses /var/tmp for its
+  # docker-archive temp files. The runner uses HOME=/home/runner.
   rootFiles = runCommand "forgejo-runner-nix-root" { } ''
-    mkdir -p $out/tmp $out/home/runner $out/etc
-    chmod 1777 $out/tmp
+    mkdir -p $out/tmp $out/var/tmp $out/home/runner $out/etc
+    chmod 1777 $out/tmp $out/var/tmp
     # ssh needs a passwd/group entry for uid 0; the minimal dockerTools image
     # has none, which makes ssh fail with "No user exists for uid 0".
     printf 'root:x:0:0:root:/root:/bin/bash\n' > $out/etc/passwd
