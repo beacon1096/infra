@@ -101,9 +101,29 @@ in
         HostName 100.101.83.77
         User beacon
 
+      Host m920x-inspection
+        HostName 100.101.83.77
+        HostKeyAlias 100.101.83.77
+        User homelab-inspection
+        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        IdentityFile /home/coder/.ssh/runtime/id_ed25519
+        UserKnownHostsFile /home/coder/.ssh/known_hosts
+        IdentitiesOnly yes
+        StrictHostKeyChecking yes
+
       Host ms-r1
         HostName 172.16.80.240
         User beacon
+
+      Host ms-r1-inspection
+        HostName 172.16.80.240
+        HostKeyAlias 172.16.80.240
+        User homelab-inspection
+        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        IdentityFile /home/coder/.ssh/runtime/id_ed25519
+        UserKnownHostsFile /home/coder/.ssh/known_hosts
+        IdentitiesOnly yes
+        StrictHostKeyChecking yes
 
       Host udm-pro
         HostName 172.16.80.254
@@ -173,6 +193,46 @@ in
         HostName 100.121.229.9
         HostKeyAlias microserver-gen10plus
         User beacon
+        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        IdentityFile /home/coder/.ssh/runtime/id_ed25519
+        UserKnownHostsFile /home/coder/.ssh/known_hosts
+        IdentitiesOnly yes
+        StrictHostKeyChecking yes
+
+      Host microserver-gen10plus-inspection
+        HostName 100.121.229.9
+        HostKeyAlias microserver-gen10plus
+        User homelab-inspection
+        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        IdentityFile /home/coder/.ssh/runtime/id_ed25519
+        UserKnownHostsFile /home/coder/.ssh/known_hosts
+        IdentitiesOnly yes
+        StrictHostKeyChecking yes
+
+      Host nixbuilder-01-inspection
+        HostName 172.16.101.31
+        HostKeyAlias 172.16.101.31
+        User homelab-inspection
+        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        IdentityFile /home/coder/.ssh/runtime/id_ed25519
+        UserKnownHostsFile /home/coder/.ssh/known_hosts
+        IdentitiesOnly yes
+        StrictHostKeyChecking yes
+
+      Host nixbuilder-02-inspection
+        HostName 172.16.101.32
+        HostKeyAlias 172.16.101.32
+        User homelab-inspection
+        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        IdentityFile /home/coder/.ssh/runtime/id_ed25519
+        UserKnownHostsFile /home/coder/.ssh/known_hosts
+        IdentitiesOnly yes
+        StrictHostKeyChecking yes
+
+      Host nixbuilder-03-inspection
+        HostName 172.16.101.33
+        HostKeyAlias 172.16.101.33
+        User homelab-inspection
         ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
@@ -307,5 +367,8 @@ in
     shuttle ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOAiH462EesK5dTUptJNIU6/a9DLg7avt25WzYmLFmlt
     speicher ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPG6A01gvklGhywdvyBYHZ1NnjtAVulbbSKKC2l9hOpM
     microserver-gen10plus ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFwIj0TXFM0sux8NYQgN2mhw/ckVVkhg0CTzxqjml210
+    172.16.101.31 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPES6nlhfYix8xFxsDthfzlRvEpb7FdJu1kEo1SvNNTV
+    172.16.101.32 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILsez8FJTnMSm8O4puhqiGQAst8JhYadYulzD4/oflPF
+    172.16.101.33 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII6SZCsVJAdprACzooahbj3LXDzsE68jBSYzqB4I3wdG
   '';
 }
