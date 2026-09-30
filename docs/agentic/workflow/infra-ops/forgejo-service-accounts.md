@@ -40,7 +40,9 @@ GPG 指纹为 `B2FAAFEAC5E4727FB4AF35784932794C9ED791BE`，SSH 推送密钥指�
 
 Nix 打包维护者的 Forgejo 账号为 `multica-nix-packager`，GPG 指纹为 `8F57D2F99F73669B937CC52E93BF0D5DA19E76C2`，SSH 推送密钥指纹为 `SHA256:hhj50kXhTq/2Q03jqu4wjHe+OqKRN4+F8/s03sYTrPY`。其独立工作区只挂载专用 Agent 和 Git SSH Secret，不挂载 kubeconfig、Talos 配置或 SOPS age 密钥。该账号的 Forgejo PAT 仅有 `write:repository` scope；上游仓库权限为可读，自有 fork 可写。
 
-Homelab 巡检（只读巡检 Autopilot）已从共享的 `nixos-agent-coder` 工作区迁往专用 `homelab-inspection-agent` 工作区，不再与外部模型顾问 Agent 共用同一容器及其 `coding-agent` 共享 SSH key。它不写仓库，因此没有 Forgejo 账号、PAT 或提交签名密钥；独立身份体现为每工作区独立的运行时 SSH key，公钥指纹为 `SHA256:yd4OW495urjUBQYF86aOEuI8qRqQwh3iAvmWI2fhAEY`（注释 `multica-homelab-inspection`）。为采集集群只读证据，它与 GitOps 工作区一样挂载 `coder-workspace-infra`（kubeconfig、talosconfig、SOPS age）。
+Homelab 巡检（只读巡检 Autopilot）计划从共享的 `nixos-agent-coder` 工作区迁往专用 `homelab-inspection-agent` 工作区，避免与外部模型顾问 Agent 共用容器和凭据。该工作区只挂载独立的 Agent harness Secret，不挂载 Git SSH 或通用 infra Secret，也不注入 Forgejo 令牌。巡检所需的跨基础设施只读访问需另行按资源授权并验证；新工作区和 Multica runtime 绑定完成前，不能称为已迁移。
+
+启用顺序：先为新 daemon 提供独立的 Multica 凭据并确认模板已发布；创建工作区后验证 Git SSH、infra Secret、Forgejo 凭据均不可用，再将巡检 Agent 绑定到新 runtime。只读巡检接口尚未接入的系统应在报告中列为无法检查；现有 OpenStatus 状态页和公开 inventory 可作为首批低权限信息源。旧工作区的持久化 HOME 仍需单独清理，避免后续顾问 Agent 继续接触旧凭据。
 
 Coder `coding-agent` 模板为 `gitops-agent`、`nix-packager-agent`、`homelab-inspection-agent`、人类空间 `infra-maintainer` 和仍供其他 Agent 使用的旧 `nixos-agent-coder` 工作区映射凭据；其他新工作区默认不挂载 Agent、Git SSH 或基础设施 Secret。
 

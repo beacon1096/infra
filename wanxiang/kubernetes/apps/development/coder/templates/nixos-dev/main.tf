@@ -97,6 +97,7 @@ resource "coder_agent" "main" {
   dir  = "/home/coder/workspace"
 
   env = merge({
+    AGENT_ROLE          = "copilot"
     CODER_WORKSPACE_DIR = "/home/coder/workspace"
     GIT_SSH_COMMAND     = "ssh -F /home/coder/.ssh/config -i /home/coder/.ssh/runtime/id_ed25519 -o UserKnownHostsFile=/home/coder/.ssh/known_hosts -o StrictHostKeyChecking=yes"
     }, local.infra_workspace ? {
@@ -232,6 +233,11 @@ resource "kubernetes_pod" "workspace" {
       image             = var.image
       image_pull_policy = "Always"
       args              = ["/bin/coder-agent", "agent"]
+
+      env {
+        name  = "AGENT_ROLE"
+        value = "copilot"
+      }
 
       env {
         name  = "CODER_AGENT_TOKEN"

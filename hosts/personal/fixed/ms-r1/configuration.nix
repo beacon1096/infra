@@ -122,8 +122,6 @@
       "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBFGl/aWJSeQ2utkndM7mOOmp9FHdvj4ViG1RQGiHLhB36HWXBvQuxYzdlYTniwVTZLf6qutvOpLh/kVTwaHWuj0= beacon@msi-claw"
       "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBOsCCVuM5tqk6gfn9j7qDeaaN36ZY18Z8Q9ARViMSywNc5HD5ujV3ctD9x71q/yEC6M5liIheUOkILOzJ5E0Gdo= beacon@thinkbook-plus-hybrid"
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICDP4oDTGH/Pk+6BPAcxxAsLTxxYU7mIz1Qfv4RX1FH7 Agent @ Beacoworks"
-      # Homelab 巡检 Agent runtime (dedicated workspace, read-only inspection)
-      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDsABsuLsQ9hoONS3tAq3i7FRbNHoDBTITUm5+WtGMZM Homelab 巡检 @ Beacoworks"
     ];
   };
 

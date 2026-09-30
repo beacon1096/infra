@@ -99,8 +99,6 @@
       "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBJGwIGaHwdhEQ8QvZhXoArtJ4I44fxsFoihasONWAIrBBJWlKcyfwWOTFPelUil0hfI/ENzTdgrtxcVIukqqstQ= beacon@microserver-gen10plus-tpm"
       # Trusted coding agent runtime
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICDP4oDTGH/Pk+6BPAcxxAsLTxxYU7mIz1Qfv4RX1FH7 Agent @ Beacoworks"
-      # Homelab 巡检 Agent runtime (dedicated workspace, read-only inspection)
-      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDsABsuLsQ9hoONS3tAq3i7FRbNHoDBTITUm5+WtGMZM Homelab 巡检 @ Beacoworks"
     ];
   };
 
