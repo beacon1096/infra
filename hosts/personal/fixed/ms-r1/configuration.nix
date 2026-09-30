@@ -125,12 +125,12 @@
     ];
   };
 
-  users.users.patrol-agent = {
+  users.users.agent-prober = {
     isNormalUser = true;
-    description = "Patrol agent";
+    description = "Agent prober";
     hashedPassword = "!";
     openssh.authorizedKeys.keys = [
-      "restrict ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDsABsuLsQ9hoONS3tAq3i7FRbNHoDBTITUm5+WtGMZM Patrol Agent @ Beacoworks"
+      "restrict ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDsABsuLsQ9hoONS3tAq3i7FRbNHoDBTITUm5+WtGMZM Agent Prober @ Beacoworks"
     ];
   };
 

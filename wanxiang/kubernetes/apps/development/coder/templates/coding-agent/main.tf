@@ -70,10 +70,10 @@ locals {
   copilot_workspace            = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "infra-maintainer"
   gitops_workspace             = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "gitops-agent"
   nix_packager_workspace       = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "nix-packager-agent"
-  patrol_workspace             = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "patrol-agent"
+  prober_workspace             = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "agent-prober"
   legacy_workspace             = data.coder_workspace_owner.me.name == "beacon1096" && data.coder_workspace.me.name == "nixos-agent-coder"
-  agent_secret                 = local.gitops_workspace ? "coder-workspace-gitops-agent" : local.nix_packager_workspace ? "coder-workspace-nix-packager-agent" : local.patrol_workspace ? "coder-workspace-patrol-agent" : local.legacy_workspace ? var.agent_secret_name : ""
-  git_ssh_secret               = local.gitops_workspace ? "coder-workspace-gitops-git-ssh" : local.nix_packager_workspace ? "coder-workspace-nix-packager-git-ssh" : local.patrol_workspace ? "coder-workspace-patrol-agent-ssh" : local.legacy_workspace ? var.git_ssh_secret_name : ""
+  agent_secret                 = local.gitops_workspace ? "coder-workspace-gitops-agent" : local.nix_packager_workspace ? "coder-workspace-nix-packager-agent" : local.prober_workspace ? "coder-workspace-agent-prober" : local.legacy_workspace ? var.agent_secret_name : ""
+  git_ssh_secret               = local.gitops_workspace ? "coder-workspace-gitops-git-ssh" : local.nix_packager_workspace ? "coder-workspace-nix-packager-git-ssh" : local.prober_workspace ? "coder-workspace-agent-prober-ssh" : local.legacy_workspace ? var.git_ssh_secret_name : ""
   infra_secret                 = local.gitops_workspace || local.legacy_workspace ? var.infra_secret_name : ""
   git_identity_workspace       = local.copilot_workspace || local.gitops_workspace || local.nix_packager_workspace
   git_user_name                = local.copilot_workspace ? "beacon1096" : local.nix_packager_workspace ? "Nix 打包维护者 @ Beacoworks" : "GitOps + 运维 @ Beacoworks"
@@ -229,7 +229,7 @@ resource "kubernetes_pod" "workspace" {
 
   spec {
     restart_policy       = "Always"
-    service_account_name = local.patrol_workspace ? "patrol-agent" : "default"
+    service_account_name = local.prober_workspace ? "agent-prober" : "default"
 
     container {
       name              = "dev"
@@ -317,7 +317,7 @@ resource "kubernetes_pod" "workspace" {
       # Token-based Forgejo auth for `tea` (never OAuth, see the startup
       # script). Optional so an agent secret without the key still schedules.
       dynamic "env" {
-        for_each = local.agent_secret == "" || local.patrol_workspace ? [] : [local.agent_secret]
+        for_each = local.agent_secret == "" || local.prober_workspace ? [] : [local.agent_secret]
         content {
           name = "FORGEJO_API_TOKEN"
           value_from {
