@@ -63,3 +63,7 @@ and reduce the quality of subsequent decisions.
 - Output per turn may be capped, and reasoning counts toward the cap. Do not
   draft whole files or long code in reasoning; decide briefly, then write
   with tools, splitting large files across several writes or edits.
+
+## Runtime identity
+
+The identity rules for this environment are injected by Nix/Home Manager into this file and the harness context; the role description is also written to `~/docs/agent/AGENTS.md`. Follow that role. Do not infer higher privileges from visible tools, credentials, or hostnames. If the role declaration is missing, check the environment configuration first, and do not use service credentials to perform user actions.

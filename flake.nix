@@ -361,20 +361,27 @@
             config.allowUnfree = true;
             overlays = [ llmAgents.overlays.shared-nixpkgs ];
           };
-          homeActivation = (home-manager.lib.homeManagerConfiguration {
+          homeActivation = role: (home-manager.lib.homeManagerConfiguration {
             inherit pkgs;
             extraSpecialArgs = { inherit inputs; } // domainVars;
             modules = [
               ./hosts/agents/coding/home.nix
-              { home.enableNixpkgsReleaseCheck = false; }
+              {
+                home.enableNixpkgsReleaseCheck = false;
+                beacoworks.agent.role = role;
+              }
             ];
           }).activationPackage;
+          copilotHomeActivation = homeActivation "copilot";
+          autopilotHomeActivation = homeActivation "autopilot";
           # buildLayeredImage lays store paths on disk but does not register
           # them as valid in the nix DB, so `nix-store --realise` (called by HM
           # activation) treats the on-disk activation closure as missing and
           # tries to fetch it from a substituter (401 on the private cache).
           # Bake the closure's registration so the entrypoint can --load-db it.
-          nixDbRegistration = pkgs.closureInfo { rootPaths = [ homeActivation ]; };
+          nixDbRegistration = pkgs.closureInfo {
+            rootPaths = [ copilotHomeActivation autopilotHomeActivation ];
+          };
           coderAgent = pkgs.runCommand "coder-agent-2.31.2" {
             nativeBuildInputs = [ pkgs.gnutar pkgs.gzip ];
           } ''
@@ -444,6 +451,11 @@
               export USER="''${USER:-coder}"
               export SHELL="${pkgs.bashInteractive}/bin/bash"
               export CODER_WORKSPACE_DIR="''${CODER_WORKSPACE_DIR:-$HOME/workspace}"
+              case "''${AGENT_ROLE-}" in
+                copilot) homeActivation=${copilotHomeActivation} ;;
+                autopilot) homeActivation=${autopilotHomeActivation} ;;
+                *) echo "AGENT_ROLE must be copilot or autopilot" >&2; exit 1 ;;
+              esac
               # /bin (image contents: nix, bash, coreutils, curl, git) is enough
               # to run activation; the Home Manager profile bin is added after.
               export PATH="/bin:$PATH"
@@ -468,7 +480,7 @@
               # symlinks dangling (broken PATH/tools). Naming the marker after
               # the generation forces a re-activation when the image changes
               # and skips it on a plain restart of the same image.
-              actMarker="$HOME/.hm-activated-$(basename ${homeActivation})"
+              actMarker="$HOME/.hm-activated-$(basename "$homeActivation")"
               if [ ! -e "$actMarker" ]; then
                 if [ ! -e /nix/var/nix/.db-loaded ]; then
                   nix-store --load-db < ${nixDbRegistration}/registration
@@ -476,7 +488,7 @@
                 fi
                 # Drop markers from previous generations (and the legacy name).
                 rm -f "$HOME"/.hm-activated-* "$HOME/.coding-agent-home-activated" 2>/dev/null || true
-                ${homeActivation}/activate
+                "$homeActivation/activate"
                 touch "$actMarker"
               fi
 

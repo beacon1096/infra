@@ -1,5 +1,6 @@
 # Headless coding-agent tools shared by local shells and Coder workspaces.
 { inputs
+, config
 , pkgs
 , lib
 , osConfig
@@ -13,6 +14,10 @@ let
     overlays = [ inputs.llmAgents.overlays.shared-nixpkgs ];
   };
   agentRules = ../../rules/AGENTS.md;
+  agentRole = config.beacoworks.agent.role;
+  agentRoleFile = ../../rules/roles/${agentRole}.md;
+  agentContextText = builtins.readFile agentRules + "\n" + builtins.readFile agentRoleFile;
+  agentContextFile = builtins.toFile "agent-context-${agentRole}.md" agentContextText;
   modelCredential = name: env:
     let
       path = osConfig.sops.secrets."personal/beacoworks-models/${name}".path or null;
@@ -80,6 +85,7 @@ in
 {
   imports = [
     inputs.codex-desktop-linux.homeManagerModules.default
+    ./agent-role.nix
     ./mcp.nix
     ./pi.nix
   ];
@@ -87,20 +93,23 @@ in
   beacon.pi = {
     enable = true;
     models = piModels;
+    rulesFile = agentContextFile;
     searchBaseURL = "https://search.beaco.works";
   };
+
+  home.file."docs/agent/AGENTS.md".source = agentRoleFile;
 
   programs.claude-code = {
     enable = true;
     package = unstablePkgs.claude-code;
-    context = agentRules;
+    context = agentContextText;
     skills = agentSkills;
   };
 
   programs.codex = {
     enable = true;
     package = unstablePkgs.codex;
-    context = agentRules;
+    context = agentContextText;
     #enableMcpIntegration = true;
     skills = agentSkills;
   };
@@ -113,7 +122,7 @@ in
   programs.opencode = {
     enable = true;
     package = unstablePkgs.llm-agents.opencode;
-    context = agentRules;
+    context = agentContextText;
     enableMcpIntegration = true;
     skills = agentSkills;
     web = {
