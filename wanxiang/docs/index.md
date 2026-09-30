@@ -44,6 +44,7 @@ ADRs are organized by their scope:
 - [talos-ii/0012 — zot in-cluster on talos-ii (Phase 4b)](decisions/talos-ii/0012-zot-on-talos-ii.md)
 - [talos-ii/0013 — Forgejo Actions runner on talos-ii (DinD, hostNetwork)](decisions/talos-ii/0013-forgejo-runner-talos-ii.md)
 - talos-ii/0014 — Tailscale host extension (**superseded 2026-05-05**; archived in the private infrastructure repository)
+- [talos-ii/0015 — Self-hosted web archiving with ArchiveBox](decisions/talos-ii/0015-archivebox-web-archiving.md)
 
 #### talos-i
 
@@ -56,6 +57,8 @@ ADRs are organized by their scope:
 - [Wanxiang off-site backups](operations/offsite-backup.md) — TrueNAS,
   routed NFS, Longhorn SystemBackup, and restore verification.
 - [Syncthing introducer](operations/syncthing-introducer.md)
+- [ArchiveBox web archiving](operations/archivebox.md) — self-hosted capture/replay for
+  references cited in our documentation (e.g. ChatGPT share links).
 
 - [zot — multi-registry pull-through cache](operations/zot-mirror.md) — what the LAN registry on `172.16.80.240:5000` does, how nodes are configured to use it, performance characteristics, how to add an upstream.
 - [Tailscale operator — exposing services on the tailnet](operations/tailscale-operator.md) — annotation-driven exposure, ProxyClass usage, and local OCI chart operation.

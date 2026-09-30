@@ -1,0 +1,15 @@
+---
+# Single collection directory: index.sqlite3, per-snapshot folders,
+# logs and Chrome/persona profiles all live under /data. Replicated
+# Longhorn class because an archive that only exists on one node is
+# not an archive.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: archivebox-data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn-r3
+  resources:
+    requests:
+      storage: 50Gi

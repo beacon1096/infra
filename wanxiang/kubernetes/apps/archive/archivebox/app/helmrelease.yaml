@@ -1,0 +1,113 @@
+---
+# ArchiveBox single-container deployment.
+#
+# Upstream entrypoint runs as root only long enough to chown /data to
+# PUID/PGID (911, the image default) and then drops to the archivebox
+# user. Chrome needs an Unconfined seccomp profile plus a sized /dev/shm.
+#
+# SERVER_SECURITY_MODE=safe-onedomain-nojsreplay keeps the admin control
+# plane enabled while serving archived pages from the same origin with
+# risky replay JS neutered, which is the safe choice for a single
+# non-wildcard hostname. Subdomain-per-snapshot isolation would need
+# wildcard routing and is deferred.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: archivebox
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: archivebox
+  interval: 1h
+  values:
+    controllers:
+      archivebox:
+        # Single writer against the /data Longhorn volume.
+        strategy: Recreate
+        containers:
+          app:
+            image:
+              repository: mirror.gcr.io/archivebox/archivebox
+              # renovate: datasource=docker depName=archivebox/archivebox
+              tag: 0.9.71
+            env:
+              PUID: "911"
+              PGID: "911"
+              TZ: Asia/Shanghai
+              BASE_URL: "https://wayback.${SECRET_DOMAIN}"
+              SERVER_SECURITY_MODE: "safe-onedomain-nojsreplay"
+              PUBLIC_INDEX: "true"
+              PUBLIC_ADD_VIEW: "false"
+              ADMIN_USERNAME: "admin"
+              ADMIN_PASSWORD:
+                valueFrom:
+                  secretKeyRef:
+                    name: archivebox-secret
+                    key: admin-password
+            probes:
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /health/
+                    port: 5797
+                  initialDelaySeconds: 15
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 12
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /health/
+                    port: 5797
+                  initialDelaySeconds: 60
+                  periodSeconds: 30
+                  timeoutSeconds: 10
+                  failureThreshold: 6
+            resources:
+              requests:
+                cpu: 200m
+                memory: 512Mi
+              limits:
+                memory: 3Gi
+    defaultPodOptions:
+      securityContext:
+        # Chrome's renderer sandbox needs the default seccomp profile
+        # lifted or archiving jobs crash on start.
+        seccompProfile:
+          type: Unconfined
+    service:
+      app:
+        controller: archivebox
+        ports:
+          http:
+            port: 5797
+    persistence:
+      data:
+        existingClaim: archivebox-data
+        globalMounts:
+          - path: /data
+      dshm:
+        type: emptyDir
+        medium: Memory
+        sizeLimit: 1Gi
+        globalMounts:
+          - path: /dev/shm
+      tmp:
+        type: emptyDir
+        globalMounts:
+          - path: /tmp/archivebox
+    route:
+      app:
+        hostnames: ["wayback.${SECRET_DOMAIN}"]
+        parentRefs:
+          - name: envoy-internal
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: 5797

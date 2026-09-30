@@ -1,0 +1,24 @@
+---
+# Self-hosted web archiving (ArchiveBox) used to preserve historical
+# references cited in our own documentation, e.g. ChatGPT share links.
+# Tailscale-internal only for the MVP: no public route until the
+# archived-content replay surface is reviewed for exposure.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: archivebox
+spec:
+  interval: 1h
+  path: ./wanxiang/kubernetes/apps/archive/archivebox/app
+  postBuild:
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: archive
+  wait: false
+  timeout: 15m
