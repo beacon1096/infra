@@ -24,3 +24,14 @@ AstrBot 4.28 在检查发送者管理员身份之前，就为每个消息会话�
 - 网络能力只经专用 AstrBot 工具开放，例如搜索、视频分析和显式允许的服务中继。
 
 `standard_exec` 每次调用新建沙箱，结束后停止。调用必须串行，因为同一内部网桥上的沙箱仍可能访问彼此的运行时 API；若以后需要普通用户并行执行，应为每个沙箱分配独立 Docker 网络，不能仅靠提示词或隐藏工具说明隔离。
+
+## 模型与思考档位
+
+AstrBot 通过内置 openai 适配器连接共享 LiteLLM 的 `thor/qwen3.8-27b`。该适配器不发任何思考参数（不传 `reasoning_effort`/`enable_thinking`），而 Qwen3.8-27B 的 chat template 默认为 xhigh：动不动就长时间大思考，在默认配置下很难快速跑通，甚至把整个输出预算耗光。
+
+现在两处都固定为低档：
+
+- 网关侧：`thor/qwen3.8-27b` 路由带默认 `chat_template_kwargs`（`enable_thinking: true`、`reasoning_effort: low`、`preserve_thinking: true`），声明于私有仓 `terraform/litellm-wanxiang/models.json`；任何不带思考参数的客户端都会命中。详见公共 infra 的 `docs/inference/thor/thor-inference.md`。
+- AstrBot 侧：`cmd_config.json` 中该 provider 的 `custom_extra_body` 也显式写入同样的值。这是运行时状态，不在仓库或 Nix 中，重装系统或清数据会丢；丢失后仍由网关默认兜底。
+
+客户端自带 `chat_template_kwargs` 时覆盖网关默认（已验证），因此不影响显式控制档位的客户端。

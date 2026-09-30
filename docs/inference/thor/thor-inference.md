@@ -8,7 +8,7 @@
 - 模型：`thor/qwen3.8-27b`。
 - 使用已获该模型授权的 LiteLLM 虚拟密钥。绝不要分发 LiteLLM 主密钥。
 - 现有 Nix agent 凭据 `/run/secrets/personal/beacoworks-models/api_key` 已验证可用。其旧版 `/v1/models` 列表返回 `all-team-models`；须明确配置模型 ID，不要依赖自动发现。
-- 上下文总量为 **262144 token**，由提示词、工具 schema、推理和输出共用。默认输出预算为 4096，公布的输出预算为 8192。日常使用时，输入不超过 **253952 token**，为输出保留 8192。这些是客户端预算，并非独立的硬性输出上限；调度器还会保留少量边界位置。最多同时运行四次生成，共用 270336 token 的常驻 KV 池；更多请求或容量受限的请求会排队。这不等于四个同时运行的完整 256K 上下文。
+- 上下文总量为 **262144 token**，由提示词、工具 schema、推理和输出共用。默认输出预算为 32768，公布的输出预算为 32768。日常使用时，输入不超过 **253952 token**，为输出保留 8192。这些是客户端预算，并非独立的硬性输出上限；调度器还会保留少量边界位置。最多同时运行四次生成，共用 270336 token 的常驻 KV 池；更多请求或容量受限的请求会排队。这不等于四个同时运行的完整 256K 上下文。
 - 模型请求和流超时均为 2400 秒，自动模型重试已禁用。客户端还须设置匹配的 HTTP 空闲超时。一次接近 256K 的冷输入在首段文本出现前耗时 25 分钟；流式传输无法消除该等待。长时间冷预填充和请求队列仍可能超过此期限。四个约 60K 输入加各 4K 输出在算术上可放入池中；这只是规划预算，并非已完成的 4×60K 资格验证。
 - HTTP 端点通过加密的 Tailscale 传输，仍要求 LiteLLM 身份验证。它使用现有 LiteLLM 实例和模型数据库。
 - 现有 `https://models.beaco.works/v1` 仍可用，但在 2026-09-13，Cloudflare 拒绝了 Python/SDK user agent（403/1010），而 curl 可用。在修正公网 API 路径的浏览器检查前，优先使用 Tailnet 端点。
@@ -51,6 +51,14 @@ reasoning token、没有正文并以 `finish_reason: length` 结束（273 s / 25
 1,284 reasoning + 1,734 正文（92 s）。因此 low/medium/high 并不等价于开启思考：
 Pi 实际暴露 off/low/medium/high，其中 `high` 映射 xhigh、`minimal` 映射 low，不显式
 指定档位时仍是模板自身的 xhigh 默认。
+
+2026-09-30 起，该路由在 LiteLLM 侧自带默认 `chat_template_kwargs`
+（`enable_thinking: true`、`reasoning_effort: low`、`preserve_thinking: true`），
+供不发送思考参数的客户端使用；客户端自带 `chat_template_kwargs` 时覆盖路由默认
+（实测：默认档 reasoning≈3.7k token，客户端 `xhigh`≈20.8k，客户端关闭思考则没有
+`reasoning_content`）。没有这层默认时，AstrBot 这类内置 openai 适配器不发任何思考
+参数，会落到模板 xhigh：Qwen3.8-27B 动不动就长时间大思考，在默认配置下很难快速跑通，
+甚至把整个输出预算耗光。
 
 sampling 参数没有在任一环节固定：`sglang.launch_server` 未设置，Pi 的模型定义没有
 `samplingParams`（截获的请求不携带任何 sampling 字段），LiteLLM 记录也没有

@@ -8,7 +8,7 @@ Performance tuning is frozen at the validated Qwen3.8-27B DFlash2 block16 config
 - Model: `thor/qwen3.8-27b`.
 - Use a LiteLLM virtual key authorized for this model. Never distribute the LiteLLM master key.
 - The existing Nix agent credential at `/run/secrets/personal/beacoworks-models/api_key` was verified successfully. Its legacy `/v1/models` listing returns `all-team-models`; configure the model ID explicitly instead of relying on discovery.
-- Context is **262144 tokens total**, shared by prompt, tool schemas, reasoning and output. Default output budget is 4096; advertised output budget is 8192. For daily use, keep input at or below **253952 tokens** to reserve 8192 for output. These are client budgets, not an independent hard output cap; the scheduler also reserves a few boundary positions. Up to four generations run at a time, sharing a 270336-token resident KV pool; additional or capacity-constrained requests queue. This is not four simultaneous full 256K contexts.
+- Context is **262144 tokens total**, shared by prompt, tool schemas, reasoning and output. Default output budget is 32768; advertised output budget is 32768. For daily use, keep input at or below **253952 tokens** to reserve 8192 for output. These are client budgets, not an independent hard output cap; the scheduler also reserves a few boundary positions. Up to four generations run at a time, sharing a 270336-token resident KV pool; additional or capacity-constrained requests queue. This is not four simultaneous full 256K contexts.
 - Model request and stream timeouts are 2400 seconds, with automatic model retries disabled. Clients also need a matching HTTP idle timeout. A near-256K cold input took 25 minutes before first text; streaming cannot remove that delay. Long cold prefill and a queue of requests can still exceed this deadline. Four roughly 60K inputs plus 4K outputs fit the pool arithmetically; this is a planning budget, not a completed 4×60K qualification.
 - The HTTP endpoint is carried over encrypted Tailscale transport and still requires LiteLLM authentication. It serves the existing LiteLLM instance and model database.
 - The existing `https://models.beaco.works/v1` remains available, but on 2026-09-13 Cloudflare rejected Python/SDK user agents (403/1010), while curl worked. Prefer the Tailnet endpoint until the public API path's browser checks are corrected.
@@ -65,6 +65,17 @@ reasoning tokens, no text, and `finish_reason: length` in both runs (273 s and
 not equivalent to thinking on: Pi exposes off/low/medium/high, where `high` maps
 to xhigh and `minimal` maps to low, and a level that is not set still uses the
 template's own xhigh default.
+
+Since 2026-09-30 the route itself carries a default `chat_template_kwargs` in
+LiteLLM (`enable_thinking: true`, `reasoning_effort: low`,
+`preserve_thinking: true`) for clients that send no thinking parameters; a
+client-supplied `chat_template_kwargs` overrides that default (measured: default
+≈3.7k reasoning tokens, client `xhigh` ≈20.8k, and a client-side thinking-off
+request returns no `reasoning_content`). Without this default, clients such as
+AstrBot's built-in OpenAI adapter send no thinking fields at all and fall back to
+the template's xhigh, where Qwen3.8-27B launches into very long thinking spells
+and is hard to finish quickly under the default configuration, sometimes
+spending the entire output budget.
 
 Sampling parameters are not pinned at any layer: `sglang.launch_server` sets none,
 the Pi model definitions have no `samplingParams` (captured requests carry no
