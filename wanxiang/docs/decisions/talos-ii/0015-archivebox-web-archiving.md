@@ -30,9 +30,11 @@ under the shared `bjw-s` `app-template` chart.
   public route was added after the initial internal-only MVP proved unreachable by name:
   `cloudflare-dns` only publishes `envoy-external` hostnames, and `*.beaco.works` does not
   resolve over the tailnet.
-- `PUBLIC_INDEX=true`: the snapshot list and snapshots are readable without login; only
-  the admin control plane requires the SOPS-managed credential. The collection should be
-  treated as public.
+- `PUBLIC_INDEX=true` with `PUBLIC_ADD_VIEW=false`: anonymous visitors can read a
+  snapshot they have a link to, but cannot list/search the collection or add URLs. New
+  crawls default to `PERMISSIONS=unlisted` (link-shareable, not enumerable); `public`
+  and `private` are opt-in per crawl or per snapshot, so exposure is tuned per archive
+  rather than globally. The admin control plane stays behind the SOPS-managed credential.
 - `SERVER_SECURITY_MODE=safe-onedomain-nojsreplay`: the admin control plane stays behind
   its own login, archived pages do not execute risky replay JS, and no wildcard DNS/TLS
   is required.

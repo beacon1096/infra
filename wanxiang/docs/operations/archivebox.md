@@ -11,9 +11,23 @@
 A single ArchiveBox collection used to preserve references cited in our own
 documentation — for example ChatGPT share links — so they can be replayed after the
 source URL rots or changes. It is published on the public ingress so those links are
-usable from rendered docs; `PUBLIC_INDEX=true` means the snapshot list and snapshots are
-readable without a login, while the admin control plane stays behind its own login.
-Treat anything archived here as effectively public.
+usable from rendered docs. Anonymous visitors can read a snapshot they hold a link to,
+but cannot list/search the collection or submit new URLs (`PUBLIC_INDEX=true`,
+`PUBLIC_ADD_VIEW=false`), and new crawls default to `PERMISSIONS=unlisted`.
+
+## Visibility (per crawl / per snapshot)
+
+Each crawl and each snapshot carries a `PERMISSIONS` value:
+
+- `unlisted` **(default)**: reachable by direct link, never listed or searched.
+- `public`: additionally listed in `/public` and search.
+- `private`: login required; a signed share link can grant temporary access.
+
+Set it per crawl via `POST /api/v1/crawls` with `config:{"PERMISSIONS":"private"}`, via a
+persona's `PERMISSIONS` (`archivebox persona create --permissions=...`), or per snapshot
+in the admin UI. The REST API does not currently expose a snapshot `permissions` field,
+so per-snapshot changes are an admin-UI operation.
+
 
 ## How it runs
 

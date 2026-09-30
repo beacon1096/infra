@@ -38,6 +38,10 @@ spec:
               SERVER_SECURITY_MODE: "safe-onedomain-nojsreplay"
               PUBLIC_INDEX: "true"
               PUBLIC_ADD_VIEW: "false"
+              # Snapshot visibility for new crawls: unlisted = reachable by
+              # direct link but never listed/searched. Mark individual crawls
+              # or snapshots public/private to override. See the runbook.
+              PERMISSIONS: "unlisted"
               ADMIN_USERNAME: "admin"
               ADMIN_PASSWORD:
                 valueFrom:
