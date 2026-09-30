@@ -99,11 +99,11 @@ in
 
       Host m920x
         HostName 100.101.83.77
-        User root
+        User beacon
 
       Host ms-r1
         HostName 172.16.80.240
-        User root
+        User beacon
 
       Host udm-pro
         HostName 172.16.80.254
@@ -112,55 +112,55 @@ in
       Host ark 107.189.6.180
         HostName 107.189.6.180
         HostKeyAlias ark
-        User root
+        User beacon
         Port 2233
 
       Host courier 89.208.240.145
         HostName 89.208.240.145
         HostKeyAlias courier
-        User root
+        User beacon
         Port 2233
 
       Host cygnus 67.230.162.189
         HostName 67.230.162.189
         HostKeyAlias cygnus
-        User root
+        User beacon
         Port 2233
 
       Host flint 103.118.41.228
         HostName 103.118.41.228
         HostKeyAlias flint
-        User root
+        User beacon
         Port 2233
 
       Host glacier 1.116.139.81
         HostName 1.116.139.81
         HostKeyAlias glacier
-        User root
+        User beacon
         Port 2233
 
       Host navi 89.208.253.236
         HostName 89.208.253.236
         HostKeyAlias navi
-        User root
+        User beacon
         Port 2233
 
       Host octo 23.247.139.23
         HostName 23.247.139.23
         HostKeyAlias octo
-        User root
+        User beacon
         Port 2233
 
       Host shuttle 89.208.241.145
         HostName 89.208.241.145
         HostKeyAlias shuttle
-        User root
+        User beacon
         Port 2233
 
       Host speicher 167.179.83.73
         HostName 167.179.83.73
         HostKeyAlias speicher
-        User root
+        User beacon
         Port 2233
 
       Host ark courier cygnus flint glacier navi octo shuttle speicher 107.189.6.180 89.208.240.145 67.230.162.189 103.118.41.228 1.116.139.81 89.208.253.236 23.247.139.23 89.208.241.145 167.179.83.73
@@ -172,7 +172,7 @@ in
       Host microserver-gen10plus 100.121.229.9
         HostName 100.121.229.9
         HostKeyAlias microserver-gen10plus
-        User root
+        User beacon
         ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
@@ -182,9 +182,103 @@ in
       Host 172.16.100.250
         HostName 100.101.83.77
         HostKeyAlias 100.101.83.77
-        User root
+        User beacon
 
       Host mc5-01 mc4-01 mc4-02 rb5009 m920x ms-r1 udm-pro 100.100.250.57 100.101.83.77 172.16.20.* 172.16.80.* 172.16.81.* 172.16.82.* 172.16.83.* 172.16.84.* 172.16.85.* 172.16.86.* 172.16.87.* 172.16.88.* 172.16.89.* 172.16.90.* 172.16.91.* 172.16.92.* 172.16.93.* 172.16.94.* 172.16.95.* 172.16.100.* 172.16.101.* 172.16.102.* 172.16.107.*
+        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        IdentityFile /home/coder/.ssh/runtime/id_ed25519
+        UserKnownHostsFile /home/coder/.ssh/known_hosts
+        IdentitiesOnly yes
+        StrictHostKeyChecking yes
+
+      # Per-identity root aliases for the GitOps runtime. The base aliases
+      # above stay on the unprivileged user for humans and read-only agents;
+      # GitOps connects through these to the root key granted by
+      # modules/nixos/gitops-root-access.nix.
+      Host ark-root
+        HostName 107.189.6.180
+        HostKeyAlias ark
+        User root
+        Port 2233
+
+      Host courier-root
+        HostName 89.208.240.145
+        HostKeyAlias courier
+        User root
+        Port 2233
+
+      Host cygnus-root
+        HostName 67.230.162.189
+        HostKeyAlias cygnus
+        User root
+        Port 2233
+
+      Host flint-root
+        HostName 103.118.41.228
+        HostKeyAlias flint
+        User root
+        Port 2233
+
+      Host glacier-root
+        HostName 1.116.139.81
+        HostKeyAlias glacier
+        User root
+        Port 2233
+
+      Host navi-root
+        HostName 89.208.253.236
+        HostKeyAlias navi
+        User root
+        Port 2233
+
+      Host octo-root
+        HostName 23.247.139.23
+        HostKeyAlias octo
+        User root
+        Port 2233
+
+      Host shuttle-root
+        HostName 89.208.241.145
+        HostKeyAlias shuttle
+        User root
+        Port 2233
+
+      Host speicher-root
+        HostName 167.179.83.73
+        HostKeyAlias speicher
+        User root
+        Port 2233
+
+      Host ark-root courier-root cygnus-root flint-root glacier-root navi-root octo-root shuttle-root speicher-root
+        IdentityFile /home/coder/.ssh/runtime/id_ed25519
+        UserKnownHostsFile /home/coder/.ssh/known_hosts
+        IdentitiesOnly yes
+        StrictHostKeyChecking yes
+
+      Host m920x-root
+        HostName 100.101.83.77
+        HostKeyAlias 100.101.83.77
+        User root
+        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        IdentityFile /home/coder/.ssh/runtime/id_ed25519
+        UserKnownHostsFile /home/coder/.ssh/known_hosts
+        IdentitiesOnly yes
+        StrictHostKeyChecking yes
+
+      Host ms-r1-root
+        HostName 172.16.80.240
+        HostKeyAlias 172.16.80.240
+        User root
+        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        IdentityFile /home/coder/.ssh/runtime/id_ed25519
+        UserKnownHostsFile /home/coder/.ssh/known_hosts
+        IdentitiesOnly yes
+        StrictHostKeyChecking yes
+
+      Host microserver-gen10plus-root
+        HostName 100.121.229.9
+        HostKeyAlias microserver-gen10plus
+        User root
         ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
