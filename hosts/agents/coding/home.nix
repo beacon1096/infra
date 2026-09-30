@@ -101,10 +101,10 @@ in
         HostName 100.101.83.77
         User beacon
 
-      Host m920x-inspection
+      Host m920x-patrol
         HostName 100.101.83.77
         HostKeyAlias 100.101.83.77
-        User homelab-inspection
+        User patrol-agent
         ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
@@ -115,10 +115,10 @@ in
         HostName 172.16.80.240
         User beacon
 
-      Host ms-r1-inspection
+      Host ms-r1-patrol
         HostName 172.16.80.240
         HostKeyAlias 172.16.80.240
-        User homelab-inspection
+        User patrol-agent
         ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
@@ -183,7 +183,67 @@ in
         User beacon
         Port 2233
 
+      Host ark-patrol
+        HostName 107.189.6.180
+        HostKeyAlias ark
+        User patrol-agent
+        Port 2233
+
+      Host courier-patrol
+        HostName 89.208.240.145
+        HostKeyAlias courier
+        User patrol-agent
+        Port 2233
+
+      Host cygnus-patrol
+        HostName 67.230.162.189
+        HostKeyAlias cygnus
+        User patrol-agent
+        Port 2233
+
+      Host flint-patrol
+        HostName 103.118.41.228
+        HostKeyAlias flint
+        User patrol-agent
+        Port 2233
+
+      Host glacier-patrol
+        HostName 1.116.139.81
+        HostKeyAlias glacier
+        User patrol-agent
+        Port 2233
+
+      Host navi-patrol
+        HostName 89.208.253.236
+        HostKeyAlias navi
+        User patrol-agent
+        Port 2233
+
+      Host octo-patrol
+        HostName 23.247.139.23
+        HostKeyAlias octo
+        User patrol-agent
+        Port 2233
+
+      Host shuttle-patrol
+        HostName 89.208.241.145
+        HostKeyAlias shuttle
+        User patrol-agent
+        Port 2233
+
+      Host speicher-patrol
+        HostName 167.179.83.73
+        HostKeyAlias speicher
+        User patrol-agent
+        Port 2233
+
       Host ark courier cygnus flint glacier navi octo shuttle speicher 107.189.6.180 89.208.240.145 67.230.162.189 103.118.41.228 1.116.139.81 89.208.253.236 23.247.139.23 89.208.241.145 167.179.83.73
+        IdentityFile /home/coder/.ssh/runtime/id_ed25519
+        UserKnownHostsFile /home/coder/.ssh/known_hosts
+        IdentitiesOnly yes
+        StrictHostKeyChecking yes
+
+      Host ark-patrol courier-patrol cygnus-patrol flint-patrol glacier-patrol navi-patrol octo-patrol shuttle-patrol speicher-patrol
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
         IdentitiesOnly yes
@@ -199,40 +259,40 @@ in
         IdentitiesOnly yes
         StrictHostKeyChecking yes
 
-      Host microserver-gen10plus-inspection
+      Host microserver-gen10plus-patrol
         HostName 100.121.229.9
         HostKeyAlias microserver-gen10plus
-        User homelab-inspection
+        User patrol-agent
         ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
         IdentitiesOnly yes
         StrictHostKeyChecking yes
 
-      Host nixbuilder-01-inspection
+      Host nixbuilder-01-patrol
         HostName 172.16.101.31
         HostKeyAlias 172.16.101.31
-        User homelab-inspection
+        User patrol-agent
         ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
         IdentitiesOnly yes
         StrictHostKeyChecking yes
 
-      Host nixbuilder-02-inspection
+      Host nixbuilder-02-patrol
         HostName 172.16.101.32
         HostKeyAlias 172.16.101.32
-        User homelab-inspection
+        User patrol-agent
         ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
         IdentitiesOnly yes
         StrictHostKeyChecking yes
 
-      Host nixbuilder-03-inspection
+      Host nixbuilder-03-patrol
         HostName 172.16.101.33
         HostKeyAlias 172.16.101.33
-        User homelab-inspection
+        User patrol-agent
         ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts

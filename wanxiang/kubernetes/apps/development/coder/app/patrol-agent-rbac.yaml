@@ -2,13 +2,13 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: homelab-inspection
+  name: patrol-agent
 automountServiceAccountToken: true
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: homelab-inspection
+  name: infra-observer
 rules:
   - apiGroups: [""]
     resources:
@@ -17,6 +17,7 @@ rules:
       - namespaces
       - nodes
       - pods
+      - persistentvolumeclaims
       - services
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
@@ -66,12 +67,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: homelab-inspection
+  name: patrol-agent-infra-observer
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: homelab-inspection
+  name: infra-observer
 subjects:
   - kind: ServiceAccount
-    name: homelab-inspection
+    name: patrol-agent
     namespace: development

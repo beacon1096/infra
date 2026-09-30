@@ -11,5 +11,5 @@ resources:
   - ./workspace-git-ssh-secret.sops.yaml
   - ./workspace-infra-secret.sops.yaml
   - ./workspace-events-rbac.yaml
-  - ./homelab-inspection-rbac.yaml
+  - ./patrol-agent-rbac.yaml
   - ./httproute.yaml

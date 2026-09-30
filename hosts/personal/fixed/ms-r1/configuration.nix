@@ -125,12 +125,12 @@
     ];
   };
 
-  users.users.homelab-inspection = {
+  users.users.patrol-agent = {
     isNormalUser = true;
-    description = "Homelab inspection agent";
+    description = "Patrol agent";
     hashedPassword = "!";
     openssh.authorizedKeys.keys = [
-      "restrict ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDsABsuLsQ9hoONS3tAq3i7FRbNHoDBTITUm5+WtGMZM Homelab 巡检 @ Beacoworks"
+      "restrict ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDsABsuLsQ9hoONS3tAq3i7FRbNHoDBTITUm5+WtGMZM Patrol Agent @ Beacoworks"
     ];
   };
 
