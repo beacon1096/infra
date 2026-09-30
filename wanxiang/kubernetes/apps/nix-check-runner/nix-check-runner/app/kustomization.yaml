@@ -1,12 +1,14 @@
 ---
 # Read-only PR check profile. Uses the shared `forgejo-runner-nix` component
-# and overlays the per-profile differences: the `nix-check` label, capacity 2
-# and a collector-sized pod envelope. It supplies read-scoped secrets (runner
+# and overlays the per-profile differences: the `nix-check` label, capacity 6
+# and a large pod envelope. It supplies read-scoped secrets (runner
 # registration, Attic pull token, ci-pr builder key) and its own store PVC.
 #
-# Sizing mirrors nix-collector: the PR path evaluates full x86_64 NixOS system
-# closures, and with capacity 2 two evaluations run at once, so a small
-# envelope OOMKills the pod.
+# Sizing: the PR path evaluates full x86_64 NixOS system closures and builds
+# OCI images, and several required checks (Secrets, Docs i18n) share this
+# runner with the heavy check-nix job. A low capacity lets a couple of long
+# jobs starve the fast ones and stall merges, so keep capacity and the pod
+# envelope generous.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 components:
@@ -23,20 +25,21 @@ patches:
     patch: |
       - op: replace
         path: /spec/values/runner/config/file/runner/capacity
-        value: 2
+        value: 6
       - op: replace
         path: /spec/values/runner/config/file/runner/labels
         value: ["nix-check:host"]
       - op: replace
         path: /spec/values/resources/requests/cpu
-        value: 500m
+        value: "1"
       - op: replace
         path: /spec/values/resources/requests/memory
-        value: 2Gi
+        value: 4Gi
       - op: replace
         path: /spec/values/resources/limits/cpu
-        value: "4"
+        value: "8"
       - op: replace
         path: /spec/values/resources/limits/memory
-        value: 12Gi
+        value: 20Gi
+
 
