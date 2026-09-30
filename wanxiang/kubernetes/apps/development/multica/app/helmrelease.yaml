@@ -14,7 +14,7 @@ spec:
     images:
       backend:
         repository: forgejo.beaco.works/infrastructure/nix-fleet/multica-backend
-        tag: 0.4.24-beacon.1
+        tag: 0.6.0-beacon.1
 
     postgres:
       external:

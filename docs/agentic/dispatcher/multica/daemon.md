@@ -4,7 +4,7 @@ Multica 管理长期 Agent 身份、工单、Autopilot 和任务运行；Coder �
 
 ## 万象服务
 
-`wanxiang/kubernetes/apps/development/multica/` 使用 `0.4.24` Helm chart，后端镜像为带 webhook Issue 去重补丁的 `0.4.24-beacon.1`，前后端各一副本，数据库为外部 PostgreSQL。配置关闭公开注册和用户自行创建工作区，启用 VCS 集成；入口为集群 Gateway 的 HTTPS 路由。补丁与 Renovate 审查流程另见 [Multica 合并门禁](../../workflow/infra-ops/renovate-multica-gate.md)。`vcsIntegrationEnabled` 只打开集成入口；工单显示 Forgejo PR 还需工作区的 VCS connection、仓库 webhook，以及审核回调时把 issue 标识回写 PR。现状、历史 schema 修复与 n8n 回写见 [Paseo 与 Multica 的 Forgejo 集成](../forgejo-integration.md)。这些是仓库声明，不代表此刻 Pod 健康状态。
+`wanxiang/kubernetes/apps/development/multica/` 使用 `0.6.0` Helm chart，后端镜像为带 webhook Issue 去重补丁的 `0.6.0-beacon.1`，前后端各一副本，数据库为外部 PostgreSQL。配置关闭公开注册和用户自行创建工作区，启用 VCS 集成；入口为集群 Gateway 的 HTTPS 路由。补丁与 Renovate 审查流程另见 [Multica 合并门禁](../../workflow/infra-ops/renovate-multica-gate.md)。`vcsIntegrationEnabled` 只打开集成入口；工单显示 Forgejo PR 还需工作区的 VCS connection、仓库 webhook，以及审核回调时把 issue 标识回写 PR。现状、历史 schema 修复与 n8n 回写见 [Paseo 与 Multica 的 Forgejo 集成](../forgejo-integration.md)。这些是仓库声明，不代表此刻 Pod 健康状态。
 
 ## 执行 daemon
 

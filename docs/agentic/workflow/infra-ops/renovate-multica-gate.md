@@ -134,7 +134,7 @@ autopilot 与运行的绑定关系、取消所有仍在排队或执行中的先�
 
 这一协调过程刻意设计为幂等。并发投递可能读取同一个先前 Issue，但重复设置 `cancelled` 的最终状态相同。所有 Issue 标识符均来自保存的运行绑定关系，而非代理提供的 URL 或标题。如果无法读取或验证 Multica，就停止该协调分支，而不会猜测 Issue 的身份。
 
-临时下游镜像由 `multica-backend-oci` flake 输出以可复现方式构建。它获取固定版本的上游 `v0.4.24` 源码，应用上述补丁，构建静态 Go 二进制文件，并生成标记为 `0.4.24-beacon.1` 的 OCI 归档。Forgejo 构建工作流将这个不可变的版本标签发布到 `forgejo.beaco.works/infrastructure/nix-fleet/multica-backend`。部署则通过另一项 Multica HelmRelease 变更完成，且只有在注册表标签可匿名访问后才进行。这样的顺序可防止 Flux 协调镜像尚未发布的清单。
+临时下游镜像由 `multica-backend-oci` flake 输出以可复现方式构建。它获取固定版本的上游 `v0.6.0` 源码，应用上述补丁，构建静态 Go 二进制文件，并生成标记为 `0.6.0-beacon.1` 的 OCI 归档。Forgejo 构建工作流将这个不可变的版本标签发布到 `forgejo.beaco.works/infrastructure/nix-fleet/multica-backend`。部署则通过另一项 Multica HelmRelease 变更完成，且只有在注册表标签可匿名访问后才进行。这样的顺序可防止 Flux 协调镜像尚未发布的清单。
 
 发布任务通过从标准输入填充的临时 `skopeo` 认证文件登录。不得通过 `--dest-creds` 传递注册表凭据：命令参数会显示在运行器的进程表中。退出陷阱会删除认证文件；若发现凭据曾暴露在进程表中，则轮换注册表 PAT。
 

@@ -7,5 +7,5 @@ spec:
   interval: 1h
   url: oci://zot.registry.svc.cluster.local:5000/charts/multica
   ref:
-    tag: 0.4.24
+    tag: 0.6.0
   insecure: true
