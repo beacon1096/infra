@@ -817,6 +817,10 @@ jobs:
     needs: warm-cache
     runs-on: nix-collector
     timeout-minutes: 120
+    # Runs in-cluster: push via the cluster Service (the public Cloudflare
+    # front rejects the ~130 MiB image with HTTP 413).
+    env:
+      REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT_INTERNAL || 'http://forgejo-http.development.svc.cluster.local:3000' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -846,21 +850,26 @@ jobs:
           registry_host="${registry_host#https://}"
           test -n "$REGISTRY_USER"
           test -n "$REGISTRY_TOKEN"
+          skopeo_args=(--retry-times 5 --retry-delay 10s)
+          login_args=(--username "$REGISTRY_USER" --password-stdin)
+          if [[ "$registry_host" == *"svc.cluster.local"* ]]; then
+            skopeo_args+=(--dest-tls-verify=false)
+            login_args+=(--tls-verify=false)
+          fi
           auth_file="$PWD/.skopeo-auth.json"
           trap 'rm -f "$auth_file"' EXIT
           mkdir -p "$PWD/.skopeo-tmp"
           printf '%s' "$REGISTRY_TOKEN" | nix shell nixpkgs#skopeo -c \
-            skopeo login --authfile "$auth_file" --username "$REGISTRY_USER" \
-            --password-stdin "$registry_host"
+            skopeo login --authfile "$auth_file" "${login_args[@]}" "$registry_host"
           nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
-            --retry-times 5 --retry-delay 10s \
+            "${skopeo_args[@]}" \
             --dest-authfile "$auth_file" \
             docker-archive:result-nix-collector \
             "docker://$registry_host/$IMAGE_PATH:latest"
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             tag="${GITHUB_REF#refs/tags/}"
             nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
-              --retry-times 5 --retry-delay 10s \
+              "${skopeo_args[@]}" \
               --dest-authfile "$auth_file" \
               docker-archive:result-nix-collector \
               "docker://$registry_host/$IMAGE_PATH:$tag"
