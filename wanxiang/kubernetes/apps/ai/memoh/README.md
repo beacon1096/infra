@@ -27,3 +27,5 @@ Workspace Desktop（Web UI 的 Desktop 面板）的媒体由 `memoh-server` 内�
 Tailscale Operator 的 `tailscale.com/expose` 支持 TCP/UDP L3 Service，当前 `memoh-tailscale` 只有 TCP 8082 是因为 Service 未声明 UDP，不是 Operator 的限制。WebRTC 媒体不要经过 Cloudflare：`memoh.beaco.works` 继续只作为 Web/API 入口，Desktop 暂时面向已加入 tailnet 的客户端。TURN 是后续“Desktop 公网化”的独立上游需求。
 
 问题定位、源码依据（PR #1104、v0.20.0 `internal/display/service.go`）与验证步骤见 https://chatgpt.com/share/6abcc484-e924-83e9-95b0-e55074cf51ee 。
+
+落地改动见 `infrastructure/infra#179`（本目录清单与 gst wrapper）与 `infrastructure/infra-private#72`（`memoh-rtc-tailscale`、NAT IP patch、sing-box rpfilter 修复）。
