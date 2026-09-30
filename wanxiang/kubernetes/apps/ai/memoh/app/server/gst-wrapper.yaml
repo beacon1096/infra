@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: memoh-gst-wrapper
+  namespace: ai
+  labels:
+    app.kubernetes.io/part-of: memoh
+data:
+  # WebRTC media crosses the tailnet, whose MTU is 1280. GStreamer's RTP
+  # payloaders default to mtu=1400, and oversized packets are silently lost on
+  # that path (client sees ~45% packet loss, sends PLI/NACK, never decodes a
+  # frame). Wrap gst-launch so the RTP payloaders cap at 1200 bytes; wire it in
+  # with MEMOH_GSTREAMER_LAUNCH.
+  gst-mtu.sh: |
+    #!/bin/sh
+    out=""
+    for a in "$@"; do
+      case "$a" in
+        rtph264pay|rtpvp8pay) out="$out $a mtu=1200" ;;
+        *) out="$out '$a'" ;;
+      esac
+    done
+    eval "exec /usr/bin/gst-launch-1.0 $out"

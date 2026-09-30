@@ -63,9 +63,16 @@ spec:
               containerPort: 8080
             - name: channel
               containerPort: 8081
+            - name: webrtc
+              containerPort: 30000
+              protocol: UDP
           env:
             - name: GOMEMLIMIT
               value: 7GiB
+            - name: MEMOH_DISPLAY_WEBRTC_UDP_PORT
+              value: "30000"
+            - name: MEMOH_GSTREAMER_LAUNCH
+              value: /opt/memoh/gst-wrapper/gst-mtu.sh
             - name: MEMOH_CONNECT_IT_BASE_URL
               value: http://memoh-connect-it.ai.svc.cluster.local:8421
             - name: MEMOH_CONNECT_IT_API_TOKEN
@@ -84,6 +91,9 @@ spec:
               mountPath: /var/lib/cni
             - name: data
               mountPath: /opt/memoh/data
+            - name: gst-wrapper
+              mountPath: /opt/memoh/gst-wrapper
+              readOnly: true
           startupProbe:
             exec:
               command: [sh, -c, "wget -q --spider http://127.0.0.1:8080/health"]
@@ -115,6 +125,10 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: memoh-data
+        - name: gst-wrapper
+          configMap:
+            name: memoh-gst-wrapper
+            defaultMode: 0755
 ---
 apiVersion: v1
 kind: Service
