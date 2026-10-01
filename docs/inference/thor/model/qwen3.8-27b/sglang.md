@@ -1,10 +1,10 @@
 # Qwen3.8-27B：使用 Lazycat 检查点的本地 SGLang
 
 [Thor 概览](../../README.md) ·
-[官方 Lazycat 应用部署与基准测试](lazycat.md) ·
+[官方 Lazycat 应用部署与基准测试](../../../../../inventory/guanggu/lcmd/thor-apps/qwen3.8-27b.md) ·
 [原版 NVFP4 本地实验](original.md)
 
-本文记录在 NixOS 上自行组装、使用 Lazycat 官方镜像内置目标模型与草稿模型的 SGLang 部署及其调优。官方 Lazycat 应用本身的部署与测量见 [lazycat.md](lazycat.md)，两者的运行时、上下文与调度配置不同，跨运行时的数字不能直接比较。带日期的观察只描述当时的测试状态。
+本文记录在 NixOS 上自行组装、使用 Lazycat 官方镜像内置目标模型与草稿模型的 SGLang 部署及其调优。官方 Lazycat 应用本身的部署与测量见 [lazycat.md](../../../../../inventory/guanggu/lcmd/thor-apps/qwen3.8-27b.md)，两者的运行时、上下文与调度配置不同，跨运行时的数字不能直接比较。带日期的观察只描述当时的测试状态。
 
 同一台机器重启进入 NixOS 后，将官方镜像内置的目标模型和草稿模型复制到本地模型存储。复制所得的 `model.safetensors` 文件与镜像标签完全一致：
 
@@ -15,7 +15,7 @@
 
 本地运行时为 SGLang `0.0.0.dev1+g5f55db35e`。它使用原生 262,144 上下文、四个运行中请求、总计 270,336 个 token、BF16 KV、Triton attention 与 linear attention、FlashInfer CUTLASS FP4 GEMM、完整解码 CUDA Graph，以及现有的 Thor GDN 验证补丁。这与官方的 512K YaRN、八序列、eager vLLM 配置存在实质差异，因此跨运行时数据并非仅比较检查点的 A/B 实验。
 
-比较了当前生产配置和五种实验配置，包括完整的双目标模型 × 双草稿模型 K16 矩阵，以及仅使用 Lazycat 目标模型的对照。生产配置使用 RadixArk 目标模型、未量化的 z-lab 草稿模型和本地 INT8 草稿输出头优化。该草稿模型与 Lazycat 目标模型配对时，仍启用相同优化。仅使用 Lazycat 目标模型的配置禁用了推测解码。每次请求都清空 SGLang 前缀缓存；单流提示词、输出上限、温度、种子和三次测量重复均与[官方应用的单流测量](lazycat.md#单流测量)相同。
+比较了当前生产配置和五种实验配置，包括完整的双目标模型 × 双草稿模型 K16 矩阵，以及仅使用 Lazycat 目标模型的对照。生产配置使用 RadixArk 目标模型、未量化的 z-lab 草稿模型和本地 INT8 草稿输出头优化。该草稿模型与 Lazycat 目标模型配对时，仍启用相同优化。仅使用 Lazycat 目标模型的配置禁用了推测解码。每次请求都清空 SGLang 前缀缓存；单流提示词、输出上限、温度、种子和三次测量重复均与[官方应用的单流测量](../../../../../inventory/guanggu/lcmd/thor-apps/qwen3.8-27b.md#单流测量)相同。
 
 | 本地 SGLang 配置 | 中文 | 短代码 | 长代码 | 首个内容延迟中位数范围 |
 | --- | ---: | ---: | ---: | ---: |
@@ -348,6 +348,6 @@ SGLang 在 1.7–1.9 秒内直接加载了量化草稿模型。由于融合的 D
 
 ## 参考资料
 
-- [官方 Lazycat 应用部署与基准测试](lazycat.md)
+- [官方 Lazycat 应用部署与基准测试](../../../../../inventory/guanggu/lcmd/thor-apps/qwen3.8-27b.md)
 - [此前的本地原版 NVFP4 实验](original.md)
 - [厂商公布的性能快照](../../README.md#厂商公布的性能快照)

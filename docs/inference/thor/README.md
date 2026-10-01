@@ -14,13 +14,13 @@
 
 | 模型 | 记录 | 范围 |
 | --- | --- | --- |
-| Qwen3.8-27B 懒猫官方应用 | [官方部署与基准测试](model/qwen3.8-27b/lazycat.md) | 应用与运行时版本、DFlash2 K16、8 请求调度、5K 预填充和 500K 上下文 |
+| Qwen3.8-27B 懒猫官方应用 | [官方部署与基准测试](../../../inventory/guanggu/lcmd/thor-apps/qwen3.8-27b.md) | 应用与运行时版本、DFlash2 K16、8 请求调度、5K 预填充和 500K 上下文 |
 | Qwen3.8-27B 自建 SGLang（Lazycat 检查点） | [本地部署与调优](model/qwen3.8-27b/sglang.md) | 机群自有性能复测、YaRN/上下文、长预填充归因、FA4 与 Triton 后端及 DFlash 筛选 |
 | Qwen3.8-27B 原版 NVFP4 | [复测与启动配置](model/qwen3.8-27b/original.md) | 常规解码、MTP、DFlash2 与 FA4 对比 |
 | Huihui Qwen3.8-27B NVFP4 | [试验与性能分析](model/qwen3.8-27b/huihui.md) | 修改版目标模型、能力检查、DFlash2 与输出头分析 |
-| Qwen3.8 Flash Next 懒猫官方应用 | [官方部署与基准测试](model/qwen3.8-flash-next/lazycat.md) | 应用与运行时版本、K16、8 请求调度、5K 预填充和 260K 上下文 |
+| Qwen3.8 Flash Next 懒猫官方应用 | [官方部署与基准测试](../../../inventory/guanggu/lcmd/thor-apps/qwen3.8-flash-next.md) | 应用与运行时版本、K16、8 请求调度、5K 预填充和 260K 上下文 |
 | Qwen3.8 Flash Next 实验性适配 | [部署与性能](model/qwen3.8-flash-next/original.md) | SM110 修复、K3/原生 GDN、草稿头量化和目标模型性能分析 |
-| MiniMax H3 VDN FP8 | [官方部署与基准测试](model/minimax-h3.md) | 懒猫应用与运行时组成、API 限制和三种配置的计时矩阵 |
+| MiniMax H3 VDN FP8 | [官方部署与基准测试](../../../inventory/guanggu/lcmd/thor-apps/minimax-h3.md) | 懒猫应用与运行时组成、API 限制和三种配置的计时矩阵 |
 | DeepSeek-v4 Flash | [可行性评估](model/deepseek-v4-flash.md) | 容量与架构约束；未部署 |
 
 性能结果只适用于记录中的提示词、运行时版本和测量方法。各模型页面保留这些条件及外部参考；不同负载的数字不能直接用来给模型排名。

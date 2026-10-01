@@ -1,7 +1,7 @@
 # Qwen3.8 Flash Next：NVFP4、CUDA Graph 与 MTP
 
 [Thor 概览](../../README.md) ·
-[Lazycat 官方应用部署](lazycat.md)
+[Lazycat 官方应用部署](../../../../../inventory/guanggu/lcmd/thor-apps/qwen3.8-flash-next.md)
 
 源码审查：部署修订版 `d03809008834124e80223c3482f2ddb59577a48f`。
 本地启动与性能实验：2026-09-13。

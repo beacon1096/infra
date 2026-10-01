@@ -1,7 +1,7 @@
 # Qwen3.8 Flash Next：Lazycat 应用部署与基准测试
 
-[Thor 概览](../../README.md) ·
-[先前的本地适配实验](original.md)
+[Thor 概览](../../../../inference/thor/README.md) ·
+[先前的本地适配实验](../../../../inference/thor/model/qwen3.8-flash-next/original.md)
 
 检查与试验日期：2026-09-18。本文记录一台 Thor T5000 上运行的官方 Lazycat 应用及
 预构建算力舱运行时，与此前本地组装、低上下文长度的 K1/K3 实验分开。
@@ -93,7 +93,7 @@ vLLM 报告加载的目标模型和草稿模型共占 78.67 GiB。观察到的�
 配置和环境通过 `VLLM_QWEN4_DISABLE_COOP_TOPK=1` 请求禁用 cooperative-top-k。
 然而，此 vLLM 构建版本将该变量报告为未知，已安装的稀疏索引器源码也不读取该变量，
 其 SM110 选择器条件仍然存在。因此，没有执行追踪就不能认为预期的禁用已生效。
-这与[先前本地实验](original.md#确定性-qsa-选择正确性回归)中
+这与[先前本地实验](../../../../inference/thor/model/qwen3.8-flash-next/original.md#确定性-qsa-选择正确性回归)中
 验证过的确定性选择器补丁不同。
 
 ## API 与功能观察
@@ -212,5 +212,5 @@ JSON 响应则为两个。观察到的非确定性可能与多种批处理、QSA
 
 ## 参考资料
 
-- [先前的本地 Qwen3.8 Flash Next 实验](original.md)
-- [厂商公布的性能快照](../../README.md#厂商公布的性能快照)
+- [先前的本地 Qwen3.8 Flash Next 实验](../../../../inference/thor/model/qwen3.8-flash-next/original.md)
+- [厂商公布的性能快照](../../../../inference/thor/README.md#厂商公布的性能快照)

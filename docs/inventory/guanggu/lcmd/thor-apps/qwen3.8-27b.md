@@ -1,10 +1,10 @@
 # Qwen3.8-27B：Lazycat 应用部署与基准测试
 
-[Thor 概览](../../README.md) ·
-[本地 SGLang 部署与调优](sglang.md) ·
-[原版 NVFP4 本地实验](original.md)
+[Thor 概览](../../../../inference/thor/README.md) ·
+[本地 SGLang 部署与调优](../../../../inference/thor/model/qwen3.8-27b/sglang.md) ·
+[原版 NVFP4 本地实验](../../../../inference/thor/model/qwen3.8-27b/original.md)
 
-检查与试验日期：2026-09-18。本文记录一台 Thor T5000 上的 Lazycat 官方应用及预构建算力舱运行时；使用 Lazycat 检查点自行组装的 SGLang 部署另见 [sglang.md](sglang.md)。
+检查与试验日期：2026-09-18。本文记录一台 Thor T5000 上的 Lazycat 官方应用及预构建算力舱运行时；使用 Lazycat 检查点自行组装的 SGLang 部署另见 [sglang.md](../../../../inference/thor/model/qwen3.8-27b/sglang.md)。
 
 测试版本：
 
@@ -16,7 +16,7 @@
 - 已部署模型版本：`0.5.1`；
 - 算力运行时：`runtime-160-0.2.2-modelopt-nvfp4-draft`。
 
-官方系统上的测试使用算力舱控制面板的性能风扇配置（`风扇-性能模式`）。重启进入 NixOS 后，适配的 Lazycat 温控守护进程以静音配置（`<Max-Q>`）重新生成运行时配置，尽管 AI Pod 后端仍保留 `<Max-P>`。因此，随后的自托管 SGLang 调优及限定时长的稳定性测试使用了静音配置。GPU 时钟维持在 1,385--1,386 MHz，未观察到因温度导致的性能下降，因此归因分析和内核相对性能比较仍然有效。后续另用机群自有的性能曲线复测，并在下文单独标明。参见[温控检查](../../../../inventory/guanggu/thor/lzc-thermal.md)。私人地址、主机名、凭据以及用户和设备标识符均已省略。
+官方系统上的测试使用算力舱控制面板的性能风扇配置（`风扇-性能模式`）。重启进入 NixOS 后，适配的 Lazycat 温控守护进程以静音配置（`<Max-Q>`）重新生成运行时配置，尽管 AI Pod 后端仍保留 `<Max-P>`。因此，随后的自托管 SGLang 调优及限定时长的稳定性测试使用了静音配置。GPU 时钟维持在 1,385--1,386 MHz，未观察到因温度导致的性能下降，因此归因分析和内核相对性能比较仍然有效。后续另用机群自有的性能曲线复测，并在下文单独标明。参见[温控检查](../thor/lzc-thermal.md)。私人地址、主机名、凭据以及用户和设备标识符均已省略。
 
 ## Lazycat 管理应用
 
@@ -143,7 +143,7 @@ vLLM 警告称，在 16-token 推测窗口下，4,096 个调度 token 的上限�
 
 ## 单流测量
 
-三个提示词及输出上限与[此前的本地实验](original.md#方法与结果)一致。每种负载先进行一次 32-token 预热，然后执行三次测量请求。温度设为零，禁用思考，并提供固定种子。服务没有重置前缀缓存的路由，因此每次请求使用独立的 `cache_salt`，在保持提示词完全相同的同时避免缓存复用。解码速率按 `(completion tokens - 1) / (stream end - first content)` 计算。
+三个提示词及输出上限与[此前的本地实验](../../../../inference/thor/model/qwen3.8-27b/original.md#方法与结果)一致。每种负载先进行一次 32-token 预热，然后执行三次测量请求。温度设为零，禁用思考，并提供固定种子。服务没有重置前缀缓存的路由，因此每次请求使用独立的 `cache_salt`，在保持提示词完全相同的同时避免缓存复用。解码速率按 `(completion tokens - 1) / (stream end - first content)` 计算。
 
 | 负载 | 输出上限 | 解码速率 | 中位数 | 首个内容延迟中位数 | DFlash 接受 / 提议 token |
 | --- | ---: | --- | ---: | ---: | ---: |
@@ -211,6 +211,6 @@ vLLM 警告称，在 16-token 推测窗口下，4,096 个调度 token 的上限�
 
 ## 参考资料
 
-- [本地 SGLang 部署与调优（Lazycat 检查点）](sglang.md)
-- [此前的本地原版 NVFP4 实验](original.md)
-- [厂商公布的性能快照](../../README.md#厂商公布的性能快照)
+- [本地 SGLang 部署与调优（Lazycat 检查点）](../../../../inference/thor/model/qwen3.8-27b/sglang.md)
+- [此前的本地原版 NVFP4 实验](../../../../inference/thor/model/qwen3.8-27b/original.md)
+- [厂商公布的性能快照](../../../../inference/thor/README.md#厂商公布的性能快照)
