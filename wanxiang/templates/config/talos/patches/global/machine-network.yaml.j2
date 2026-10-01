@@ -6,11 +6,11 @@ machine:
       - #{ item }#
       #% endfor %#
     extraHostEntries:
-      # Override forgejo.beaco.works to envoy-internal LB IP. Lets
-      # cluster image pulls and other host-level traffic from nodes
-      # reach forgejo over LAN (gigabit) instead of through Cloudflare.
-      # See ADR — TBD; rationale captured in machine-registries.yaml.j2
-      # comments.
+      # Keep forgejo.beaco.works resolving to the envoy-internal LB IP from the
+      # nodes: node-level image pulls and host traffic stay on the LAN instead
+      # of egressing to the public Caddy edge (spec 009-caddy-edge-ingress).
+      # This is deliberate split-horizon locality, not a Cloudflare workaround;
+      # public clients resolve the name to the edge via DNS.
       - ip: #{ cluster_gateway_addr }#
         aliases:
           - forgejo.beaco.works

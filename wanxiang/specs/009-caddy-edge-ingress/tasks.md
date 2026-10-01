@@ -47,8 +47,9 @@ description: "自建 Caddy 边缘高带宽入口任务清单"
 
 ## 阶段 5 — 退役权宜手段 + 记录决策
 
-- [ ] T017 只有在推送与拉取都验证通过后，才移除 machine-network patch 中节点对
-  `forgejo.${SECRET_DOMAIN}` 的 `/etc/hosts` 覆盖。
+- [x] T017 复核 machine-network patch 中节点对 `forgejo.${SECRET_DOMAIN}` 的
+  `/etc/hosts` 覆盖：结论是**保留**——它是刻意的 LAN locality（集群内走
+  `envoy-internal`），移除反而会让节点拉镜像绕到公网边缘节点；仅刷新注释措辞。
 - [ ] T018 把职责边界沉淀为 shared ADR（`docs/decisions/shared/`）并在同一提交中
   更新索引。
 - [ ] T019 更新 `TODO.md` / `TODO_en.md`，标记已迁移条目并说明剩余主机名。
