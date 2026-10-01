@@ -9,13 +9,21 @@
 
 普通改动如何经 PR 进入两个仓库的 `main`，见[仓库与分支提交流转](./repository-flow.md)。
 
+## 发版入口
+
+`infra-private` 机群的生产发版始终只有一条路径：运维人员手动触发 `build-and-push.yaml`（`workflow_dispatch`）→ 该运行成功后 n8n 钩子创建发布审批记录并发出审批表单 → 授权人类审批通过 → n8n 才为精确 SHA 创建发布标签并进入晋级构建。任何自动化都不能替代这条链。
+
+- 合入 `main` 或推送到 `main` 而触发的 `build-and-push.yaml` 只做完整验证，不会创建审批记录、发布标签或推进 `prod`。发版不能只靠合并代码触发。
+- 发布标签由 n8n 在人工审批通过后创建，运维人员不直接在 `main` 上手工打标。
+- 目标为 `infra-private/prod` 的 PR 加 `/approve-prod` 是仅限紧急热修的例外路径，不是常规发版入口，也不能用来绕过上面的手动触发与人工审批。
+
 ## 流程
 
 1. 公开变更在通过必要检查后合入 `infra/main`。
 2. `infra-private` 更新锁定的公开仓库输入，并加入该修订所需的私有配置。
-3. 推送到 `infra-private/main` 会运行完整机群构建。此步骤只做验证，不部署。
-4. 运维人员手动运行 `build-and-push.yaml`。运行成功后，n8n 创建发布审批记录并发布审批表单。
-5. 审批通过后，n8n 为经过审核的精确 SHA 创建 `infra-private` 发布标签。
+3. 推送到 `infra-private/main` 会运行完整机群构建。此步骤只做验证，不部署，也不会开始发版。
+4. 运维人员手动运行 `build-and-push.yaml`（唯一的发版触发入口）。运行成功后，n8n 创建发布审批记录并发布审批表单。
+5. 授权人类审批通过后，n8n 为经过审核的精确 SHA 创建 `infra-private` 发布标签。
 6. 标签触发再次完整构建并发布产物。只有所有发布作业都成功后，Forgejo Actions 才会创建晋级提交并更新 `infra-private/prod`：该提交沿用此前 `prod` 头部作为父提交，文件树与发布标签修订相同，提交说明记录 `Source-Commit`。
 7. Comin 监视 `infra-private/prod`，并将该修订部署到 NixOS 机群。
 
@@ -37,7 +45,7 @@ infra-private/main ── 完整验证 ── n8n 审批
 
 切勿直接推送 `prod`。发布标签是常规晋级的授权记录，不只是版本标记。发布构建失败或只有部分成功时，`prod` 必须保持不变。
 
-紧急热修复可以通过指向 `infra-private/prod` 的 PR 交付。这条路径使用独立的 `policy/prod-merge-gate`：所有必需检查全绿后，授权操作员在该 PR 下发布 `/approve-prod <完整 40 位头部 SHA>`，n8n 才请求即时 fast-forward 合并。提前评论不会排队；n8n 会把门禁恢复为 pending，操作员须在检查通过后发布新评论。`/approve` 和常规 Forgejo 审查都不批准生产 PR。合并会立即触发 Comin 部署；这条路径不经过标签发布的完整构建，因此只用于明确需要直接修复生产的变更。
+紧急热修复（且仅限紧急热修）可以通过指向 `infra-private/prod` 的 PR 交付。这是常规发版之外唯一的例外路径，不得用于日常变更。这条路径使用独立的 `policy/prod-merge-gate`：所有必需检查全绿后，授权操作员在该 PR 下发布 `/approve-prod <完整 40 位头部 SHA>`，n8n 才请求即时 fast-forward 合并。提前评论不会排队；n8n 会把门禁恢复为 pending，操作员须在检查通过后发布新评论。`/approve` 和常规 Forgejo 审查都不批准生产 PR。合并会立即触发 Comin 部署；这条路径不经过标签发布的完整构建，因此只用于明确需要直接修复生产的变更。
 
 ## 拉取请求与分支的 OCI 验证
 
