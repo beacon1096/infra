@@ -92,28 +92,37 @@ locals {
 }
 
 locals {
+  # High-bandwidth hostnames moved off the Cloudflare Tunnel: DNS-only
+  # (proxied = false) so large registry / Attic uploads never hit Cloudflare's
+  # body-size limits. They are CNAMEs to this stable edge alias so the backing
+  # node can change in one record instead of every hostname. The matching
+  # HTTPRoutes set `external-dns.alpha.kubernetes.io/controller: none` so
+  # external-dns does not fight these records.
   # IPv4 of the authoritative self-hosted Caddy edge (spec 009-caddy-edge-ingress).
   edge_ingress_ipv4 = "67.230.162.189"
 
-  # High-bandwidth hostnames moved off the Cloudflare Tunnel: DNS-only
-  # (proxied = false) so large registry / Attic uploads never hit Cloudflare's
-  # body-size limits. The matching HTTPRoutes set
-  # `external-dns.alpha.kubernetes.io/controller: none` so external-dns does not
-  # fight these records. Change this IP when the authoritative edge node changes.
   edge_records = {
+    edge = {
+      zone_id  = var.beaco_works_zone_id
+      name     = "edge.beaco.works"
+      type     = "A"
+      content  = local.edge_ingress_ipv4
+      ttl      = 60
+      priority = null
+    }
     forgejo = {
       zone_id  = var.beaco_works_zone_id
       name     = "forgejo.beaco.works"
-      type     = "A"
-      content  = local.edge_ingress_ipv4
+      type     = "CNAME"
+      content  = "edge.beaco.works"
       ttl      = 60
       priority = null
     }
     nix = {
       zone_id  = var.beaco_works_zone_id
       name     = "nix.beaco.works"
-      type     = "A"
-      content  = local.edge_ingress_ipv4
+      type     = "CNAME"
+      content  = "edge.beaco.works"
       ttl      = 60
       priority = null
     }
