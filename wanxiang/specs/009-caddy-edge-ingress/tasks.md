@@ -28,12 +28,12 @@ description: "自建 Caddy 边缘高带宽入口任务清单"
 
 ## 阶段 3 — 消费侧改动（本仓）
 
-- [ ] T008 更新 `.forgejo/workflows/build-and-push.yaml`，让集群内与集群外构建机
+- [x] T008 更新 `.forgejo/workflows/build-and-push.yaml`，让集群内与集群外构建机
   都使用单一带校验证书的 endpoint。
-- [ ] T009 endpoint 有效后，移除 `--dest-tls-verify=false` / `--tls-verify=false`
+- [x] T009 endpoint 有效后，移除 `--dest-tls-verify=false` / `--tls-verify=false`
   逻辑与字面 `svc.cluster.local` 默认值。
-- [ ] T010 把 CI 的 `ATTIC_ENDPOINT` 指向边缘服务的缓存主机名。
-- [ ] T011 把描述 Cloudflare 502/413 权宜手段的 workflow 注释更新为描述边缘路径。
+- [x] T010 把 CI 的 `ATTIC_ENDPOINT` 指向边缘服务的缓存主机名。
+- [x] T011 把描述 Cloudflare 502/413 权宜手段的 workflow 注释更新为描述边缘路径。
 
 ## 阶段 4 — 验证
 

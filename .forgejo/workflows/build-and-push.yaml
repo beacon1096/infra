@@ -588,12 +588,10 @@ jobs:
     needs: warm-cache
     runs-on: nix-collector
     timeout-minutes: 720
-    # Push the large image over the in-cluster registry Service: the public
-    # forgejo.beaco.works host fronts Cloudflare, whose gateway 502s on
-    # chunked uploads of large layers. The runner can't use svc.cluster.local,
-    # so it keeps the public endpoint (see build-and-push-nix-collector-oci).
-    env:
-      REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT_INTERNAL || 'http://forgejo-http.development.svc.cluster.local:3000' }}
+    # forgejo.beaco.works is served by the self-hosted Caddy edge (spec
+    # 009-caddy-edge-ingress). In-cluster the runner resolves it to
+    # envoy-internal via hostAliases, so pushes stay on the LAN with a valid
+    # certificate and never traverse Cloudflare.
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -718,11 +716,6 @@ jobs:
           registry_host="${registry_host#https://}"
           skopeo_args=(--retry-times 5 --retry-delay 10s)
           login_args=(--username "$REGISTRY_USER" --password-stdin)
-          # The in-cluster Service serves plain HTTP; skopeo defaults to HTTPS.
-          if [[ "$registry_host" == *"svc.cluster.local"* ]]; then
-            skopeo_args+=(--dest-tls-verify=false)
-            login_args+=(--tls-verify=false)
-          fi
           auth_file="$PWD/.skopeo-auth.json"
           trap 'rm -f "$auth_file"' EXIT
           mkdir -p "$PWD/.skopeo-tmp"
@@ -755,10 +748,8 @@ jobs:
     needs: warm-cache
     runs-on: nix-collector
     timeout-minutes: 120
-    # See build-and-push-coding-agent-oci: use the in-cluster registry Service
-    # so the push bypasses Cloudflare.
-    env:
-      REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT_INTERNAL || 'http://forgejo-http.development.svc.cluster.local:3000' }}
+    # See build-and-push-coding-agent-oci: the edge-served hostname resolves to
+    # envoy-internal in-cluster, so the push bypasses Cloudflare.
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -791,10 +782,6 @@ jobs:
           test -n "$REGISTRY_TOKEN"
           skopeo_args=(--retry-times 5 --retry-delay 10s)
           login_args=(--username "$REGISTRY_USER" --password-stdin)
-          if [[ "$registry_host" == *"svc.cluster.local"* ]]; then
-            skopeo_args+=(--dest-tls-verify=false)
-            login_args+=(--tls-verify=false)
-          fi
           auth_file="$PWD/.skopeo-auth.json"
           trap 'rm -f "$auth_file"' EXIT
           mkdir -p "$PWD/.skopeo-tmp"
@@ -817,10 +804,9 @@ jobs:
     needs: warm-cache
     runs-on: nix-collector
     timeout-minutes: 120
-    # Runs in-cluster: push via the cluster Service (the public Cloudflare
-    # front rejects the ~130 MiB image with HTTP 413).
-    env:
-      REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT_INTERNAL || 'http://forgejo-http.development.svc.cluster.local:3000' }}
+    # Runs in-cluster: the edge-served hostname resolves to envoy-internal via
+    # hostAliases, so the push bypasses Cloudflare (which 413s the ~130 MiB
+    # image) and keeps a valid certificate.
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -852,10 +838,6 @@ jobs:
           test -n "$REGISTRY_TOKEN"
           skopeo_args=(--retry-times 5 --retry-delay 10s)
           login_args=(--username "$REGISTRY_USER" --password-stdin)
-          if [[ "$registry_host" == *"svc.cluster.local"* ]]; then
-            skopeo_args+=(--dest-tls-verify=false)
-            login_args+=(--tls-verify=false)
-          fi
           auth_file="$PWD/.skopeo-auth.json"
           trap 'rm -f "$auth_file"' EXIT
           mkdir -p "$PWD/.skopeo-tmp"

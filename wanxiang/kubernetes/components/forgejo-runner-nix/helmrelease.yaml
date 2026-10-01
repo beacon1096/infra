@@ -95,6 +95,17 @@ spec:
               # Drop the DinD sidecar.
               - op: remove
                 path: /spec/template/spec/containers/1
+              # Resolve the edge-served CI hostnames to envoy-internal so
+              # in-cluster runners use a valid certificate and stay on the LAN
+              # instead of egressing to the public edge (spec
+              # 009-caddy-edge-ingress).
+              - op: add
+                path: /spec/template/spec/hostAliases
+                value:
+                  - ip: "172.16.87.21"
+                    hostnames:
+                      - forgejo.beaco.works
+                      - nix.beaco.works
               # Run the daemon directly instead of waiting for dockerd. Host
               # keys are pinned via NIX_SSHOPTS, so no startup ssh-keyscan.
               # Create /var/tmp (skopeo uses it for docker-archive temp files)
