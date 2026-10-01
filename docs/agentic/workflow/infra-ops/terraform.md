@@ -8,15 +8,16 @@
 
 | 栈 | 作用 | state secret（`terraform-state`）|
 | --- | --- | --- |
-| `terraform/cloudflare-bootstrap` | 创建 scoped `terraform-dns` 账号 token | `tfstate-default-cloudflare-bootstrap`（当前缺失）|
-| `terraform/cloudflare-dns` | 两个 zone 的 DNS 记录（邮件、边缘等） | `tfstate-default-cloudflare-dns` |
+| `terraform/cloudflare-bootstrap` | 创建 scoped `terraform-dns` 账号 token | `tfstate-default-cloudflare-bootstrap`（Harvester）|
+| `terraform/cloudflare-dns` | 两个 zone 的 DNS 记录（邮件、边缘等） | `tfstate-default-cloudflare-dns`（Harvester）|
 | `terraform/unifi-wanxiang` | UDM-Pro 网络与静态路由 | `tfstate-default-unifi-wanxiang` |
 | `terraform/authentik-wanxiang` | Authentik 应用/OIDC | `tfstate-default-authentik-wanxiang` |
 | `terraform/harvester` | Harvester | 见该栈 |
 | `terraform/routeros-rb5009`、`stalwart-shuttle`、`litellm-wanxiang` | 各自用途 | 同名 secret |
 
-state 归属集群以运行时的 `KUBECONFIG` 为准（ wanxiang `172.16.87.1:6443` 或
-Harvester）；不同栈可能不同。
+`cloudflare-*` 的 state 在 **Harvester** 集群（kubeconfig 例如
+`/home/beacon/.kube/harvester.yaml`）；其他栈可能在 wanxiang。以各栈现有 state
+所在集群为准。
 
 ## 运行方式
 
@@ -25,7 +26,7 @@ Harvester）；不同栈可能不同。
 in-cluster ServiceAccount 会覆盖 `KUBECONFIG`，这一步是必须的。
 
 ```sh
-export KUBECONFIG=/run/coder-infra/kubeconfig   # 指向 state 所在集群
+export KUBECONFIG=/path/to/harvester.yaml      # cloudflare-* 的 state 在 Harvester
 terraform/cloudflare-dns/run.sh init -reconfigure
 terraform/cloudflare-dns/run.sh plan -input=false -out=tfplan
 # 人工审查 tfplan：确认仅有意料中的新增/修改，无 destroy/replace
@@ -56,8 +57,18 @@ terraform/cloudflare-dns/run.sh apply tfplan
 - apply 必须与已审阅 plan 实质一致。回滚优先改记录/`proxied` 而非删资源；多数
   资源带 `prevent_destroy`，删除用 `removed` 块。
 
-## 已知缺口（BEACO-185）
+## state 归置与重复清理（BEACO-185）
 
-- `cloudflare-bootstrap` state 缺失：需重建或导入，并把 scoped token 落 SOPS，
-  避免继续借用其他 token。
-- 运行环境（infra-maintainer）需要 `tofu`（预置或 `nix-shell -p opentofu`）。
+- `cloudflare-{bootstrap,dns}` 的 state 在 **Harvester** `terraform-state`，这是权威
+  位置；`run.sh` 的 `KUBECONFIG` 应指向 Harvester。
+- **重复 state 警告**：PR #195 上线时曾在 **wanxiang** 另建了一个
+  `tfstate-default-cloudflare-dns`（import 11 条 mail + apply 3 条 edge），与
+  Harvester 的原始 state 重复，必须清掉以免双重写入。清理顺序：
+  1. 在 Harvester 侧把 3 条 edge 记录 import 进原 state：
+     `cloudflare_dns_record.edge["cygnus"|"forgejo"|"nix"]`，import ID 为
+     `<zone_id>/<record_id>`（zone `d0a22be353820d23e7addbce27a3f604`；record id
+     从 dup state 或 Cloudflare API 取）。
+  2. `plan` 应为 `No changes`（或仅有意料内改动），确认无待建/替换。
+  3. 删除 wanxiang 的重复 secret（删除前留备份）。
+- token 落库：`secrets/shared/cloudflare.yaml#terraform_dns_token`（SOPS），
+  `run.sh` 在没有 `CLOUDFLARE_API_TOKEN` 时会读取它。
