@@ -4,7 +4,8 @@
 
 | 变体 | 适配状态与用途 | 记录 |
 | --- | --- | --- |
-| Lazycat 检查点 | 当前生产方案；官方应用测量是对照，自建 SGLang 的复测也记在同一篇中 | [lazycat.md](lazycat.md) |
+| Lazycat 官方应用 | 厂商预构建算力舱运行时的只读部署与基准测试，作为对照 | [lazycat.md](lazycat.md) |
+| Lazycat 检查点（自建 SGLang） | 当前生产方案；NixOS 上自行组装的 SGLang 及其调优、内核与后端实验 | [sglang.md](sglang.md) |
 | 原版 NVFP4 | 已完成本地复测、长上下文与 NInfer 等实验；不是当前生产检查点 | [original.md](original.md) |
 | Huihui 去拒答版 | 已做功能冒烟和吞吐对比；未成为生产方案 | [huihui.md](huihui.md) |
 
