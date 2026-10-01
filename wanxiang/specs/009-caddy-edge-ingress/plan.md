@@ -57,6 +57,10 @@
 - **用边缘而非更大的 Cloudflare 方案**：故障是 Tunnel 的 body 大小 / 分块上传
   限制，不是上游错误。自建反代没有 body 限制即可解决，无需升级 Cloudflare 付费档。
 - **按主机名切换而非通配**：缩小爆炸半径，并让 Cloudflare 回退对其余名称仍有意义。
+- **服务记录用 CNAME 指向节点主机名别名**：如 `forgejo` / `nix` → CNAME
+  `cygnus.beaco.works`（该别名 A 指向节点 IP，DNS-only）。换节点只改该服务的
+  CNAME 目标；不同应用各自指向自己的节点别名，不占用单一全局 `edge` 名，也不会
+  因节点换用途而语义过期。沿用现有的主机名 DNS 惯例。
 - **保留 Envoy 作为 Kubernetes 入口**：边缘只拨号 mesh 上游，不学习 Kubernetes
   路由，从而维持分层与既有 `HTTPRoute` 归属。
 - **先迁 registry 与 Attic**：它们是已观测到的故障，且不是面向用户的 Web 会话，
