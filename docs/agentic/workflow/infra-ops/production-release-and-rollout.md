@@ -6,6 +6,7 @@
 - `infra-private` 锁定 `infra` 的精确修订，并结合私有配置层组装完整的生产机群。
 - 生产审批、发布标签、向 `prod` 推进以及 Comin 部署均由 `infra-private` 负责。
 - `infra/prod` 由公开发布标签流程更新，不是生产部署分支。只有 `infra-private/prod` 是生产审批和 Comin 部署的输入；`infra` 中的标签不授权生产部署。
+- 机群发布流水线沿用 `nix-fleet` 名称（CI concurrency group、Attic cache、OCI 包名）。本文所述发版流程即 `infra-private` 与 Nix-Fleet 流水线的生产发版流程。
 
 普通改动如何经 PR 进入两个仓库的 `main`，见[仓库与分支提交流转](./repository-flow.md)。
 
