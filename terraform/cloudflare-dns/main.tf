@@ -93,7 +93,7 @@ locals {
 
 locals {
   # IPv4 of the authoritative self-hosted Caddy edge (spec 009-caddy-edge-ingress).
-  edge_ingress_ipv4 = "103.118.41.228"
+  edge_ingress_ipv4 = "67.230.162.189"
 
   # High-bandwidth hostnames moved off the Cloudflare Tunnel: DNS-only
   # (proxied = false) so large registry / Attic uploads never hit Cloudflare's
