@@ -158,7 +158,10 @@ resource "coder_agent" "main" {
       fi
     fi
 
-    if [ -f /run/coder-agent-secrets/GPG_SIGNING_KEY ]; then
+    # A mounted signing key must not abort startup when the image has no gpg:
+    # the script runs under `set -e` and would otherwise never reach
+    # `multica daemon start`, leaving the workspace agent disconnected.
+    if [ -f /run/coder-agent-secrets/GPG_SIGNING_KEY ] && command -v gpg >/dev/null 2>&1; then
       install -d -m 0700 /home/coder/.gnupg
       gpg --batch --import /run/coder-agent-secrets/GPG_SIGNING_KEY
     fi
@@ -166,9 +169,11 @@ resource "coder_agent" "main" {
     if [ "${local.git_identity_workspace}" = "true" ]; then
       git config --global user.name '${local.git_user_name}'
       git config --global user.email '${local.git_user_email}'
-      git config --global user.signingkey '${local.git_signing_key}'
-      git config --global gpg.format openpgp
-      git config --global commit.gpgsign true
+      if command -v gpg >/dev/null 2>&1; then
+        git config --global user.signingkey '${local.git_signing_key}'
+        git config --global gpg.format openpgp
+        git config --global commit.gpgsign true
+      fi
     fi
 
     if [ -S /tmp/tailscale/tailscaled.sock ]; then
