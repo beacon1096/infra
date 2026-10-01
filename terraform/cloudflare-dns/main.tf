@@ -91,8 +91,53 @@ locals {
   }
 }
 
+locals {
+  # IPv4 of the authoritative self-hosted Caddy edge (spec 009-caddy-edge-ingress).
+  edge_ingress_ipv4 = "103.118.41.228"
+
+  # High-bandwidth hostnames moved off the Cloudflare Tunnel: DNS-only
+  # (proxied = false) so large registry / Attic uploads never hit Cloudflare's
+  # body-size limits. The matching HTTPRoutes set
+  # `external-dns.alpha.kubernetes.io/controller: none` so external-dns does not
+  # fight these records. Change this IP when the authoritative edge node changes.
+  edge_records = {
+    forgejo = {
+      zone_id  = var.beaco_works_zone_id
+      name     = "forgejo.beaco.works"
+      type     = "A"
+      content  = local.edge_ingress_ipv4
+      ttl      = 60
+      priority = null
+    }
+    nix = {
+      zone_id  = var.beaco_works_zone_id
+      name     = "nix.beaco.works"
+      type     = "A"
+      content  = local.edge_ingress_ipv4
+      ttl      = 60
+      priority = null
+    }
+  }
+}
+
 resource "cloudflare_dns_record" "mail" {
   for_each = local.mail_records
+
+  zone_id  = each.value.zone_id
+  name     = each.value.name
+  type     = each.value.type
+  content  = each.value.content
+  ttl      = each.value.ttl
+  priority = each.value.priority
+  proxied  = false
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "cloudflare_dns_record" "edge" {
+  for_each = local.edge_records
 
   zone_id  = each.value.zone_id
   name     = each.value.name
