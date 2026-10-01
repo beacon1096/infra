@@ -7,6 +7,7 @@
 - [Renovate 与 Multica 合并门禁](renovate-multica-gate.md)：依赖更新、审查凭据、信任边界和受保护分支合并。
 - [Forgejo 服务账号](forgejo-service-accounts.md)：自动化身份与凭据隔离。
 - [Agent 的 Nix 构建信任边界](agent-nix-build-trust.md)：本地 `sandbox = false`、CI 验证证据与远程构建机规划。
+- [Terraform / OpenTofu 运行手册](terraform.md)：state 位置、`run.sh` 用法、scoped 凭据边界与审批/回滚。
 
 相关运维手册：
 
