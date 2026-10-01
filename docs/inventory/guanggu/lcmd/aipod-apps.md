@@ -36,8 +36,11 @@ AI Pod 再从中拉取；本文记录微服本体上已缓存的 LPK 版本，�
 ## 观察
 
 - 两个 Qwen3.8 模型应用的 LPK 在基线后均有多版更新（Flash Next +8、
-  27B +21）；截至记录日，AI Pod 上运行的 Flash Next 运行时镜像仍为
-  基线 `runtime-134-0.1.6`，尚未随 LPK 更新。
+  27B +21）。2026-10-02，`qwen38-27b` 已以 LPK `0.1.79` 重部署至 AI Pod：
+  运行时镜像换为 `runtime-104-0.3.1-model-split`，权重改为从 ModelScope
+  镜像仓（组织 `manateelazycat`）逐文件下载、网盘暂存并校验后传入算力舱，
+  详见 [27B 部署记录](thor-apps/qwen3.8-27b.md)。截至记录日，
+  `qwen38-flash-next` 的运行时镜像仍为基线 `runtime-134-0.1.6`。
 - `qwen38-flash-next-origin` 是基线快照后新出现的包，与"未审查版"
   并存；两者的运行时镜像与配置差异待核对。
 

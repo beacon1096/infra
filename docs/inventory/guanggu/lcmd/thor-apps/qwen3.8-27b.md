@@ -16,6 +16,9 @@
 - 已部署模型版本：`0.5.1`；
 - 算力运行时：`runtime-160-0.2.2-modelopt-nvfp4-draft`。
 
+2026-10-02 的重部署记录见[下文](#2026-10-02-重部署lpk-0179)；分发链路改为
+ModelScope 镜像分片，运行时镜像与服务参数亦有调整。
+
 官方系统上的测试使用算力舱控制面板的性能风扇配置（`风扇-性能模式`）。重启进入 NixOS 后，适配的 Lazycat 温控守护进程以静音配置（`<Max-Q>`）重新生成运行时配置，尽管 AI Pod 后端仍保留 `<Max-P>`。因此，随后的自托管 SGLang 调优及限定时长的稳定性测试使用了静音配置。GPU 时钟维持在 1,385--1,386 MHz，未观察到因温度导致的性能下降，因此归因分析和内核相对性能比较仍然有效。后续另用机群自有的性能曲线复测，并在下文单独标明。参见[温控检查](../thor/lzc-thermal.md)。私人地址、主机名、凭据以及用户和设备标识符均已省略。
 
 ## Lazycat 管理应用
@@ -208,6 +211,62 @@ vLLM 警告称，在 16-token 推测窗口下，4,096 个调度 token 的上限�
 4. 先确定安全的内存和磁盘预算，再复现镜像的 900K 配置；不要从成功的 500K 请求推断其可用性。
 
 原始请求、计数器、遥测数据及进程清单均保留在公开仓库之外。
+
+## 2026-10-02 重部署（LPK 0.1.79）
+
+清除原部署并从应用商店重装 LPK `0.1.79` 后观察。记录基于部署期间对微服本体
+（网盘暂存区）与算力舱的 SSH 检查。
+
+### 分发链路变更
+
+- 运行时镜像由 `runtime-160-0.2.2-modelopt-nvfp4-draft` 更换为
+  `registry.lazycat.cloud/catdogai/qwen38-27b:runtime-104-0.3.1-model-split`。
+- 权重不再以单一 tar 形式下发。安装器将权重逐文件下载到用户网盘
+  `AI 模型/T5000 Qwen 3.8 27B/`（`target/` 与 `draft/` 子目录），每份文件写入
+  `.aipod-verified.json`（记录 path、size、sha256，不含来源 URL），随后从网盘
+  传输到算力舱的 `/var/lib/lzc-ai-agent/data/cloud.lazycat.aipod.qwen38-27b/models/`
+  并在容器内挂载为 `/model` 与 `/draft`。
+- 下载来源为 ModelScope 上 Lazycat 官方镜像组织 `manateelazycat`；容器环境变量
+  `QWEN_MODEL_PROVIDER=modelscope` 与哈希比对共同确认：
+  - 目标模型：`manateelazycat/Qwen3.8-27B-NVFP4-ModelOpt`，仓库内
+    `MIRROR_SOURCE.json` 声明镜像自 HF
+    `joshebbs/qwen3.8-27b-uncensored-nvfp4-modelopt` @ `e5ff4986938dcd0dd05ab4cce89da1b052be6ce3`
+    （与基线同一修订）。镜像变换把原 19,743,750,248 字节的单文件
+    `model.safetensors`（sha256 `5db0ff93…`，与基线记录一致）按张量边界重切为
+    31 片并生成 `model.safetensors.index.json`，张量数据逐字节保留。
+  - 草稿模型：`manateelazycat/Qwen3.8-27B-DFlash2-NVFP4-RTNcal`，
+    `model.safetensors` 1,550,153,248 字节、sha256 `2228b9b2…`，与基线记录
+    逐字节一致。
+- 本机落盘的 32 个分片（31 片主权重加嫁接 MTP）总量 20,593,146,456 字节，
+  与远端清单一致；MTP 嫁接文件与基线记录相差 4,216 字节，为镜像侧重生成的嫁接。
+
+### 服务参数变化
+
+引擎仍为 vLLM，且 rev 与基线相同（`0.0.0+18f658bb3185`，Torch 2.11.0、
+Transformers 5.12.1、Triton 3.6.0 未变）。相对基线的变化：
+
+| 设置 | 基线 0.1.58 | 本次 0.1.79 |
+| --- | --- | --- |
+| 推测解码 | DFlash2 固定 K16 | K15 加自适应：`num_speculative_tokens_per_batch_size` 为 `[[1,8,8]]`，接受阈值 0.8、EMA α 0.25、最小草稿 32 token |
+| 编译 | Eager 执行，禁用 CUDA Graph | `--no-enforce-eager`，启用 CUDA Graph |
+| KV 容量 | 539,789 token | 541,905 token（同一 44.5 GiB 分配） |
+| 解析器 | 未记录 | 显式 `--reasoning-parser qwen3`、`--tool-call-parser qwen3_xml`、`--enable-auto-tool-choice` |
+
+未变的参数：模型名 `qwen-3.8-27b-uncensored`、512,000-token YaRN 视图
+（系数 1.953125）、8 序列、4,096 批处理 token、禁用异步调度、启用前缀缓存
+（SHA-256）、44.5 GiB KV 分配、块大小 864、ModelOpt NVFP4 与 CUTLASS 线性层、
+Mamba SSM FP32、主机网络与主机 IPC、非特权 root 加 `IPC_LOCK`。镜像另显式
+设置 `VLLM_USE_FLASHINFER_MOE_FP4=0` 与 `VLLM_MARLIN_USE_ATOMIC_ADD=1`。
+
+### 部署流程时间线
+
+- 04:40 开始检查环境与模型缓存；04:41–04:59 下载并校验权重文件；
+- 05:04 网盘 → 算力舱传输运行镜像；05:13 算力舱导入镜像层；
+- 05:15 起传输模型文件（约 20.6 GB）；服务随后经 compose 启动并通过健康检查，
+  对外暴露 `http://<算力舱地址>:8005/v1`。
+
+应用商店描述宣称的"一次只能发起一个模型下载"与本次观察一致；基线章节的
+测量数据仍属 LPK 0.1.58 时代，与本次参数不同，不能直接比较。
 
 ## 参考资料
 
