@@ -44,13 +44,20 @@
   - 只有在 agent 不再经过 Cloudflare、且私有路径具备同等可观测性与
     可用性之后，才移除回调专用的 User-Agent 变通措施。
 
-## 容器镜像推送入口
+## CI 推送入口（OCI 镜像与 Attic 缓存）
+
+正式工作项见 [`wanxiang/specs/009-caddy-edge-ingress/`](wanxiang/specs/009-caddy-edge-ingress/spec.md)：
+把站点侧自建 Caddy 边缘反代作为高带宽流量的正式入口（宪法 §VI 的按服务 VPS
+例外），按主机名把下列路径从 Cloudflare Tunnel 迁到该边缘；边缘已终止公网 TLS
+并经由 mesh 反代到集群内服务。迁移是增量的，其余 `*.${SECRET_DOMAIN}` 仍走
+Cloudflare。
 
 - [ ] 将 collector 的 OCI 镜像推送迁到自建入口/反向代理，替代经
   Cloudflare 的公网路径。
   - 现状：推送大镜像层时，公网 `forgejo.beaco.works`（Cloudflare tunnel）
     返回 `502 Bad Gateway`（skopeo `uploading layer chunked`），曾使
-    coding-agent 发布 job 失败；临时改走集群内
+    coding-agent 发布 job 失败；`build-and-push-nix-collector-oci` 的
+    ~130 MiB 镜像还被公网 front 以 HTTP `413` 拒绝。临时改走集群内
     `forgejo-http.development.svc.cluster.local:3000`（明文 HTTP，需
     `--tls-verify=false`），属权宜之计。
   - 目标：在我们自己的设施上运行反向代理，恢复单一且带校验证书的
@@ -58,6 +65,10 @@
     `svc.cluster.local` 目标。
   - 该入口需同时服务集群内 runner 与集群外的 Taichu builder
     （`build-and-push-nix-collector-oci` 目前仍走公网 endpoint）。
+- [ ] 将 CI 的 Attic 闭包推送（`attic push`，公网 `nix.beaco.works`，
+  最近返回 Cloudflare `502`）迁到同一自建边缘。
+- [ ] 边缘路径端到端验证后，移除 Talos 节点对 `forgejo.beaco.works` 的
+  `/etc/hosts` 覆盖及相关权宜注释。
 
 ## nix-collector store 种子
 
