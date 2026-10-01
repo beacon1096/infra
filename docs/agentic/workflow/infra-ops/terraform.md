@@ -35,8 +35,10 @@ terraform/cloudflare-dns/run.sh apply tfplan
 
 - 工具：`tofu`、`kubectl`、`sops`、`jq`。镜像未预置 `tofu` 时用
   `nix-shell -p opentofu`（预置见后续改动）。
-- `cloudflare-dns` 的 token 优先取 `CLOUDFLARE_API_TOKEN`，否则从
-  `secrets/shared/cloudflare.yaml` 的 `terraform_dns_token` 解密。
+- `cloudflare-dns` 的 token 优先取 `CLOUDFLARE_API_TOKEN`，否则从**本仓**
+  `secrets/shared/cloudflare.yaml` 的 `terraform_dns_token` 解密（公开仓，走
+  `secrets/shared/.*` 的 SOPS 规则，已含 agent 身份；与 edge 的 ACME token
+  `infra-private/secrets/shared/edge-caddy.yaml` 是两回事，不要混用）。
 - `cloudflare-bootstrap` 需 `CLOUDFLARE_BOOTSTRAP_API_TOKEN`（账号级 token 管理
   权限，一次性；刻意不入 SOPS）。
 - 需要访问 vault/provider 凭据的栈，按其 `run.sh` 从 SOPS 解密到进程环境，
@@ -70,5 +72,6 @@ terraform/cloudflare-dns/run.sh apply tfplan
      从 dup state 或 Cloudflare API 取）。
   2. `plan` 应为 `No changes`（或仅有意料内改动），确认无待建/替换。
   3. 删除 wanxiang 的重复 secret（删除前留备份）。
-- token 落库：`secrets/shared/cloudflare.yaml#terraform_dns_token`（SOPS），
-  `run.sh` 在没有 `CLOUDFLARE_API_TOKEN` 时会读取它。
+- token 落库：**本仓** `secrets/shared/cloudflare.yaml#terraform_dns_token`（SOPS，
+  `secrets/shared/.*` 规则），`run.sh` 在没有 `CLOUDFLARE_API_TOKEN` 时会读取它。
+  这解决了此前 #197 回复中误写成 `infra-private/...` 的分歧——以本仓为准。
