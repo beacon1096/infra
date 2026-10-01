@@ -95,6 +95,18 @@ creation_rules:
           - *courier_age
           - *multica_nixos_agent_age
 
+  # Cloudflare Terraform DNS token (terraform/cloudflare-dns). Scope it to the
+  # in-cluster/agent key, the agent identity, and the human's main workstation.
+  # The generic secrets/shared rule also lists TPM-plugin age recipients
+  # (msi-claw, surface-pro-8) that cannot be encrypted from the Coder
+  # workspace, and neither those hosts nor the edge fleet need this credential.
+  - path_regex: secrets/shared/cloudflare\.yaml
+    key_groups:
+      - age:
+          - *wanxiang_flux_age
+          - *multica_nixos_agent_age
+          - *mac_mini_m4_age
+
   # Builder runtime secrets — shared fleet recipients plus the build nodes.
   - path_regex: secrets/shared/(attic|comin-forgejo-token|forgejo-runner)\.yaml
     key_groups:
