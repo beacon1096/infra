@@ -94,19 +94,20 @@ locals {
 locals {
   # High-bandwidth hostnames moved off the Cloudflare Tunnel: DNS-only
   # (proxied = false) so large registry / Attic uploads never hit Cloudflare's
-  # body-size limits. They are CNAMEs to this stable edge alias so the backing
-  # node can change in one record instead of every hostname. The matching
-  # HTTPRoutes set `external-dns.alpha.kubernetes.io/controller: none` so
-  # external-dns does not fight these records.
-  # IPv4 of the authoritative self-hosted Caddy edge (spec 009-caddy-edge-ingress).
-  edge_ingress_ipv4 = "67.230.162.189"
+  # body-size limits. Each service is a CNAME to the node that currently fronts
+  # it, so a service can move between edge nodes by changing only its CNAME
+  # target (no single global "edge" name is reserved). The matching HTTPRoutes
+  # set `external-dns.alpha.kubernetes.io/controller: none` so external-dns does
+  # not fight these records.
+  # IPv4 of the current edge node (spec 009-caddy-edge-ingress).
+  edge_cygnus_ipv4 = "67.230.162.189"
 
   edge_records = {
-    edge = {
+    cygnus = {
       zone_id  = var.beaco_works_zone_id
-      name     = "edge.beaco.works"
+      name     = "cygnus.beaco.works"
       type     = "A"
-      content  = local.edge_ingress_ipv4
+      content  = local.edge_cygnus_ipv4
       ttl      = 60
       priority = null
     }
@@ -114,7 +115,7 @@ locals {
       zone_id  = var.beaco_works_zone_id
       name     = "forgejo.beaco.works"
       type     = "CNAME"
-      content  = "edge.beaco.works"
+      content  = "cygnus.beaco.works"
       ttl      = 60
       priority = null
     }
@@ -122,7 +123,7 @@ locals {
       zone_id  = var.beaco_works_zone_id
       name     = "nix.beaco.works"
       type     = "CNAME"
-      content  = "edge.beaco.works"
+      content  = "cygnus.beaco.works"
       ttl      = 60
       priority = null
     }
