@@ -44,6 +44,10 @@ AI Pod 再从中拉取；本文记录微服本体上已缓存的 LPK 版本，�
   运行时镜像 `runtime-124-0.1.8`，分发同为 ModelScope 镜像仓加 aria2 下载、
   网盘中转，包内携带消融工具链；两处精度修复（GDN 状态 FP32、BF16
   lm_head）与 KV 容量代价详见 [Flash Next 部署记录](thor-apps/qwen3.8-flash-next.md)。
+- LPK 0.1.51（未审查版）与 0.2.8（原版）均为分发核验修复，权重/运行时/
+  推理参数无变化。原版应用的清单画像见
+  [原版部署记录](thor-apps/qwen3.8-flash-next-origin.md)（RadixArk 官方
+  权重、SGLang 运行时、独立 draft 角色）。
 - `qwen38-flash-next-origin` 是基线快照后新出现的包，与"未审查版"
   并存；两者的运行时镜像与配置差异待核对。
 
