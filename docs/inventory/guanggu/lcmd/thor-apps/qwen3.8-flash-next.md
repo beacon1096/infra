@@ -271,6 +271,22 @@ PLE FP8 权重及脚本）。部署完成后算力舱运行时镜像为
   机制把未审查版 0.1.8 制品解析到与之前相同的 `runtime-124-0.1.8`，
   属防御性修复（防止未审查版与原版运行时元数据互相覆盖），未更换运行时。
   注意 LPK 升级不会重启 Pod 上已运行的服务容器。
+- **缓存共三层**（当晚以 HF 源实测确认）：① 用户网盘的工件目录
+  （`AI 模型/T5000 …/`，为"以后快速安装"暂存）；② 算力舱本地按检查点
+  修订版组织的权重缓存
+  `/var/lib/lzc-ai-agent/data/qwen38-flash-next/models/<checkpoint-rev>/`
+  （0.1.51 升级时由网盘预置，目录名以检查点修订 `2065365912…` 为键，
+  与下载源修订无关）；③ 算力舱上的运行时镜像。部署只在三层全部未命中
+  时才真正下载。
+- **HF 源实测**：清空①并临时挪走②后，HF 部署的下载计划为
+  `https://huggingface.co/gorbatjovy/qwen3.8-flash-next-abliterated-NVFP4-plefp8/resolve/2065365912…/<file>`，
+  总量 126 GB——即原始 HF 仓按基线同款修订钉扎；而 ModelScope 源走
+  `manateelazycat/Qwen3.8-Flash-Next-NVFP4-PLEFP8-20653659` @ `3e0e2711…`
+  （Lazycat 自家重导出，与 HF 原件哈希不同）。两个来源的制品**不是同一代
+  工件**。抓取到任务清单后即取消部署（112 秒，权重零流量），②挪回后以
+  ModelScope 源重部署，仅约 7 分钟即全缓存命中恢复服务。网盘快照
+  （`snapshot/daily/beacon/document/`）会钉住已删除工件的空间，清缓存时
+  需一并处理。
 
 ### 服务参数变化
 
