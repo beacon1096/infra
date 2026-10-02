@@ -39,6 +39,10 @@ keys:
   # clerks
   - &clerk_technician age16v9vne0t403sxc6c8jm5j4q55qvhsrmnytrghx6lr7aglaf5tesqre80ng
   - &clerk_secretary age1sqr8n02u9f4g4fhp8gcnhvf3emz3t98zhg33efguqn92nr3k9pgs9jfgnv
+  # installer ISO and the k8s sing-box container already receive the Attic
+  # token; named here so the attic.yaml rule below stays in sync.
+  - &installer_age age1zl7ckn4h63fmd25ll6s7anxh5rkdnjpumdfjyz0xhp7sf6mfnv7sqm80je
+  - &k8s_sing_box_age age1v55hrkzcguwwm7eh437yvv9tpu2d9kj0rw4tuswpundkmxncddmqdynns3
   # Trusted Multica/Coder GitOps runtime
   - &multica_nixos_agent_age age1z3ze2hu0j2pe0t3nyt0u42w5f4wkajg5dp203az03kep0ze9c4fszlar25
 
@@ -107,8 +111,42 @@ creation_rules:
           - *multica_nixos_agent_age
           - *mac_mini_m4_age
 
+  # Attic binary cache token. Deliberately its own rule (not the combined
+  # builder-secrets rule below): speicher needs the Attic token once serverBase
+  # imports attic-cache.nix, but must not gain the comin / forgejo-runner
+  # credentials. Recipients match the existing attic.yaml set plus speicher.
+  - path_regex: secrets/shared/attic\.yaml
+    key_groups:
+      - pgp:
+          - *personal_gpg
+        age:
+          - *mac_mini_m4_age
+          - *mac_studio_m2_ultra_age
+          - *flint_age
+          - *cygnus_age
+          - *ark_age
+          - *shuttle_age
+          - *glacier_age
+          - *octo_age
+          - *courier_age
+          - *msi_claw_age
+          - *thinkbook_plus_hybrid_age
+          - *surface_pro_8_age
+          - *m920x_age
+          - *hpe_microserver_age
+          - *ms_r1_age
+          - *nixbuilder_01_age
+          - *nixbuilder_02_age
+          - *nixbuilder_03_age
+          - *clerk_technician
+          - *clerk_secretary
+          - *installer_age
+          - *k8s_sing_box_age
+          - *multica_nixos_agent_age
+          - *speicher_age
+
   # Builder runtime secrets — shared fleet recipients plus the build nodes.
-  - path_regex: secrets/shared/(attic|comin-forgejo-token|forgejo-runner)\.yaml
+  - path_regex: secrets/shared/(comin-forgejo-token|forgejo-runner)\.yaml
     key_groups:
       - pgp:
           - *personal_gpg

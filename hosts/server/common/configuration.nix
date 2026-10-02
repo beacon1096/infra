@@ -3,12 +3,13 @@
 # Intentionally does not import modules/nixos (desktop-only: audio, bluetooth,
 # hyprland, NetworkManager) or modules/common/coding.nix (dev tooling).
 # Service modules are imported but disabled by default — enable per-host.
-{ inputs, pkgs, ... }:
+{ inputs, lib, pkgs, ... }:
 
 {
   imports = [
     ../../../modules/nixos/gitops-root-access.nix
     ../../../modules/common/nix.nix
+    ../../../modules/common/attic-cache.nix
     ../../../modules/common/remote-builder.nix
     ../../../modules/common/packages.nix
   ];
@@ -124,10 +125,18 @@
   users.defaultUserShell = pkgs.zsh;
 
   # ── Nix ─────────────────────────────────────────────────────
-  nix.settings.trusted-users = [
-    "root"
-    "@wheel"
-  ];
+  nix.settings = {
+    trusted-users = [
+      "root"
+      "@wheel"
+    ];
+
+    # Keep a floor of free space so a cache-miss build can never wedge the
+    # root filesystem (shuttle incident, BEACO-189). Defaults, so hosts with
+    # larger disks can override.
+    min-free = lib.mkDefault (512 * 1024 * 1024);
+    max-free = lib.mkDefault (2 * 1024 * 1024 * 1024);
+  };
 
   system.stateVersion = "25.11";
 }
