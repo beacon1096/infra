@@ -233,60 +233,69 @@ PLE FP8 权重及脚本）。部署完成后算力舱运行时镜像为
 
 ### 分发链路
 
-- 下载器为 aipod_backend 容器内的 aria2c（RPC 模式），任务 URL 形如
-  `https://modelscope.cn/models/manateelazycat/Qwen3.8-Flash-Next-NVFP4-PLEFP8-20653659/resolve/3e0e2711…/<file>`，
-  302 重定向到 `cdn-lfs-cn-1.modelscope.cn` 的 LFS 对象存储。安装时
-  HF/ModelScope 可选，本次选择 ModelScope 以节省跨境流量。
-- 仓库名内嵌基线修订短哈希 `20653659`，任务固定到新修订 `3e0e2711…`，
-  与 27B 镜像仓的"老工件新修订"模式一致。但该仓为 Lazycat 自建
-  （无 `MIRROR_SOURCE.json`），且新修订的文件哈希（`config.json`
-  `35ce005b…`、`tokenizer.json`、`model-plefp8-00000` `f8fbc923…`）与 HF
-  `gorbatjovy/qwen3.8-flash-next-abliterated-NVFP4-plefp8` 当前工件
-  （`caa1e829…`、`9328ce9c…`、`908fa3c5…`）全部不同，`3e0e2711…` 在该 HF 仓
-  也不存在——0.1.8 是重新生产的工件而非同修订重分片。上游 HF 链条：
-  `windowsxp811203/Qwen3.8-Flash-Next-Abliterated-NVFP4`（消融本体，
-  @ `ed55beec…`）→ PLE FP8 重排 → `gorbatjovy/…-plefp8`（基线工件，
-  @ `2065365912…`，未变）。
-- 工件先落到用户网盘（每份文件附 `.aipod-verified.json`，记录 path、size、
-  sha256，不含来源 URL），再传入算力舱。
-- `target/` 同时携带消融工具链：`apply_ablation_flashnext.py`（CPU/BF16 执行
+#### 下载机制与取证方法
+
+- 下载器为微服上 aipod_backend 容器内的 aria2c（RPC 模式，`--rpc-secret`
+  在 cmdline 中被打码，RPC 不可直接用）。任务清单与日志在容器内
+  `/lzcapp/var/aipod_backend/aria2/session.txt` 与 `aria2.log`，宿主侧可经
+  `/proc/<pid>/root/…` 读取；取证时对 aria2c 发 `SIGSTOP` 可即时冻结全部
+  下载（`SIGCONT` 恢复），不依赖 RPC。
+- 任务 URL 形如
+  `https://modelscope.cn/models/<org>/<repo>/resolve/<rev>/<file>` 或
+  `https://huggingface.co/<org>/<repo>/resolve/<rev>/<file>`，302 重定向到
+  各自的 LFS CDN（ModelScope 为 `cdn-lfs-cn-1.modelscope.cn`）。
+- 每份落盘文件附 `.aipod-verified.json`（path、size、sha256，不含来源
+  URL）；来源信息只存在于 aria2 会话/日志中。
+- 安装时下载源可选 HF/ModelScope，切换 UI 无版本钉扎，钉扎发生在
+  应用清单内部（LPK 0.1.51 起）。
+
+#### 观察到的来源（0.1.8 制品）
+
+- ModelScope 源（本次实际使用）：
+  `manateelazycat/Qwen3.8-Flash-Next-NVFP4-PLEFP8-20653659` @ `3e0e2711…`，
+  该仓为 Lazycat 自家重导出（无 `MIRROR_SOURCE.json`），文件哈希与 HF
+  原件不同，`3e0e2711…` 在 HF 仓不存在。
+- HF 源（清缓存后实测其下载计划，总量 126 GB）：
+  `gorbatjovy/qwen3.8-flash-next-abliterated-NVFP4-plefp8` @
+  `2065365912…`——与基线记录同款修订的原始工件。**两个来源不是同一代
+  工件**，选源即选权重版本。
+- 上游链条：`windowsxp811203/Qwen3.8-Flash-Next-Abliterated-NVFP4`
+  （消融本体，@ `ed55beec…`）→ PLE 表 FP8 存储重排（173.6 → 125.9 GiB）→
+  `gorbatjovy/…-plefp8`（基线工件，@ `2065365912…`，至今未变）。
+- 工件同时携带消融工具链：`apply_ablation_flashnext.py`（CPU/BF16 执行
   消融，标注 `lm_head_untouched: True`、n-gram 表不动）、`graft_nvfp4.py`
-  （NVFP4 主体嫁接）、`fix_nvfp4_config.py`（修复 modelopt 导出丢失的多模态
-  config 包装，恢复 `qwen4_exp` 架构与 vision 配置）。README 记载 base 为
-  `windowsxp811203/Qwen3.8-Flash-Next-Abliterated-NVFP4`，PLE 表改 FP8 存储
-  重排后 173.6 → 125.9 GiB。
-- 本次部署曾于 15:22 因网盘空间耗尽失败（`No space left on device`），事故
-  损坏三个分片的 `.aria2` 控制文件（0 字节），导致重试在 2 秒内
-  `Download aborted`；清除损坏的 `.part` 与控制文件后重试成功。旧版
-  0.1.6 tar（约 133 GiB）仍留在网盘。
-- 下载来源在安装时可选（HF/ModelScope），但**缓存优先于来源**：19:32 的
-  一次未清空现有部署的 HF 源重装中，安装器按清单 sha256 校验网盘已有工件
-  直接通过（这些文件此前由 ModelScope 下载），全程零下载，也未产生新的
-  容器槽位（同名 compose 项目重建 `qwen38-flash-next-qwen-1`）。要观察
-  HF 的真实下载链路，必须先清空网盘中的 0.1.8 工件目录。
-- LPK 0.1.48 → 0.1.51 升级于 19:47 触发（控制面镜像
-  `0e8678f9…` → `edb7caf1…`），升级期间微服对既有工件做全量校验导致
-  sshd 饿死约两小时。升完在 22:0x 重部署：aria2 零任务、Pod agent 日志仅
-  "all preloaded images are available locally"，0.1.51 的专用仓库与钉扎
-  机制把未审查版 0.1.8 制品解析到与之前相同的 `runtime-124-0.1.8`，
-  属防御性修复（防止未审查版与原版运行时元数据互相覆盖），未更换运行时。
-  注意 LPK 升级不会重启 Pod 上已运行的服务容器。
-- **缓存共三层**（当晚以 HF 源实测确认）：① 用户网盘的工件目录
-  （`AI 模型/T5000 …/`，为"以后快速安装"暂存）；② 算力舱本地按检查点
-  修订版组织的权重缓存
-  `/var/lib/lzc-ai-agent/data/qwen38-flash-next/models/<checkpoint-rev>/`
-  （0.1.51 升级时由网盘预置，目录名以检查点修订 `2065365912…` 为键，
-  与下载源修订无关）；③ 算力舱上的运行时镜像。部署只在三层全部未命中
-  时才真正下载。
-- **HF 源实测**：清空①并临时挪走②后，HF 部署的下载计划为
-  `https://huggingface.co/gorbatjovy/qwen3.8-flash-next-abliterated-NVFP4-plefp8/resolve/2065365912…/<file>`，
-  总量 126 GB——即原始 HF 仓按基线同款修订钉扎；而 ModelScope 源走
-  `manateelazycat/Qwen3.8-Flash-Next-NVFP4-PLEFP8-20653659` @ `3e0e2711…`
-  （Lazycat 自家重导出，与 HF 原件哈希不同）。两个来源的制品**不是同一代
-  工件**。抓取到任务清单后即取消部署（112 秒，权重零流量），②挪回后以
-  ModelScope 源重部署，仅约 7 分钟即全缓存命中恢复服务。网盘快照
-  （`snapshot/daily/beacon/document/`）会钉住已删除工件的空间，清缓存时
-  需一并处理。
+  （NVFP4 主体嫁接）、`fix_nvfp4_config.py`（修复 modelopt 导出丢失的
+  多模态 config 包装，恢复 `qwen4_exp` 架构与 vision 配置）。
+
+#### 缓存层级与部署行为
+
+部署按三层缓存判定，全部未命中才真正下载：
+
+1. 用户网盘工件目录（`AI 模型/T5000 …/`，为后续安装暂存）；
+2. 算力舱本地按检查点修订版组织的权重缓存
+   `/var/lib/lzc-ai-agent/data/qwen38-flash-next/models/<checkpoint-rev>/`
+   （0.1.51 升级时由网盘预置；目录键为检查点修订 `2065365912…`，与
+   下载源修订无关）；
+3. 算力舱上的运行时镜像。
+
+实测行为：网盘清空后部署仍命中第 2 层（零下载、约 7 分钟完成）；挪走
+第 2 层后 HF 部署立即出全量下载计划。LPK 升级不会重启 Pod 上已运行的
+服务容器；0.1.48 → 0.1.51（控制面 `0e8678f9…` → `edb7caf1…`）把
+未审查版 0.1.8 制品解析到与之前相同的 `runtime-124-0.1.8`，属防御性
+修复（专用仓库防止未审查版与原版运行时元数据互相覆盖），未换运行时。
+
+#### 坑位记录
+
+- 磁盘满会在写入中途损坏 `.aria2` 控制文件（0 字节），此后每次重试
+  2 秒内 `Download aborted`，需删除对应 `.part` 与控制文件重来
+  （2026-10-02 15:22 事故）。
+- 网盘目录删除后空间被 btrfs 每日快照钉住
+  （`snapshot/daily/beacon/document/beacon.<date><time>`），清缓存需连
+  快照一并删除，且注意快照生成时刻与删除时刻的先后。
+- LPK 升级会对既有工件做全量 SHA256 校验，期间微服负载高到 sshd 无法
+  完成认证（约两小时），属正常现象，勿在此时段判定故障。
+- 微服 SSH 优先用 TPM key（`ssh-tpm-agent.sock`）；gpg/YubiKey 通道会
+  在 PIN 缓存过期后频繁弹 pinentry。
 
 ### 服务参数变化
 
