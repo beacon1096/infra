@@ -215,10 +215,11 @@ JSON 响应则为两个。观察到的非确定性可能与多种批处理、QSA
 
 ## 2026-10-02 重部署（模型制品 0.1.8）
 
-微服本体缓存 LPK 仍为 `0.1.48`，本次更新的是模型制品与运行时：安装包包含
-`qwen-3.8-flash-next-t5000-0.1.8.tar`（9.93 GB 包装）与解包后的
-`target/` 工件（约 118 GiB：9 片消融后 NVFP4 主体、8 片 `model-plefp8-*`
-PLE FP8 权重及脚本）。部署完成后算力舱运行时镜像为
+微服本体缓存 LPK 仍为 `0.1.48`，本次更新的是模型制品与运行时：安装包含
+运行时镜像归档 `qwen-3.8-flash-next-t5000-0.1.8.tar`（9.93 GB，导入后即
+`runtime-124-0.1.8`）与网盘 `target/` 权重工件（约 126 GiB：9+1 片消融后
+NVFP4 主体、8 片 `model-plefp8-*` PLE FP8 权重及脚本，见下文清单）。
+部署完成后算力舱运行时镜像为
 `registry.lazycat.cloud/catdogai/qwen38-flash-next:runtime-124-0.1.8`。
 
 ### 背景：长上下文多语言漂移
@@ -251,21 +252,40 @@ PLE FP8 权重及脚本）。部署完成后算力舱运行时镜像为
 
 #### 观察到的来源（0.1.8 制品）
 
-- ModelScope 源（本次实际使用）：
-  `manateelazycat/Qwen3.8-Flash-Next-NVFP4-PLEFP8-20653659` @ `3e0e2711…`，
-  该仓为 Lazycat 自家重导出（无 `MIRROR_SOURCE.json`），文件哈希与 HF
-  原件不同，`3e0e2711…` 在 HF 仓不存在。
-- HF 源（清缓存后实测其下载计划，总量 126 GB）：
-  `gorbatjovy/qwen3.8-flash-next-abliterated-NVFP4-plefp8` @
-  `2065365912…`——与基线记录同款修订的原始工件。**两个来源不是同一代
-  工件**，选源即选权重版本。
-- 上游链条：`windowsxp811203/Qwen3.8-Flash-Next-Abliterated-NVFP4`
-  （消融本体，@ `ed55beec…`）→ PLE 表 FP8 存储重排（173.6 → 125.9 GiB）→
-  `gorbatjovy/…-plefp8`（基线工件，@ `2065365912…`，至今未变）。
-- 工件同时携带消融工具链：`apply_ablation_flashnext.py`（CPU/BF16 执行
-  消融，标注 `lm_head_untouched: True`、n-gram 表不动）、`graft_nvfp4.py`
-  （NVFP4 主体嫁接）、`fix_nvfp4_config.py`（修复 modelopt 导出丢失的
-  多模态 config 包装，恢复 `qwen4_exp` 架构与 vision 配置）。
+控制面二进制（`qwen38-flash-next-lpk`，6897848 字节）内嵌完整下载清单，
+schema `model-host.runtime-model-manifest.v1`、完整性策略
+`size-and-sha256`，可用 `dd` + 可打印串提取。清单与实测结论：
+
+- **权重清单**（role `target`，双源同哈希、逐字节一致）：
+  - HF：`gorbatjovy/qwen3.8-flash-next-abliterated-NVFP4-plefp8` @
+    `2065365912…`
+  - ModelScope：`manateelazycat/Qwen3.8-Flash-Next-NVFP4-PLEFP8-20653659`
+    @ `3e0e2711…`
+  - 文件集：主体分片 `model-00001..00007` 与 `00009`-of-00009（各约
+    10 GB，**命名中不存在 00008**）、嫁接分片
+    `model-00010-of-00010-graft.safetensors`（6.1 GB，含 MTP 行）、
+    `model-plefp8-00000..00007`-of-00008（8 × 约 6.4 GB）、
+    `model.safetensors.index.json`（24.6 MB）、config/tokenizer 及
+    消融脚本（`apply_ablation_flashnext.py`、`graft_nvfp4.py`、
+    `fix_nvfp4_config.py`）。合计约 135.2 GB（≈126 GiB）。
+  - 抽验（HF LFS oid 与清单 sha256）：`model-00001` `6b7fff8d…` ✓、
+    `model-plefp8-00000` `f8fbc923…` ✓、`config.json` 下载后实测
+    `35ce005b…` ✓。早前"两源工件不同代"的结论系比较方法错误
+    （HF API 的 git blobId 是 SHA-1，非内容 sha256），已撤回。
+- **运行时归档清单**：`qwen-3.8-flash-next-t5000-0.1.8.tar`
+  （9,929,953,280 B，sha256 `d5c25c4f…`）——这是**运行时镜像归档而非
+  权重**，导入后 imageId `acb9d00f…` 即
+  `registry.lazycat.cloud/catdogai/qwen38-flash-next:runtime-124-0.1.8`
+  本尊。归档同样双源：HF `manateelazycat/Qwen3.8-Flash-Next-Uncensored-Runtime`
+  @ `883ffe9f…`，ModelScope `manateelazycat/Qwen3.8-Flash-Next-UC-Runtime`
+  @ `271a4796…`。
+- **组装**：分片下载到网盘 `target/` 并逐文件 size+sha256 校验 → 传算力舱
+  按修订版键入缓存 → 运行时归档导入 Docker → vLLM 挂载 `target/` 为
+  `/model`；MTP/嫁接行由 `graft_nvfp4.py` 系脚本按 `index.json` 装配
+  （运行时兼容"异构 target/MTP 行"）。上游链条：
+  `windowsxp811203/Qwen3.8-Flash-Next-Abliterated-NVFP4`（消融本体，
+  @ `ed55beec…`）→ PLE 表 FP8 重排（173.6 → 125.9 GiB）→
+  `gorbatjovy/…-plefp8`。
 
 #### 缓存层级与部署行为
 
