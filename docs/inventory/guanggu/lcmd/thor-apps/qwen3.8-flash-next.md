@@ -14,6 +14,9 @@
 - Lazycat Qwen 3.8 Flash Next 应用/LPK：`0.1.40`；
 - 算力运行时：`runtime-134-0.1.6`。
 
+2026-10-02 的重部署记录见[下文](#2026-10-02-重部署模型制品-018)；分发链路、
+消融工具链与两处精度修复（GDN 状态 FP32、BF16 lm_head）均有记录。
+
 算力舱控制面板将风扇设为性能模式（`风扇-性能模式`）。
 私有地址、主机名、用户和设备标识符已省略。
 
@@ -209,6 +212,66 @@ JSON 响应则为两个。观察到的非确定性可能与多种批处理、QSA
 5. 在单路和并发解码期间采集整板功率和风扇 RPM。
 
 原始请求元数据、计数器和遥测数据保存在公开仓库之外。
+
+## 2026-10-02 重部署（模型制品 0.1.8）
+
+微服本体缓存 LPK 仍为 `0.1.48`，本次更新的是模型制品与运行时：安装包包含
+`qwen-3.8-flash-next-t5000-0.1.8.tar`（9.93 GB 包装）与解包后的
+`target/` 工件（约 118 GiB：9 片消融后 NVFP4 主体、8 片 `model-plefp8-*`
+PLE FP8 权重及脚本）。部署完成后算力舱运行时镜像为
+`registry.lazycat.cloud/catdogai/qwen38-flash-next:runtime-124-0.1.8`。
+
+### 背景：长上下文多语言漂移
+
+上游开发者博客披露，未审查版在长上下文下出现多语言乱码，归因为两处精度
+损失：GDN 循环状态使用 BF16，舍入误差随生成长度与层数累积（逐层对比显示
+相对误差从第 0 层约 0.017% 增长到第 43 层约 12.69%）；量化的 lm_head 扰动
+相近 token 的概率排序并在自回归中放大。修复为 GDN 状态恢复 FP32、lm_head
+使用原生 BF16（主体保持 NVFP4），修复后连续生成约 1.1 万 token 未再漂移，
+代价是显存占用增加、并发容量与速度下降。博客建议生产使用原版量化，破甲
+仅作研究用途；该部署因此处于被上游搁置的状态。
+
+### 分发链路
+
+- 下载器为 aipod_backend 容器内的 aria2c（RPC 模式），任务 URL 形如
+  `https://modelscope.cn/models/manateelazycat/Qwen3.8-Flash-Next-NVFP4-PLEFP8-20653659/resolve/3e0e2711…/<file>`，
+  302 重定向到 `cdn-lfs-cn-1.modelscope.cn` 的 LFS 对象存储。安装时
+  HF/ModelScope 可选，本次选择 ModelScope 以节省跨境流量。
+- 仓库名内嵌基线修订短哈希 `20653659`，任务固定到新修订 `3e0e2711…`，
+  与 27B 镜像仓的"老工件新修订"模式一致。
+- 工件先落到用户网盘（每份文件附 `.aipod-verified.json`，记录 path、size、
+  sha256，不含来源 URL），再传入算力舱。
+- `target/` 同时携带消融工具链：`apply_ablation_flashnext.py`（CPU/BF16 执行
+  消融，标注 `lm_head_untouched: True`、n-gram 表不动）、`graft_nvfp4.py`
+  （NVFP4 主体嫁接）、`fix_nvfp4_config.py`（修复 modelopt 导出丢失的多模态
+  config 包装，恢复 `qwen4_exp` 架构与 vision 配置）。README 记载 base 为
+  `windowsxp811203/Qwen3.8-Flash-Next-Abliterated-NVFP4`，PLE 表改 FP8 存储
+  重排后 173.6 → 125.9 GiB。
+- 本次部署曾于 15:22 因网盘空间耗尽失败（`No space left on device`），事故
+  损坏三个分片的 `.aria2` 控制文件（0 字节），导致重试在 2 秒内
+  `Download aborted`；清除损坏的 `.part` 与控制文件后重试成功。旧版
+  0.1.6 tar（约 133 GiB）仍留在网盘。
+
+### 服务参数变化
+
+引擎仍为 vLLM `0.0.0+18f658bb3185`（Torch 2.11.0、Transformers 5.12.1、
+FlashInfer 0.6.18 均未变）。相对基线的变化：
+
+| 设置 | 基线 0.1.40 | 本次 0.1.8 |
+| --- | --- | --- |
+| Mamba/GDN 循环状态 | BF16 | `--mamba-ssm-cache-dtype float32` |
+| 输出头 | NVFP4 候选优先 | 原生 BF16（FP8 实验安装但 `enabled=False`） |
+| KV 容量 | 351,829 token | 271,973 token（同一 12.8 GiB 分配） |
+| 工具解析器 | Qwen3 工具调用 | 显式 `--tool-call-parser qwen3_coder` |
+| 启动健壮性 | — | 新增预热与超时环境变量（warmup targets、`VLLM_USE_BREAKABLE_CUDAGRAPH=1`、ready timeout 1800 s） |
+
+未变的参数：模型名 `qwen-3.8-flash-next-uncensored`、265,000-token 硬上限
+（320K YaRN 视图）、8 序列、8,704 批处理 token、禁用前缀缓存、一层 MTP
+K16、CUDA Graph FULL_DECODE_ONLY 捕获 [1, 17]、PLE FP8 内存映射（32 线程、
+固定内存、2,048 行分块）、默认采样 0.3/0.95/20。
+
+KV 容量下降 23% 即博客所述显存代价的直接体现：同一 12.8 GiB 下仅能容纳
+约 1.03 个完整 265K 请求（基线 1.33 个）。
 
 ## 参考资料
 
