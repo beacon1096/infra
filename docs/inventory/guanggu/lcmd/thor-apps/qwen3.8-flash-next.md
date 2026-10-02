@@ -238,7 +238,15 @@ PLE FP8 权重及脚本）。部署完成后算力舱运行时镜像为
   302 重定向到 `cdn-lfs-cn-1.modelscope.cn` 的 LFS 对象存储。安装时
   HF/ModelScope 可选，本次选择 ModelScope 以节省跨境流量。
 - 仓库名内嵌基线修订短哈希 `20653659`，任务固定到新修订 `3e0e2711…`，
-  与 27B 镜像仓的"老工件新修订"模式一致。
+  与 27B 镜像仓的"老工件新修订"模式一致。但该仓为 Lazycat 自建
+  （无 `MIRROR_SOURCE.json`），且新修订的文件哈希（`config.json`
+  `35ce005b…`、`tokenizer.json`、`model-plefp8-00000` `f8fbc923…`）与 HF
+  `gorbatjovy/qwen3.8-flash-next-abliterated-NVFP4-plefp8` 当前工件
+  （`caa1e829…`、`9328ce9c…`、`908fa3c5…`）全部不同，`3e0e2711…` 在该 HF 仓
+  也不存在——0.1.8 是重新生产的工件而非同修订重分片。上游 HF 链条：
+  `windowsxp811203/Qwen3.8-Flash-Next-Abliterated-NVFP4`（消融本体，
+  @ `ed55beec…`）→ PLE FP8 重排 → `gorbatjovy/…-plefp8`（基线工件，
+  @ `2065365912…`，未变）。
 - 工件先落到用户网盘（每份文件附 `.aipod-verified.json`，记录 path、size、
   sha256，不含来源 URL），再传入算力舱。
 - `target/` 同时携带消融工具链：`apply_ablation_flashnext.py`（CPU/BF16 执行
