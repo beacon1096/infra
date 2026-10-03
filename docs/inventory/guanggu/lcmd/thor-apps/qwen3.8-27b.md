@@ -265,6 +265,21 @@ Mamba SSM FP32、主机网络与主机 IPC、非特权 root 加 `IPC_LOCK`。镜
 - 05:15 起传输模型文件（约 20.6 GB）；服务随后经 compose 启动并通过健康检查，
   对外暴露 `http://<算力舱地址>:8005/v1`。
 
+### 0.1.83 清单核对（2026-10-03，未部署）
+
+商店后续推送 0.1.82/0.1.83（changelog：X3 Prefill 提升、X3 工具调用修复）。
+2026-10-03 已将微服本体内 LPK 升级至 0.1.83 并提取其内嵌清单与 0.1.79
+对比：target（`joshebbs/…` @ `e5ff4986…` / `manateelazycat/…-ModelOpt` @
+`07ac7fe7…`，10 文件 20.61 GB）与 draft（`maurienne-ai/…-RTNcal` @
+`bd7a9342…` / `manateelazycat/…-RTNcal` @ `e1d46b29…`，3 文件 1.55 GB）
+**逐字一致，权重无变化**；运行时归档 `qwen-3.8-27b-t5000-0.3.1-model-split.tar`
+（5,740,394,003 B）同名同大小，manifest 标注 imageId `6c13dc1d…`。0.1.79
+的控制面二进制已被升级回收，T5000 运行时镜像 ID 无法逐字节回溯比对；
+changelog 将修复限定在 X3 工具调用，且 0.1.83 新增 Orin AWQ（`qwen-3.8-27b-orin-awq-0.3.0.tar`）
+与 warm-cache 支持归档。T5000 侧推定运行时与推理参数未变，未做部署验证。
+另注：0.1.79/0.1.83 清单含 `policy: user-selected`、`regionProviders`
+（CN→ModelScope、默认 HF）与 `cache: device-persistent` 字段。
+
 应用商店描述宣称的"一次只能发起一个模型下载"与本次观察一致；基线章节的
 测量数据仍属 LPK 0.1.58 时代，与本次参数不同，不能直接比较。
 
