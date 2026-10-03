@@ -46,7 +46,55 @@ LPK 控制面二进制的内嵌清单（`model-host.runtime-model-manifest.v1`�
 | 运行时 | SGLang（`qwen38-sglang-runtime-…tar`） | vLLM（`runtime-124-0.1.8`） |
 | 精度修复 | —（原版无需） | GDN 状态 FP32、BF16 lm_head（代价：单流 −35%、并发 −57%） |
 
-## 部署状态
+## 部署记录（2026-10-03，LPK 0.2.8）
 
-截至记录日未在算力舱部署（微服控制面运行中）。部署后应补充：服务参数、
-SGLang 启动配置、单流/并发基准。
+首次实际部署。时间线：下载约 129 GiB（ModelScope，aria2，多次因
+TLS/连接问题中断，靠应用 UI 的 Retry 续传，全程约 6 小时）→ 网盘到算力舱
+传输约 2.5 小时 → 校验与导入 → 服务启动加载约 40 分钟。部署前清理了
+算力舱上未使用的 335 GB 旧运行时镜像 `runtime-134-0.1.6` 以腾出磁盘。
+部署会停止同宿主的冲突模型服务：本次后未审查版 Flash Next 服务被停止，
+8005 端口由原版接管。
+
+### 服务参数（SGLang，从容器进程实测）
+
+运行时镜像 `registry.lazycat.cloud/catdogai/qwen38-flash-next-origin:runtime-sglang-0.2.4`
+（基于 `lmsysorg/sglang:v0.5.20`，构建 `94602c9c…`）。启动命令：
+
+```text
+python3 -m sglang.launch_server
+  --model-path /sgl-checkpoint --served-model-name qwen-3.8-flash-next
+  --port 8005 --api-key ollama --tp 1
+  --quantization modelopt_mixed
+  --context-length 262000 --max-total-tokens 522176
+  --max-running-requests 8 --mem-fraction-static 0.92
+  --kv-cache-dtype fp8_e4m3 --mamba-ssm-dtype bfloat16
+  --max-mamba-cache-size 40
+  --moe-runner-backend flashinfer_cutlass --fp4-gemm-backend flashinfer_cutlass
+  --fp8-gemm-backend triton --attention-backend fa4
+  --page-size 64 --chunked-prefill-size 4096 --max-prefill-tokens 8192
+  --reasoning-parser qwen3 --tool-call-parser qwen3_coder
+  --ple-offload-embedding --ple-offload-backend file --ple-offload-dir /ple
+  --speculative-algorithm NEXTN --speculative-num-steps 3
+  --speculative-eagle-topk 1 --speculative-num-draft-tokens 4
+  --speculative-draft-model-path /mtp-nvfp4
+  --speculative-draft-model-quantization modelopt_mixed
+  --speculative-token-map /vocab-maps/vocab-32768-corpus.pt
+  --enable-metrics
+```
+
+要点（与未审查版 vLLM 部署对照）：
+
+- 上下文 **262,000 = 原生长度，无 YaRN 扩展**（未审查版为 320K 视图、
+  265K 硬上限）；`max-total-tokens 522,176` 配合 **fp8_e4m3 KV**，池容量
+  约为上下文的 2 倍。
+- MTP 推测解码为 **NEXTN、3 步、topk 1、每步 4 草稿 token**（未审查版
+  vLLM 用 K16/MTP），草稿模型为独立 `/mtp-nvfp4`（modelopt_mmixed 量化）
+  外加 `vocab-32768` 词表映射。
+- `mamba-ssm-dtype bfloat16` 且未做精度修复——原版 lm_head 本身 BF16，
+  长上下文漂移问题不存在。
+- PLE 表通过 `--ple-offload-embedding` 卸载到文件（`/ple`）。
+- 注意力后端 fa4，MoE 与 FP4 GEMM 走 flashinfer_cutlass，FP8 GEMM 走
+  triton。
+- API 强制 `Authorization: Bearer ollama`（未审查版无鉴权）。
+
+冒烟：`/v1/chat/completions` 以 `qwen-3.8-flash-next` 正常返回。

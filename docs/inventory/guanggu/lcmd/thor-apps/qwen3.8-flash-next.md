@@ -243,7 +243,12 @@ NVFP4 主体、8 片 `model-plefp8-*` PLE FP8 权重及脚本，见下文清单�
   在 cmdline 中被打码，RPC 不可直接用）。任务清单与日志在容器内
   `/lzcapp/var/aipod_backend/aria2/session.txt` 与 `aria2.log`，宿主侧可经
   `/proc/<pid>/root/…` 读取；取证时对 aria2c 发 `SIGSTOP` 可即时冻结全部
-  下载（`SIGCONT` 恢复），不依赖 RPC。
+  下载（`SIGCONT` 恢复），不依赖 RPC。若需 RPC 自动化：真实 secret 不在
+  cmdline，可扫描 `server.amd64` 进程内存中的 `--rpc-secret=` 残留获得，
+  随后可经容器内 `127.0.0.1:<port>/jsonrpc` 查询/改并发。注意 ModelScope
+  对单连接限速（约 6–11 MB/s），提高每服务器连接数到 16 会触发 TLS 握手
+  失败并被后端整体暂停；取消部署后 session 中的陈旧任务不会自动清除，
+  `unpauseAll` 之类操作可能把它们复活并烧掉代理流量，需按 URL 过滤清理。
 - 任务 URL 形如
   `https://modelscope.cn/models/<org>/<repo>/resolve/<rev>/<file>` 或
   `https://huggingface.co/<org>/<repo>/resolve/<rev>/<file>`，302 重定向到
