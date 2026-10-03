@@ -1,4 +1,4 @@
-{ lib, stdenv, fetchurl, kernel, kernelModuleMakeFlags }:
+{ lib, stdenv, fetchurl, kernel, kernelModuleMakeFlags, macDiagnostics ? false }:
 
 stdenv.mkDerivation (finalAttrs: {
   pname = "r8127";
@@ -31,4 +31,7 @@ stdenv.mkDerivation (finalAttrs: {
     license = lib.licenses.gpl2Plus;
     platforms = lib.platforms.linux;
   };
+} // lib.optionalAttrs macDiagnostics {
+  pname = "r8127-mac-diagnostics";
+  patches = [ ./mac-diagnostics.patch ];
 })

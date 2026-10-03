@@ -675,6 +675,11 @@
       };
 
     packages.aarch64-linux = {
+      r8127-mac-diagnostics =
+        self.nixosConfigurations.thor.config.boot.kernelPackages.callPackage ./packages/r8127 {
+          macDiagnostics = true;
+        };
+
       common-nixos-closure =
         (nixpkgs.lib.nixosSystem {
           system = "aarch64-linux";
