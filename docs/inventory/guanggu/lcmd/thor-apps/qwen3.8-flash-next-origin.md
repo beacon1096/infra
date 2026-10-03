@@ -98,3 +98,18 @@ python3 -m sglang.launch_server
 - API 强制 `Authorization: Bearer ollama`（未审查版无鉴权）。
 
 冒烟：`/v1/chat/completions` 以 `qwen-3.8-flash-next` 正常返回。
+
+### 部署落点与工件键
+
+- 算力舱权重缓存键为 **`radixark-sglang-262144-v1`**（区别于未审查版的
+  检查点修订哈希键），路径
+  `/var/lib/lzc-ai-agent/data/qwen38-flash-next-origin/models/radixark-sglang-262144-v1/`
+  下 `target`、`draft`、`optimization` 三个子目录，分别挂载为容器内
+  `/model`、`/mtp-nvfp4`、`/vocab-maps`；PLE 卸载目录与编译缓存挂载自
+  `cache/qwen38-flash-next-origin/sglang-v1/{ple,cache,model-integrity}`。
+- 本次实际下载源为 ModelScope：target 用 `RadixArk/…` @ `a6cc3dfc…`，
+  draft/optimization 用 `SGLang-Thor` @ `v0.2.0-candidate1`；逐文件
+  `.aipod-verified.json` 校验后入缓存。
+- 运行时归档 `qwen38-sglang-runtime-0.2.4.tar` 由 SGLang-Thor 仓提供
+  （0.2.8 修复后的原版专属固定归档），导入后即
+  `qwen38-flash-next-origin:runtime-sglang-0.2.4`。
