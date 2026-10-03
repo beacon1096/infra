@@ -168,6 +168,34 @@ Triton 3.6.0 和 FlashAttention 2.8.4。容器镜像继承了面向 vLLM 的基�
 3. 在记录 GPU 遥测的同时采集整板功率和风扇 RPM。
 4. 修复自定义提示词条件编码器后，用有记录的提示词集合测试，再对质量下结论。
 
+## 0.4.9 静态核对（2026-10-03，未部署）
+
+微服本体现装 LPK `0.4.9`（基线记录为 `0.1.9`）。控制面二进制
+（`minimax-h3-lpk`，Go）内嵌 `minimax-h3.upstream-models.v1` 与
+`minimax-h3.runtime-image-parts.v1` 两类清单常量，静态提取结果：
+
+- **运行时大版本更替**：`minimax-h3-thor-0.4.6-runtime.tar` 与
+  `minimax-h3-thor-0.4.6-warm-cache.tar`（基线为
+  `runtime-160-0.1.1`）。0.4.6 运行时自带 CUDA 13.0 sbsa 栈
+  （jetson-ai-lab apt 源、cu130/cudnn 9.13 本地仓库 URL 内嵌），
+  并出现 ComfyUI 源码提交引用（`ComfyUI/.h3-source-commit`）——
+  运行时疑似已从 Diffusers 自组管线转向 ComfyUI 体系。
+- **权重改用 Comfy-Org 打包**：`Comfy-Org/MiniMax-H3`（HF @ `4cc1d817…`
+  / MS @ `160418ce…`），文件含
+  `text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`
+  ——文本编码器升级为 **Qwen3-VL-32B 的 NVFP4-AWQ 量化**，另带
+  `prompts/example_*.pt` 工作流样例。
+- **OpenVDN/`vdn-minimax-h3` 仍在清单中**（三个修订：`18be6bcc…`、
+  `3674e3a5…`、`b8cb28fb…`），基线使用的 VDN 权重路线未删除。
+- 运行时归档 URL 由环境变量 `MINIMAX_H3_RUNTIME_IMAGE_URL` /
+  `MINIMAX_H3_RUNTIME_CACHE_URL` 驱动；部署模式常量含
+  `singleStreamOnly`、`video-generation`。
+- 服务参数（并发/上下文/调度）需部署后从容器观测，本次未部署。
+
+结论：0.1.9 → 0.4.9 是架构级更新（Comfy-Org 权重 + ComfyUI 运行时 +
+CUDA 13 自包含栈 + 32B 文本编码器量化），基线文档的 Diffusers 栈描述
+仅适用于 0.1.9；文内基准数据不可外推到 0.4.9。
+
 ## 参考资料
 
 - [MiniMax H3 官方仓库](https://github.com/MiniMax-AI/MiniMax-H3)
