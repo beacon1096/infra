@@ -59,33 +59,21 @@
 
 ## CI push ingress (OCI images and Attic cache)
 
-Formal work item: [`wanxiang/specs/009-caddy-edge-ingress/`](wanxiang/specs/009-caddy-edge-ingress/spec.md).
-Adopt the site-side self-hosted Caddy edge as the formal ingress for
-high-bandwidth traffic (the constitution §VI per-service VPS exception) and
-move the paths below from the Cloudflare Tunnel to the edge, one hostname at a
-time. The edge terminates public TLS and reverse-proxies over the mesh to the
-in-cluster services. The migration is additive; every other
-`*.${SECRET_DOMAIN}` hostname stays on Cloudflare.
+**Done.** Spec: [`wanxiang/specs/009-caddy-edge-ingress/`](wanxiang/specs/009-caddy-edge-ingress/spec.md);
+boundary decision: [ADR shared/0004](wanxiang/docs/decisions/shared/0004-site-edge-and-ingress-boundaries.md).
 
-- [ ] Move the collector's OCI image push onto self-hosted ingress or a
-  reverse proxy instead of the Cloudflare-fronted public path.
-  - Today: pushing large image layers to public `forgejo.beaco.works` (the
-    Cloudflare tunnel) returns `502 Bad Gateway` (skopeo `uploading layer
-    chunked`), which failed the coding-agent publish job; the ~130 MiB
-    `build-and-push-nix-collector-oci` image is also rejected by the public
-    front with HTTP `413`. The push was moved to the in-cluster
-    `forgejo-http.development.svc.cluster.local:3000` (plain HTTP, needs
-    `--tls-verify=false`) as a stopgap.
-  - Goal: run the reverse proxy on our own infrastructure and restore a
-    single, certificate-verified registry endpoint, removing
-    `--tls-verify=false` and the hard-coded `svc.cluster.local` target.
-  - The endpoint must serve both in-cluster runners and the out-of-cluster
-    Taichu builder used by `build-and-push-nix-collector-oci`.
-- [ ] Move the CI Attic closure push (`attic push`, public `nix.beaco.works`,
-  which recently returned Cloudflare `502`) onto the same self-hosted edge.
-- [ ] After the edge path is verified end to end, remove the Talos node
-  `/etc/hosts` override for `forgejo.beaco.works` and the related stopgap
-  comments.
+- [x] The collector's OCI image push moved to the self-hosted Caddy edge instead
+  of the Cloudflare-fronted public path.
+  - `forgejo.beaco.works` is authoritative on the edge
+    (`cygnus.beaco.works`); public and private CI both push to
+    `https://forgejo.beaco.works`, and in-cluster runners reach it over the LAN
+    via `envoy-internal` `hostAliases`, so `--tls-verify=false` and the literal
+    `svc.cluster.local` target are gone.
+- [x] The CI Attic closure push (`attic push`) moved to the edge
+  `https://nix.beaco.works`.
+- [x] The node `/etc/hosts` override is **kept** after review: it is deliberate
+  LAN locality (`envoy-internal`); removing it would send node pulls to the
+  public edge node. Only the comments were refreshed.
 
 ## nix-collector store seed
 
