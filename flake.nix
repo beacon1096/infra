@@ -81,13 +81,19 @@
       SECRET_DOMAIN_01 = "example.invalid";
       SECRET_DOMAIN_02 = "alt.example.invalid";
     };
+    tailscaleOverlay = import ./lib/tailscale-overlay.nix { inherit nixpkgs; };
+    fleetPkgs = system: import nixpkgs {
+      inherit system;
+      overlays = [ tailscaleOverlay ];
+    };
     baseOverlay = {
-      nixpkgs.overlays = [ llmAgents.overlays.shared-nixpkgs ];
+      nixpkgs.overlays = [ llmAgents.overlays.shared-nixpkgs tailscaleOverlay ];
     };
     nurOverlay = {
       nixpkgs.overlays = [
         nur.overlays.default
         llmAgents.overlays.shared-nixpkgs
+        tailscaleOverlay
       ];
     };
     mkClerk = import ./lib/darwin/mk-clerk.nix { inherit inputs nurOverlay domainVars; };
@@ -109,6 +115,7 @@
   in
   {
     lib.mkNixosHost = mkNixosHost;
+    overlays.tailscale = tailscaleOverlay;
 
     nixosModules = {
       installer = ./modules/nixos/installer.nix;
@@ -122,6 +129,7 @@
       thinkbook-plus-hybrid = ./hosts/personal/thinkbook-plus-hybrid/configuration.nix;
       thor = {
         imports = [
+          { nixpkgs.overlays = [ tailscaleOverlay ]; }
           inputs.jetpack-nixos.nixosModules.default
           home-manager.nixosModules.home-manager
           ./hosts/personal/fixed/thor/configuration.nix
@@ -134,6 +142,7 @@
     homeManagerModules.pi = ./modules/home/pi.nix;
 
     darwinModules.omlx = ./modules/darwin/omlx;
+    darwinModules.tailscale-userspace = ./modules/darwin/tailscale-userspace.nix;
     darwinModules."beacon-mac-mini-m4" = ./hosts/personal/beacon-mac-mini-m4/configuration.nix;
 
     # ──────────────────────────────────────────────────────────
@@ -328,9 +337,10 @@
 
     packages.x86_64-linux =
       let
-        pkgs = import nixpkgs { system = "x86_64-linux"; };
+        pkgs = fleetPkgs "x86_64-linux";
         paseoPackages = import ./lib/paseo { inherit inputs pkgs; };
       in {
+      inherit (pkgs) tailscale;
       # nix build .#installer-iso
       installer-iso = self.nixosConfigurations.installer.config.system.build.isoImage;
 
@@ -359,7 +369,7 @@
           pkgs = import nixpkgs {
             system = "x86_64-linux";
             config.allowUnfree = true;
-            overlays = [ llmAgents.overlays.shared-nixpkgs ];
+            overlays = [ llmAgents.overlays.shared-nixpkgs tailscaleOverlay ];
           };
           homeActivation = role: (home-manager.lib.homeManagerConfiguration {
             inherit pkgs;
@@ -675,11 +685,13 @@
       };
 
     packages.aarch64-linux = {
+      inherit (fleetPkgs "aarch64-linux") tailscale;
       common-nixos-closure =
         (nixpkgs.lib.nixosSystem {
           system = "aarch64-linux";
           specialArgs = { inherit inputs; } // domainVars;
           modules = [
+            { nixpkgs.overlays = [ tailscaleOverlay ]; }
             ./modules/common/nix.nix
             ./modules/common/packages.nix
             ({ lib, ... }: {
@@ -693,7 +705,8 @@
 
     };
 
-    packages.aarch64-darwin.omlx = nixpkgs.legacyPackages.aarch64-darwin.callPackage ./packages/omlx { };
+    packages.aarch64-darwin.tailscale = (fleetPkgs "aarch64-darwin").tailscale;
+    packages.aarch64-darwin.omlx = (fleetPkgs "aarch64-darwin").callPackage ./packages/omlx { };
 
     packages.aarch64-darwin.common-darwin-closure =
       (nix-darwin.lib.darwinSystem {

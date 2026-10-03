@@ -13,7 +13,9 @@
 | `terraform/unifi-wanxiang` | UDM-Pro 网络与静态路由 | `tfstate-default-unifi-wanxiang` |
 | `terraform/authentik-wanxiang` | Authentik 应用/OIDC | `tfstate-default-authentik-wanxiang` |
 | `terraform/harvester` | Harvester | 见该栈 |
-| `terraform/routeros-rb5009`、`stalwart-shuttle`、`litellm-wanxiang` | 各自用途 | 同名 secret |
+
+RouterOS 等私有设备栈位于扩展仓的 inventory/networking 目录，具体入口及 backend
+以该仓当前目录索引为准；不要沿用旧的 `terraform/routeros-rb5009` 示例路径。
 
 `cloudflare-*` 的 state 在 **Harvester** 集群（kubeconfig 例如
 `/home/beacon/.kube/harvester.yaml`）；其他栈可能在 wanxiang。以各栈现有 state

@@ -16,3 +16,4 @@
 - [Forgejo 产物生命周期](./forgejo-artifact-lifecycle.md)
 - [nix-collector / nix-builder 拆分设计基线](./nix-collector-build-split.md)
 - [Attic 二进制缓存](./attic.md)
+- [Tailscale 排查记录](./meshvpn/tailscale/README.md)

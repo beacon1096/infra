@@ -19,7 +19,7 @@
 
   networking.hostName = "msi-claw";
 
-  services.tailscale.package = inputs."nixpkgs-unstable".legacyPackages.x86_64-linux.tailscale;
+  services.tailscale.package = pkgs.tailscale;
 
   home-manager.users.beacon.wayland.windowManager.hyprland.settings.monitor = lib.mkForce [
     "eDP-1, preferred, auto, 2"
