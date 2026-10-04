@@ -577,6 +577,110 @@ class BenchmarkChecks(unittest.TestCase):
         self.assertEqual(result["metrics"]["non_reasoning_tokens_reported"], 10)
         self.assertIsNone(result["metrics"]["content_decode_tokens_per_second_estimate"])
 
+    def test_collect_root_reasoning_and_both_agree(self):
+        for count in (0, 4, 10):
+            for nested in (False, True):
+                with self.subTest(count=count, nested=nested):
+                    usage = {"completion_tokens": 10, "reasoning_tokens": count}
+                    if nested:
+                        usage["completion_tokens_details"] = {"reasoning_tokens": count}
+                    result = self.collect([event({"content": "answer"}, finish="stop", usage=usage),
+                                           ("message", "[DONE]")])
+                    self.assertEqual(result["usage"], usage)
+                    self.assertEqual(result["metrics"]["reasoning_tokens_reported"], count)
+                    self.assertEqual(result["metrics"]["non_reasoning_tokens_reported"], 10 - count)
+                    self.assertEqual(result["metrics"]["reasoning_tokens_source"], "both" if nested else "root")
+                    if count:
+                        self.assertIsNone(result["metrics"]["content_decode_tokens_per_second_estimate"])
+
+    def test_collect_root_reasoning_invalid_values_are_not_signals(self):
+        for value in (True, False, "3", -1, 3.0, None, [], {}):
+            with self.subTest(value=value):
+                result = self.collect([event({"content": "372"}, finish="stop", usage={
+                    "completion_tokens": 10, "reasoning_tokens": value}), ("message", "[DONE]")])
+                self.assertEqual(result["usage"], {"completion_tokens": 10})
+                self.assertIsNone(result["metrics"]["reasoning_tokens_reported"])
+                self.assertIsNone(result["metrics"]["non_reasoning_tokens_reported"])
+                self.assertIsNotNone(result["metrics"]["content_decode_tokens_per_second_estimate"])
+
+    def test_collect_root_reasoning_missing_completion_or_exceeds_completion(self):
+        for completion in (None, True, "10", -1, 2):
+            with self.subTest(completion=completion):
+                result = self.collect([event({"content": "answer"}, finish="stop", usage={
+                    "completion_tokens": completion, "reasoning_tokens": 3}), ("message", "[DONE]")])
+                self.assertEqual(result["usage"]["reasoning_tokens"], 3)
+                self.assertIsNone(result["metrics"]["reasoning_tokens_reported"])
+                self.assertIsNone(result["metrics"]["non_reasoning_tokens_reported"])
+                self.assertIsNone(result["metrics"]["content_decode_tokens_per_second_estimate"])
+
+    def test_collect_root_detail_conflicts_never_invent_split(self):
+        for root, detail in ((0, 3), (3, 0), (3, 4), (12, 2)):
+            with self.subTest(root=root, detail=detail):
+                usage = {"completion_tokens": 10, "reasoning_tokens": root,
+                         "completion_tokens_details": {"reasoning_tokens": detail}}
+                result = self.collect([event({"content": "answer"}, finish="stop", usage=usage),
+                                       ("message", "[DONE]")])
+                self.assertEqual(result["usage"], usage)
+                self.assertEqual(result["metrics"]["reasoning_tokens_source"], "conflict")
+                self.assertIsNone(result["metrics"]["reasoning_tokens_reported"])
+                self.assertIsNone(result["metrics"]["non_reasoning_tokens_reported"])
+                self.assertIsNone(result["metrics"]["content_decode_tokens_per_second_estimate"])
+
+    def test_collect_valid_reasoning_source_survives_invalid_other_source(self):
+        for invalid in (True, False, -1, "4"):
+            for root_valid in (True, False):
+                with self.subTest(invalid=invalid, root_valid=root_valid):
+                    usage = {"completion_tokens": 10, "reasoning_tokens": 4 if root_valid else invalid,
+                             "completion_tokens_details": {"reasoning_tokens": invalid if root_valid else 4}}
+                    result = self.collect([event(finish="stop", usage=usage), ("message", "[DONE]")])
+                    self.assertEqual(result["metrics"]["reasoning_tokens_reported"], 4)
+                    self.assertEqual(result["metrics"]["non_reasoning_tokens_reported"], 6)
+
+    def test_cli_root_hidden_reasoning_guard_and_default_redaction(self):
+        for usage in ({"reasoning_tokens": 3}, {"reasoning_tokens": 3, "completion_tokens": 2},
+                      {"reasoning_tokens": 3, "completion_tokens": 10},
+                      {"reasoning_tokens": 0, "completion_tokens": 10,
+                       "completion_tokens_details": {"reasoning_tokens": 3}},
+                      {"reasoning_tokens": 3, "completion_tokens": 10,
+                       "completion_tokens_details": {"reasoning_tokens": 0}}):
+            with self.subTest(usage=usage):
+                def stream(*args):
+                    return self.collect([event({"content": "372"}, finish="stop", usage=dict(
+                        usage, debug="fakeendpoint Bearer SECRET PRIVATE_RESPONSE", unknown_count=42,
+                        thinking_observed=False, count_is_exact=True)), ("message", "[DONE]")])
+
+                status, stdout, stderr = self.run_case("exact-short-output", stream, "http://fakeendpoint/v1")
+                self.assertEqual((status, stderr), (1, ""))
+                record = json.loads(stdout.splitlines()[1])
+                self.assertIs(record["thinking_observed"], True)
+                self.assertEqual(record["correctness"]["reason"], "thinking_disabled_but_observed")
+                self.assertIsNone(record["metrics"]["content_decode_tokens_per_second_estimate"])
+                self.assertNotIn("response", record)
+                for private in ("fakeendpoint", "SECRET", "PRIVATE_RESPONSE", "unknown_count", "count_is_exact"):
+                    self.assertNotIn(private, stdout)
+
+    def test_cli_invalid_root_counts_do_not_fail_off_control(self):
+        for count in (True, False, -1, "3"):
+            with self.subTest(count=count):
+                def stream(*args):
+                    return self.collect([event({"content": "372"}, finish="stop", usage={
+                        "reasoning_tokens": count}), ("message", "[DONE]")])
+
+                status, stdout, stderr = self.run_case("exact-short-output", stream)
+                self.assertEqual((status, stderr), (0, ""))
+                record = json.loads(stdout.splitlines()[1])
+                self.assertIs(record["thinking_observed"], False)
+                self.assertEqual(record["correctness"]["status"], "passed")
+
+    def test_collect_unknown_count_flags_and_missing_counts_not_estimated(self):
+        result = self.collect([event({"content": "one two three"}, finish="stop", usage={
+            "unknown_count": 99, "thinking_observed": True, "reasoning_tokens_reported": 3,
+            "completion_tokens_details": {"count_is_exact": True}}), ("message", "[DONE]")])
+        self.assertEqual(result["usage"], {"completion_tokens_details": {}})
+        for key in ("completion_tokens_reported", "reasoning_tokens_reported", "non_reasoning_tokens_reported",
+                    "end_to_end_tokens_per_second", "content_decode_tokens_per_second_estimate", "token_tpot_seconds"):
+            self.assertIsNone(result["metrics"][key])
+
     def test_collect_missing_done_or_finish_rejected(self):
         for events in ([event({"content": "x"}, finish="stop")],
                        [event({"content": "x"}), ("message", "[DONE]")], []):
@@ -803,6 +907,17 @@ class BenchmarkChecks(unittest.TestCase):
         self.assertEqual(status, 2)
         self.assertEqual(stdout, "")
         self.assertIn("benchmark preflight failed: ValueError", stderr)
+
+    def test_cli_new_fixture_empty_default_selection_is_not_a_successful_run(self):
+        fixture = CLIENT.ASSETS / "thinking-stability.json"
+        with mock.patch.object(CLIENT, "stream_request", side_effect=AssertionError("network forbidden")) as stream:
+            for command in ("plan", "run"):
+                with self.subTest(command=command):
+                    status, stdout, stderr = self.cli([command, "--fixtures", str(fixture), "--model", "test-model"])
+                    self.assertEqual(status, 2)
+                    self.assertEqual(stdout, "")
+                    self.assertIn("preflight failed", stderr)
+            stream.assert_not_called()
 
     def test_cli_stdout_omits_private_response_endpoint_and_usage_debug(self):
         usage = {"prompt_tokens": 20, "completion_tokens": 100, "total_tokens": 120,

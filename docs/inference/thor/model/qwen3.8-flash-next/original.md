@@ -775,3 +775,155 @@ fixture 仅给这两个固定长度吞吐 case 增加 flag，不改变质量请�
   host IP、user ID 或其他私有运行数据。
 - 初始源码准备已由 `89df3e5` 在独立分支 `feat/thor-flash-next-owned` 提交并推送；
   本轮文档及 ignore-EOS fixture 作为后续独立提交，每轮实验结果写回本页。
+
+## SG2026-10-05 G1 thinking / continuous 有限实验
+
+本轮继承 [G1 配对实测](#sg2026-10-04-c1-graph-配对实测) 的运行配置，验证实际
+thinking 控制与有限连续生成。三道合成题各两次重复中，off/low/medium 分别通过
+0/6、5/6、4/6；连续账本通过，重复序列从第一行即违反格式。以下是任务级观测，
+不是通用 benchmark accuracy、长期数值稳定性或生产 ready 判定。
+
+### 继承配置与行政窗口
+
+| 项目 | 本轮控制与边界 |
+| --- | --- |
+| 不变的 G1 | 公开 SGLang `v0.5.20`、同一 `94602c9c…` engine / `b0d8718a…` 镜像；完整 pins 见 S0 来源节，不另换任何 inference flag |
+| 实际权重与执行 | 同一 mixed FP8 payload / block-scaled FP8 完整词表 head、TP1 scale-loader 补丁；FP32 SSM、BF16 KV、pool 8192、C1 full decode Graph BS1，prefill Graph 禁用、无 MTP |
+| 行政时限 | 新增 `services.thorFlashNext.runtimeMaxSec`，类型为正整数、默认 3600；仅本轮 override 为 5400 秒（90 分钟） |
+| 应用方式 | 编译 unit 后 runtime link，不 restart；实验过程中 InvocationID 保持不变，host guard / CID cleanup 不变；不是 full-system activation |
+| 单个启动 epoch | CST 2026-10-05 00:11 启动、约 00:30 ready，约 18 分钟；仅一次启动观测 |
+| 作业时间 | CST 约 00:50 至 01:13；完成时间为 UTC `2026-10-04T17:13:02Z`，即 CST 2026-10-05 01:13:02 |
+| 生命周期 | 90 分钟从 00:11 启动计时，自动停止边界约 01:41；无自动重启，不代表无限运行或持久服务 |
+| 路由 | 原 27B 服务保持停止，没有 production route 切换，也不自动恢复 27B |
+
+延长时限只为容纳本轮已规划请求，是行政窗口，不是新的 inference variable。
+上述时间不构成启动或完成时限保证，也不声称已经验证自动停止后的状态。
+
+### 公开资产与检查口径
+
+新增 [thinking-stability.json](../../benchmark/thinking-stability.json) 共 13 个 case：
+三道题各 off/low/medium 九项、两个 continuous ledger 和两个 continuous sequence。
+[thinking-probe.py](../../../../../hosts/personal/fixed/thor/flash-next/thinking-probe.py)
+只加载本地 tokenizer/Jinja；[test-thor-thinking.py](../../../../../utils/test-thor-thinking.py)
+独立核对 oracle、配对输入和严格 checker。它们是新合成实验资产，不是历史结果。
+
+本轮 [benchmark client](../../../../../utils/benchmark-thor.py) 兼容 SGLang 的根级
+`usage.reasoning_tokens`，仅接受严格非负整数，不接受 bool、浮点或字符串。根级与
+`completion_tokens_details.reasoning_tokens` 冲突时，reasoning / non-reasoning 拆分
+均为 null，`reasoning_tokens_source=conflict`；缺少有效 completion 总数时也不强行拆分。
+即便没有 completion 总数，根级正 reasoning count 仍使 thinking-off 检查失败。
+不以 SSE chunk 数或事件间隔估算 token 数，本轮采用 API 报告的根级 reasoning count。
+
+| 检查 | 规则或已完成验证 |
+| --- | --- |
+| Thinking JSON | 严格字段、整数类型与正确值；必须自然 `stop`，错误答案或 `length` 均失败 |
+| Continuous ledger | 必须自然 `stop`、完整行数；逐行严格核对 `seq`、transaction ID、整数类型、顺序与累计 balance，不执行生成代码 |
+| Continuous sequence | 精确行格式、编号、词序及句点；`length` 时只允许完整合法前缀及下一行合法 partial，记录 `full_task_completed=false`；提前自然停止不足 500 行则失败 |
+| 静态测试 | 已完成 130 项全部通过：82 benchmark + 21 thinking + 15 unit + 12 patch；不与 API 请求或 CPU render 次数相加 |
+| 空选择防护 | 新 fixture 没有默认 `smoke` case；省略匹配 suite/case 时在 preflight 失败，避免零请求被记录成 successful run |
+
+### Thinking 控制证据
+
+实际本地 `chat_template.jinja` SHA-256 为
+`c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041`。
+该文件不是拿 SGLang-Thor metadata/conversions 路径中的模板代替 target 模板；其来源为
+前述固定 `RadixArk` target 修订版 `7b719225…`。HF token rendering 显式使用
+`return_dict=False` 并检查 flat integer token IDs。
+
+| 控制层 | 本轮证据与限制 |
+| --- | --- |
+| 本地 Jinja | low、medium、xhigh rendering 三者不同；省略 effort 默认 xhigh；`high` 抛出 `TemplateError` |
+| Thinking 开关 | off 渲染关闭的 think block；low/medium 渲染打开的 think block |
+| 同题配对 | off/low/medium 原始 messages 相同，仅 `chat_template_kwargs` 不同；不是三个不同题面 |
+| CPU render | 13 个 case 的输入为 62 至 852 token，最大 852 |
+| 实际 API | 26 个 task trial 的 `usage.prompt_tokens` 全部与各自本地 render 长度吻合；实际观察到 reasoning flow 和报告 count |
+| 后端支持 | 固定 engine 的源码 forwarding，加上 render、API 长度及实际 reasoning 证据，支持软提示已生效；仅长度一致不证明后端 prompt bytes 逐字相同 |
+
+`effort_kwarg=None` 不能证明 low 不受支持。low 是要求 brief thinking 的软提示，不保证
+短或正确；medium 没有额外 instruction，不是硬预算。本轮没有 `thinking_budget`。
+Thinking-on 流中实际观察到首 reasoning 与首 content 的分离，分别记录
+`first_reasoning_seconds` / `first_content_seconds`，不能把首 reasoning 当成首正文。
+
+### 请求协议与恢复检查
+
+| 项目 | 本轮协议 |
+| --- | --- |
+| 请求控制 | `temperature=0`、`seed=42`；shared-prefix、无 isolation nonce，不主动 flush，也不保证 cold 或 cache 命中 |
+| 输出预算 | thinking、ledger 与长 sequence 均为 4096；辅助短 sequence 为 1536；预算是上限，不强制输出长度 |
+| 容量 | 预检限制 `P <= 2048`、`O <= 4096`，在 pool 8192 内留有余量；未测试真正 8K/16K 输出 |
+| 停止条件 | 不使用 `ignore_eos`，无 grammar 保送；ledger/思考题要求自然结束，sequence 允许受预算截断的合法前缀 |
+| 顺序与重复 | 13 个 case 两轮 round-robin；每个 trial 独立执行 `--repeats 1`，共 26 个 task trial |
+| 任务失败 | wrong final / length failure 确实返回 1 并记录；随后按预定计划执行下一独立 trial，不绕过或修改 failed status |
+| 中止条件 | 任何 transport、model、control failure 或短 recovery 失败均中止整个作业 |
+| Recovery | 1 次初始 warm + 每个 task trial 后 1 次精确 `372` 检查，共 27/27 pass；transport failure 为 0，服务保持同一 InvocationID |
+
+### 思考任务结果
+
+Oracle 在公开测试中独立核对：digit 穷举得到唯一答案 294；two workers 的总工时
+24 给出双 worker 下界 12，测试含满足依赖和不重叠约束的 makespan 12 witness；
+signed ledger 32 从初始 37 逐笔计算，期望 final 4、minimum -68、negative steps 18。
+下表每行均为两次 trial；token 对按轮次排列，total 指 API completion 总数
+（包含 reasoning），不是仅正文。
+
+| 任务 | 档位 | 严格通过 | Reasoning tokens（两次） | Total tokens（两次） | Wall 中位数（s） |
+| --- | --- | ---: | --- | --- | ---: |
+| Digit | off | 0/2 | 0 / 0 | 9 / 9 | 1.368 |
+| Digit | low | 2/2 | 571 / 537 | 581 / 547 | 19.326 |
+| Digit | medium | 2/2 | 609 / 586 | 619 / 596 | 20.403 |
+| Two workers | off | 0/2 | 0 / 0 | 9 / 9 | 0.576 |
+| Two workers | low | 1/2 | 4096 / 3896 | 4096 / 3906 | 137.451 |
+| Two workers | medium | 0/2 | 4072 / 4096 | 4082 / 4096 | 140.450 |
+| Signed ledger 32 | off | 0/2 | 0 / 0 | 32 / 32 | 1.397 |
+| Signed ledger 32 | low | 2/2 | 1021 / 1108 | 1041 / 1128 | 36.801 |
+| Signed ledger 32 | medium | 2/2 | 1336 / 1248 | 1356 / 1268 | 44.267 |
+
+Two workers 的 low 第一次耗尽 4096-token 预算，`length` 且无 final；第二次自然
+`stop` 并给出最优值 12。medium 第一次自然 `stop` 但答案非最优，第二次 `length`
+且无 final。off 的三题均给出错误值。wall 中位数包含这些错误/截断 trial，不是成功
+请求平均耗时；low 也能把全部预算用于 reasoning 而没有正文。
+
+汇总 off 0/6、low 5/6、medium 4/6 只覆盖三道合成题、每档两次重复，不能推广成模型
+benchmark accuracy 或 low 普遍优于 medium。此前约 30 tokens/s 的短 decode 观测
+也不意味着 thinking 节省 wall time。
+
+### 连续生成与严格失败
+
+以下四个 case 都关闭 thinking，各重复两次。checksum 是逐行 balance 之和，
+不是 final balance；每个账本行都与独立 oracle 核对。
+
+| Case | 严格检查通过 | 输出 token（两次） | Wall 中位数（s） | 停止与核对结果 |
+| --- | ---: | --- | ---: | --- |
+| Ledger 8 | 2/2 | 142 / 142 | 5.026 | 自然 `stop`，完整 8 行，balance checksum 78 |
+| Ledger 96 | 2/2 | 1799 / 1799 | 62.255 | 自然 `stop`，完整 96 行，balance checksum -910 |
+| Sequence 1536 | 0/2 | 1536 / 1536 | 51.825 | 两次 `length`，第一行即缺少要求的终止句点 |
+| Sequence 4096 | 0/2 | 4096 / 4096 | 139.024 | 两次 `length`，同样从第一行违反格式 |
+
+账本在自然 EOS 前完成，未强制 length；最长成功账本仅输出 1799 token，因此不证明
+正确账本覆盖了 4096-token 压力边界。sequence 的失败从第一行就发生，是格式不遵守，
+不能据此当作长程漂移证据，strict gate 不放宽。
+
+只作事后辅助诊断，忽略这一已知 missing-dot 差异后，1536 两次均有 137 条编号/词序
+完整的行；4096 两次均有 350 条及合法 partial 351。该有限合成样本未发现额外跳号或
+循环，但这不是原 strict checker pass，不改变四个 trial 的 failed status，也不声称
+500 行任务全部完成。
+
+### 资源、证据与后续
+
+| 本轮资源采样 | 观测值 |
+| --- | ---: |
+| 最低 MemAvailable | 37.3106 GiB |
+| 最高温度 | 60 °C |
+| 最高 GPU reported power | 41.15 W |
+| 时钟 | NA |
+
+这些 min/max 来自离散采样，不是瞬时真实 peak；功耗不代表整机功耗，NA 时钟也不支持
+同频假设。memory guard 未触发，全部短 recovery 通过，但不足以证明通用质量、长时
+运行或长期数值稳定性。任务失败本身不能证明 precision/SSM 漂移；要归因数值漂移，
+需要 teacher-forced、logit/reference 对照，而不是以错误答案或格式失败替代。
+
+下一轮先扩大 thinking 任务、测试较长的自然 prose，并补充 cancel / 混合负载检查。
+MTP 仍未启用，本轮不存在 speculative 接受率；不据此晋升生产配置。
+raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/thinking-stability-20261005/`，不公开 raw chain、
+原始回复、host IP 或运行 UUID。遵循每轮 record + push 的要求，本轮代码和本页记录
+由主 agent 负责后续新 revision 的提交/推送；此处不预填尚未产生的 commit ID。

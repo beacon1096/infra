@@ -317,6 +317,12 @@ class DecodeGraphModuleChecks(unittest.TestCase):
             graphFull = extract (system.extendModules {
               modules = [ { services.thorFlashNext.decodeGraph = true; } ];
             });
+            graphLongerWindow = extract (system.extendModules {
+              modules = [ {
+                services.thorFlashNext.decodeGraph = true;
+                services.thorFlashNext.runtimeMaxSec = 5400;
+              } ];
+            });
           }
         ''' % json.dumps(str(ROOT))
         result = subprocess.run(
@@ -394,6 +400,14 @@ class DecodeGraphModuleChecks(unittest.TestCase):
         self.assertTrue(guard["unitConfig"]["StopWhenUnneeded"])
         script = (FLASH_NEXT / "run.sh").read_text()
         self.assertIn("--memory=108g --memory-swap=108g", script)
+
+    def test_bounded_runtime_override_does_not_change_inference(self):
+        graph = copy.deepcopy(self.evaluated["graphFull"])
+        longer = copy.deepcopy(self.evaluated["graphLongerWindow"])
+        self.assertEqual(graph["service"]["serviceConfig"]["RuntimeMaxSec"], 3600)
+        self.assertEqual(longer["service"]["serviceConfig"]["RuntimeMaxSec"], 5400)
+        longer["service"]["serviceConfig"]["RuntimeMaxSec"] = 3600
+        self.assertEqual(graph, longer)
 
 
 if __name__ == "__main__":

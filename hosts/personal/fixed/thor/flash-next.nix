@@ -60,6 +60,11 @@ in
     default = false;
     description = "Enable the C1 decodeGraph control (G1): full decode graphs at batch size 1.";
   };
+  options.services.thorFlashNext.runtimeMaxSec = lib.mkOption {
+    type = lib.types.ints.positive;
+    default = 3600;
+    description = "Bounded runtime for an explicitly started Flash Next experiment.";
+  };
 
   config = {
     systemd.services.thor-flash-next = {
@@ -84,7 +89,7 @@ in
         ExecStop = "${run}/bin/thor-flash-next-run cleanup";
         ExecStopPost = "${run}/bin/thor-flash-next-run cleanup";
         Restart = "no";
-        RuntimeMaxSec = 3600;
+        RuntimeMaxSec = config.services.thorFlashNext.runtimeMaxSec;
         TimeoutStartSec = 60;
         TimeoutStopSec = 45;
         StateDirectory = "thor-flash-next";

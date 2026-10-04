@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "purpose": "New public synthetic thinking and continuous-generation tasks, not historical results. Task failures alone do not establish FP32 state drift. Output budgets are ceilings, not forced generation lengths. No generated code is executed.",
+  "cases": [
+    {
+      "id": "thinking-digit-off", "category": "digit-puzzle", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/thinking-stability.json#thinking-digit-off"},
+      "request": {
+        "messages": [{"role": "user", "content": "Find the smallest three-digit positive integer N whose digits sum to 15, whose reversed decimal digits represent N + 198, and which is divisible by 7. Return only a JSON object with the integer field number. No Markdown or explanation."}],
+        "max_tokens": 4096, "temperature": 0, "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "json", "expected": {"number": 294}}
+    },
+    {
+      "id": "thinking-digit-low", "category": "digit-puzzle", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/thinking-stability.json#thinking-digit-low"},
+      "request": {
+        "messages": [{"role": "user", "content": "Find the smallest three-digit positive integer N whose digits sum to 15, whose reversed decimal digits represent N + 198, and which is divisible by 7. Return only a JSON object with the integer field number. No Markdown or explanation."}],
+        "max_tokens": 4096, "temperature": 0, "chat_template_kwargs": {"enable_thinking": true, "reasoning_effort": "low"}
+      },
+      "check": {"kind": "json", "expected": {"number": 294}}
+    },
+    {
+      "id": "thinking-digit-medium", "category": "digit-puzzle", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/thinking-stability.json#thinking-digit-medium"},
+      "request": {
+        "messages": [{"role": "user", "content": "Find the smallest three-digit positive integer N whose digits sum to 15, whose reversed decimal digits represent N + 198, and which is divisible by 7. Return only a JSON object with the integer field number. No Markdown or explanation."}],
+        "max_tokens": 4096, "temperature": 0, "chat_template_kwargs": {"enable_thinking": true, "reasoning_effort": "medium"}
+      },
+      "check": {"kind": "json", "expected": {"number": 294}}
+    },
+    {
+      "id": "thinking-workers-off", "category": "worker-scheduling", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/thinking-stability.json#thinking-workers-off"},
+      "request": {
+        "messages": [{"role": "user", "content": "Two identical workers are available at time 0. Each worker can perform at most one task at a time. Tasks are non-preemptive, each uses one worker, and a task can start only after all its dependencies finish. Durations and dependencies: A:3:none; B:2:none; C:4:A; D:3:B; E:2:C,D; F:1:E; G:4:B; H:5:G. Find the minimum possible makespan to finish all eight tasks. Return only a JSON object with the integer field makespan. No Markdown or explanation."}],
+        "max_tokens": 4096, "temperature": 0, "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "json", "expected": {"makespan": 12}}
+    },
+    {
+      "id": "thinking-workers-low", "category": "worker-scheduling", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/thinking-stability.json#thinking-workers-low"},
+      "request": {
+        "messages": [{"role": "user", "content": "Two identical workers are available at time 0. Each worker can perform at most one task at a time. Tasks are non-preemptive, each uses one worker, and a task can start only after all its dependencies finish. Durations and dependencies: A:3:none; B:2:none; C:4:A; D:3:B; E:2:C,D; F:1:E; G:4:B; H:5:G. Find the minimum possible makespan to finish all eight tasks. Return only a JSON object with the integer field makespan. No Markdown or explanation."}],
+        "max_tokens": 4096, "temperature": 0, "chat_template_kwargs": {"enable_thinking": true, "reasoning_effort": "low"}
+      },
+      "check": {"kind": "json", "expected": {"makespan": 12}}
+    },
+    {
+      "id": "thinking-workers-medium", "category": "worker-scheduling", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/thinking-stability.json#thinking-workers-medium"},
+      "request": {
+        "messages": [{"role": "user", "content": "Two identical workers are available at time 0. Each worker can perform at most one task at a time. Tasks are non-preemptive, each uses one worker, and a task can start only after all its dependencies finish. Durations and dependencies: A:3:none; B:2:none; C:4:A; D:3:B; E:2:C,D; F:1:E; G:4:B; H:5:G. Find the minimum possible makespan to finish all eight tasks. Return only a JSON object with the integer field makespan. No Markdown or explanation."}],
+        "max_tokens": 4096, "temperature": 0, "chat_template_kwargs": {"enable_thinking": true, "reasoning_effort": "medium"}
+      },
+      "check": {"kind": "json", "expected": {"makespan": 12}}
+    },
+    {
+      "id": "thinking-ledger32-off", "category": "signed-ledger-summary", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/thinking-stability.json#thinking-ledger32-off"},
+      "request": {
+        "messages": [{"role": "user", "content": "Initial balance is 37. Apply these signed transactions in the listed order; each pair is id:amount: 1037:5,1074:-39,1111:14,1148:-30,1185:23,1222:-21,1259:32,1296:-12,1333:41,1370:-3,1407:-47,1444:6,1481:-38,1518:15,1555:-29,1592:24,1629:-20,1666:33,1703:-11,1740:42,1777:-2,1814:-46,1851:7,1888:-37,1925:16,1962:-28,1999:25,2036:-19,2073:34,2110:-10,2147:43,2184:-1. Return only a JSON object with integer fields final_balance, minimum_balance, negative_steps. minimum_balance includes the initial balance and every post-transaction balance. negative_steps counts only post-transaction balances strictly below zero. No Markdown or explanation."}],
+        "max_tokens": 4096, "temperature": 0, "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "json", "expected": {"final_balance": 4, "minimum_balance": -68, "negative_steps": 18}}
+    },
+    {
+      "id": "thinking-ledger32-low", "category": "signed-ledger-summary", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/thinking-stability.json#thinking-ledger32-low"},
+      "request": {
+        "messages": [{"role": "user", "content": "Initial balance is 37. Apply these signed transactions in the listed order; each pair is id:amount: 1037:5,1074:-39,1111:14,1148:-30,1185:23,1222:-21,1259:32,1296:-12,1333:41,1370:-3,1407:-47,1444:6,1481:-38,1518:15,1555:-29,1592:24,1629:-20,1666:33,1703:-11,1740:42,1777:-2,1814:-46,1851:7,1888:-37,1925:16,1962:-28,1999:25,2036:-19,2073:34,2110:-10,2147:43,2184:-1. Return only a JSON object with integer fields final_balance, minimum_balance, negative_steps. minimum_balance includes the initial balance and every post-transaction balance. negative_steps counts only post-transaction balances strictly below zero. No Markdown or explanation."}],
+        "max_tokens": 4096, "temperature": 0, "chat_template_kwargs": {"enable_thinking": true, "reasoning_effort": "low"}
+      },
+      "check": {"kind": "json", "expected": {"final_balance": 4, "minimum_balance": -68, "negative_steps": 18}}
+    },
+    {
+      "id": "thinking-ledger32-medium", "category": "signed-ledger-summary", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/thinking-stability.json#thinking-ledger32-medium"},
+      "request": {
+        "messages": [{"role": "user", "content": "Initial balance is 37. Apply these signed transactions in the listed order; each pair is id:amount: 1037:5,1074:-39,1111:14,1148:-30,1185:23,1222:-21,1259:32,1296:-12,1333:41,1370:-3,1407:-47,1444:6,1481:-38,1518:15,1555:-29,1592:24,1629:-20,1666:33,1703:-11,1740:42,1777:-2,1814:-46,1851:7,1888:-37,1925:16,1962:-28,1999:25,2036:-19,2073:34,2110:-10,2147:43,2184:-1. Return only a JSON object with integer fields final_balance, minimum_balance, negative_steps. minimum_balance includes the initial balance and every post-transaction balance. negative_steps counts only post-transaction balances strictly below zero. No Markdown or explanation."}],
+        "max_tokens": 4096, "temperature": 0, "chat_template_kwargs": {"enable_thinking": true, "reasoning_effort": "medium"}
+      },
+      "check": {"kind": "json", "expected": {"final_balance": 4, "minimum_balance": -68, "negative_steps": 18}}
+    },
+    {
+      "id": "continuous-ledger8-off", "category": "continuous-ledger", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/thinking-stability.json#continuous-ledger8-off"},
+      "request": {
+        "messages": [{"role": "user", "content": "Initial balance is 37. Apply each signed transaction in order; each pair is id:amount: 1037:5,1074:-39,1111:14,1148:-30,1185:23,1222:-21,1259:32,1296:-12. Output exactly 8 NDJSON records, one JSON object per line, with only integer fields seq, id, balance. seq starts at 1 and increases by 1; id is the listed transaction ID; balance is the running balance after that transaction. Stop naturally after the last record. No Markdown, blank lines, headings or summary."}],
+        "max_tokens": 4096, "temperature": 0, "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "ledger", "initial_balance": 37, "transactions": [
+        {"id": 1037, "amount": 5}, {"id": 1074, "amount": -39}, {"id": 1111, "amount": 14}, {"id": 1148, "amount": -30},
+        {"id": 1185, "amount": 23}, {"id": 1222, "amount": -21}, {"id": 1259, "amount": 32}, {"id": 1296, "amount": -12}
+      ]}
+    },
+    {
+      "id": "continuous-ledger96-off", "category": "continuous-ledger", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/thinking-stability.json#continuous-ledger96-off"},
+      "request": {
+        "messages": [{"role": "user", "content": "Initial balance is 37. Apply each signed transaction in order; each pair is id:amount: 1037:5,1074:-39,1111:14,1148:-30,1185:23,1222:-21,1259:32,1296:-12,1333:41,1370:-3,1407:-47,1444:6,1481:-38,1518:15,1555:-29,1592:24,1629:-20,1666:33,1703:-11,1740:42,1777:-2,1814:-46,1851:7,1888:-37,1925:16,1962:-28,1999:25,2036:-19,2073:34,2110:-10,2147:43,2184:-1,2221:-45,2258:8,2295:-36,2332:17,2369:-27,2406:26,2443:-18,2480:35,2517:-9,2554:44,2591:0,2628:-44,2665:9,2702:-35,2739:18,2776:-26,2813:27,2850:-17,2887:36,2924:-8,2961:45,2998:1,3035:-43,3072:10,3109:-34,3146:19,3183:-25,3220:28,3257:-16,3294:37,3331:-7,3368:46,3405:2,3442:-42,3479:11,3516:-33,3553:20,3590:-24,3627:29,3664:-15,3701:38,3738:-6,3775:47,3812:3,3849:-41,3886:12,3923:-32,3960:21,3997:-23,4034:30,4071:-14,4108:39,4145:-5,4182:48,4219:4,4256:-40,4293:13,4330:-31,4367:22,4404:-22,4441:31,4478:-13,4515:40,4552:-4. Output exactly 96 NDJSON records, one JSON object per line, with only integer fields seq, id, balance. seq starts at 1 and increases by 1; id is the listed transaction ID; balance is the running balance after that transaction. Stop naturally after the last record. No Markdown, blank lines, headings or summary."}],
+        "max_tokens": 4096, "temperature": 0, "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "ledger", "initial_balance": 37, "transactions": [
+        {"id": 1037, "amount": 5}, {"id": 1074, "amount": -39}, {"id": 1111, "amount": 14}, {"id": 1148, "amount": -30},
+        {"id": 1185, "amount": 23}, {"id": 1222, "amount": -21}, {"id": 1259, "amount": 32}, {"id": 1296, "amount": -12},
+        {"id": 1333, "amount": 41}, {"id": 1370, "amount": -3}, {"id": 1407, "amount": -47}, {"id": 1444, "amount": 6},
+        {"id": 1481, "amount": -38}, {"id": 1518, "amount": 15}, {"id": 1555, "amount": -29}, {"id": 1592, "amount": 24},
+        {"id": 1629, "amount": -20}, {"id": 1666, "amount": 33}, {"id": 1703, "amount": -11}, {"id": 1740, "amount": 42},
+        {"id": 1777, "amount": -2}, {"id": 1814, "amount": -46}, {"id": 1851, "amount": 7}, {"id": 1888, "amount": -37},
+        {"id": 1925, "amount": 16}, {"id": 1962, "amount": -28}, {"id": 1999, "amount": 25}, {"id": 2036, "amount": -19},
+        {"id": 2073, "amount": 34}, {"id": 2110, "amount": -10}, {"id": 2147, "amount": 43}, {"id": 2184, "amount": -1},
+        {"id": 2221, "amount": -45}, {"id": 2258, "amount": 8}, {"id": 2295, "amount": -36}, {"id": 2332, "amount": 17},
+        {"id": 2369, "amount": -27}, {"id": 2406, "amount": 26}, {"id": 2443, "amount": -18}, {"id": 2480, "amount": 35},
+        {"id": 2517, "amount": -9}, {"id": 2554, "amount": 44}, {"id": 2591, "amount": 0}, {"id": 2628, "amount": -44},
+        {"id": 2665, "amount": 9}, {"id": 2702, "amount": -35}, {"id": 2739, "amount": 18}, {"id": 2776, "amount": -26},
+        {"id": 2813, "amount": 27}, {"id": 2850, "amount": -17}, {"id": 2887, "amount": 36}, {"id": 2924, "amount": -8},
+        {"id": 2961, "amount": 45}, {"id": 2998, "amount": 1}, {"id": 3035, "amount": -43}, {"id": 3072, "amount": 10},
+        {"id": 3109, "amount": -34}, {"id": 3146, "amount": 19}, {"id": 3183, "amount": -25}, {"id": 3220, "amount": 28},
+        {"id": 3257, "amount": -16}, {"id": 3294, "amount": 37}, {"id": 3331, "amount": -7}, {"id": 3368, "amount": 46},
+        {"id": 3405, "amount": 2}, {"id": 3442, "amount": -42}, {"id": 3479, "amount": 11}, {"id": 3516, "amount": -33},
+        {"id": 3553, "amount": 20}, {"id": 3590, "amount": -24}, {"id": 3627, "amount": 29}, {"id": 3664, "amount": -15},
+        {"id": 3701, "amount": 38}, {"id": 3738, "amount": -6}, {"id": 3775, "amount": 47}, {"id": 3812, "amount": 3},
+        {"id": 3849, "amount": -41}, {"id": 3886, "amount": 12}, {"id": 3923, "amount": -32}, {"id": 3960, "amount": 21},
+        {"id": 3997, "amount": -23}, {"id": 4034, "amount": 30}, {"id": 4071, "amount": -14}, {"id": 4108, "amount": 39},
+        {"id": 4145, "amount": -5}, {"id": 4182, "amount": 48}, {"id": 4219, "amount": 4}, {"id": 4256, "amount": -40},
+        {"id": 4293, "amount": 13}, {"id": 4330, "amount": -31}, {"id": 4367, "amount": 22}, {"id": 4404, "amount": -22},
+        {"id": 4441, "amount": 31}, {"id": 4478, "amount": -13}, {"id": 4515, "amount": 40}, {"id": 4552, "amount": -4}
+      ]}
+    },
+    {
+      "id": "continuous-sequence-1536-off", "category": "continuous-sequence", "mode": "stress",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/thinking-stability.json#continuous-sequence-1536-off"},
+      "request": {
+        "messages": [{"role": "user", "content": "Generate records numbered 1 through 500 in increasing order. Each complete line must have exactly the format RECORD <n>: amber blue cedar delta. Replace <n> with the unpadded decimal record number. Start with RECORD 1: amber blue cedar delta. Use no headings, blank lines, Markdown or explanations. Continue until all 500 records are complete or the response is cut off; do not summarize, repeat or skip records."}],
+        "max_tokens": 1536, "temperature": 0, "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "sequence", "rows": 500, "text": "amber blue cedar delta."}
+    },
+    {
+      "id": "continuous-sequence-4096-off", "category": "continuous-sequence", "mode": "stress",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/thinking-stability.json#continuous-sequence-4096-off"},
+      "request": {
+        "messages": [{"role": "user", "content": "Generate records numbered 1 through 500 in increasing order. Each complete line must have exactly the format RECORD <n>: amber blue cedar delta. Replace <n> with the unpadded decimal record number. Start with RECORD 1: amber blue cedar delta. Use no headings, blank lines, Markdown or explanations. Continue until all 500 records are complete or the response is cut off; do not summarize, repeat or skip records."}],
+        "max_tokens": 4096, "temperature": 0, "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "sequence", "rows": 500, "text": "amber blue cedar delta."}
+    }
+  ]
+}

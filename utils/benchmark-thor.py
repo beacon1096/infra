@@ -73,7 +73,21 @@ def check_messages(messages):
 
 
 def check_gate(gate):
+    if not isinstance(gate, dict):
+        raise ValueError("invalid correctness gate")
     kind = gate.get("kind")
+    if kind == "ledger" and set(gate) == {"kind", "initial_balance", "transactions"}:
+        transactions = gate["transactions"]
+        if (type(gate["initial_balance"]) is int and isinstance(transactions, list) and transactions
+                and all(isinstance(item, dict) and set(item) == {"id", "amount"}
+                        and type(item["id"]) is int and type(item["amount"]) is int for item in transactions)
+                and len({item["id"] for item in transactions}) == len(transactions)):
+            return
+    if kind == "sequence" and set(gate) == {"kind", "rows", "text"}:
+        if (type(gate["rows"]) is int and gate["rows"] > 0
+                and isinstance(gate["text"], str) and gate["text"]
+                and "\n" not in gate["text"] and "\r" not in gate["text"]):
+            return
     if kind == "exact" and isinstance(gate.get("expected"), str):
         return
     if kind == "json" and isinstance(gate.get("expected"), dict):
@@ -94,7 +108,7 @@ def check_gate(gate):
 def load_assets(fixtures_path=ASSETS / "fixtures.json", profiles_path=ASSETS / "profiles.json"):
     fixtures, profiles = load_json(fixtures_path), load_json(profiles_path)
     for asset, key in ((fixtures, "cases"), (profiles, "profiles")):
-        if asset.get("schema_version") != 1 or not isinstance(asset.get(key), list) or not asset[key]:
+        if type(asset.get("schema_version")) is not int or asset["schema_version"] != 1 or not isinstance(asset.get(key), list) or not asset[key]:
             raise ValueError("invalid asset schema")
         ids = [item.get("id") for item in asset[key]]
         if any(not isinstance(item, str) or not item for item in ids) or len(set(ids)) != len(ids):
@@ -118,6 +132,9 @@ def load_assets(fixtures_path=ASSETS / "fixtures.json", profiles_path=ASSETS / "
         if {"model", "stream", "reasoning_effort", "enable_thinking"} & request.keys():
             raise ValueError("model/stream are supplied by the client; thinking uses template kwargs")
         check_gate(case["check"])
+        if ((case["check"]["kind"] == "sequence" and case["mode"] != "stress")
+                or (case["check"]["kind"] == "ledger" and case["mode"] != "quality")):
+            raise ValueError("invalid mode for continuous correctness gate")
         if "prefix" in case:
             prefix = case["prefix"]
             if not isinstance(prefix.get("line"), str) or type(prefix.get("repeat")) is not int or not 0 < prefix["repeat"] <= 10000:
@@ -241,7 +258,7 @@ def collect_stream(events, start, clock=time.monotonic):
             if not isinstance(chunk["usage"], dict):
                 raise ProtocolError("invalid_usage")
             usage = usage or {}
-            for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            for key in ("prompt_tokens", "completion_tokens", "total_tokens", "reasoning_tokens"):
                 value = chunk["usage"].get(key)
                 if type(value) is int and value >= 0:
                     usage[key] = value
@@ -324,13 +341,23 @@ def collect_stream(events, start, clock=time.monotonic):
     completion = (usage or {}).get("completion_tokens")
     if type(completion) is not int or completion < 0:
         completion = None
-    reported_reasoning = ((usage or {}).get("completion_tokens_details") or {}).get("reasoning_tokens")
-    reasoning_tokens = reported_reasoning
+    root_reasoning = (usage or {}).get("reasoning_tokens")
+    detail_reasoning = ((usage or {}).get("completion_tokens_details") or {}).get("reasoning_tokens")
+    reasoning_source = None
+    if root_reasoning is not None and detail_reasoning is not None:
+        reasoning_source = "both" if root_reasoning == detail_reasoning else "conflict"
+    elif root_reasoning is not None:
+        reasoning_source = "root"
+    elif detail_reasoning is not None:
+        reasoning_source = "completion_tokens_details"
+    reasoning_tokens = root_reasoning if root_reasoning is not None else detail_reasoning
+    if reasoning_source == "conflict":
+        reasoning_tokens = None
     if type(reasoning_tokens) is not int or completion is None or not 0 <= reasoning_tokens <= completion:
         reasoning_tokens = None
     first_final = min((x for x in (first_content, first_tool) if x is not None), default=None)
     estimate = None
-    if completion is not None and completion > 1 and first_content is not None and not reasoning and not reported_reasoning and not tools and elapsed > first_content:
+    if completion is not None and completion > 1 and first_content is not None and not reasoning and not root_reasoning and not detail_reasoning and not tools and elapsed > first_content:
         estimate = (completion - 1) / (elapsed - first_content)
     return {
         "content": "".join(content), "reasoning_content": "".join(reasoning),
@@ -345,6 +372,7 @@ def collect_stream(events, start, clock=time.monotonic):
             "payload_interval_p95_seconds": sorted_intervals[math.ceil(0.95 * len(intervals)) - 1] if intervals else None,
             "payload_interval_max_seconds": max(intervals) if intervals else None,
             "completion_tokens_reported": completion, "reasoning_tokens_reported": reasoning_tokens,
+            "reasoning_tokens_source": reasoning_source,
             "non_reasoning_tokens_reported": completion - reasoning_tokens if reasoning_tokens is not None else None,
             "end_to_end_tokens_per_second": completion / elapsed if completion is not None and elapsed > 0 else None,
             "content_decode_tokens_per_second_estimate": estimate,
@@ -356,6 +384,53 @@ def collect_stream(events, start, clock=time.monotonic):
 
 def correctness(gate, response, mode):
     kind, text = gate["kind"], response["content"]
+    if kind in {"ledger", "sequence"}:
+        failed = {"status": "failed", "scope": kind, "full_task_completed": False}
+        finish = response["finish_reason"]
+        if response["tool_calls"] or not text:
+            return failed
+        if kind == "ledger":
+            if mode != "quality" or finish != "stop":
+                return failed
+            lines = text.split("\n")
+            if lines[-1] == "":
+                lines.pop()
+            if len(lines) != len(gate["transactions"]):
+                return failed
+            balance, checksum = gate["initial_balance"], 0
+            try:
+                for seq, (line, transaction) in enumerate(zip(lines, gate["transactions"]), 1):
+                    row = json.loads(line, object_pairs_hook=unique_object)
+                    balance += transaction["amount"]
+                    checksum += balance
+                    if (not isinstance(row, dict) or set(row) != {"seq", "id", "balance"}
+                            or any(type(value) is not int for value in row.values())
+                            or row != {"seq": seq, "id": transaction["id"], "balance": balance}):
+                        return failed
+            except (ValueError, TypeError):
+                return failed
+            return {"status": "passed", "scope": "ledger", "full_task_completed": True,
+                    "rows_checked": len(lines), "balance_checksum": checksum}
+        if mode != "stress" or finish not in {"stop", "length"}:
+            return failed
+        lines = text.split("\n")
+        if lines[-1] == "":
+            lines.pop()
+        complete = 0
+        for index, line in enumerate(lines, 1):
+            expected = f"RECORD {index}: {gate['text']}"
+            if index > gate["rows"]:
+                return failed
+            if line == expected:
+                complete += 1
+            elif not (finish == "length" and index == len(lines) and not text.endswith("\n")
+                      and line and expected.startswith(line)):
+                return failed
+        full = complete == gate["rows"]
+        if not full and finish != "length":
+            return failed
+        return {"status": "passed", "scope": "sequence" if full else "valid_prefix",
+                "full_task_completed": full, "rows_checked": complete}
     if kind == "none":
         return {"status": "not_checked", "scope": "throughput_only"}
     if response["finish_reason"] not in {"stop", "tool_calls"} and mode != "stress":
@@ -565,6 +640,8 @@ def main(argv=None):
             raise ValueError("unknown profile ID")
         hashes = source_hashes(profile)
         cases = select_cases(fixtures, args.cases, args.suite)
+        if args.command != "validate" and not cases:
+            raise ValueError("no cases selected; specify --case or a matching --suite")
         if args.repeats <= 0 or args.warmups < 0 or not all(math.isfinite(x) and x > 0 for x in (args.idle_timeout, args.deadline)):
             raise ValueError("invalid repeat or timeout settings")
         model = args.model or profile["settings"].get("model")
@@ -616,6 +693,7 @@ def main(argv=None):
                         response = stream_request(args.base_url, request, os.environ.get(args.api_key_env), args.idle_timeout, args.deadline)
                         gate = correctness(spec["check"], response, case["mode"])
                         thinking_observed = bool(response["reasoning_content"] or
+                                                 (response["usage"] or {}).get("reasoning_tokens") or
                                                  ((response["usage"] or {}).get("completion_tokens_details") or {}).get("reasoning_tokens"))
                         if request["chat_template_kwargs"]["enable_thinking"]:
                             response["metrics"]["content_decode_tokens_per_second_estimate"] = None
