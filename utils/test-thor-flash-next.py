@@ -30,6 +30,7 @@ if Path(sys.argv[0]).name == "prepare":
     destination = Path(destination)
     destination.mkdir(parents=True)
     (destination / "vocab_parallel_embedding.py").write_text("# Fake overlay\\n")
+    (destination / "eagle_worker_v2.py").write_text("# Fake overlay\\n")
     sys.exit(0)
 with open(os.environ["FAKE_DOCKER_LOG"], "a", encoding="utf-8") as log:
     log.write(json.dumps(args) + "\\n")
@@ -208,8 +209,8 @@ class FlashNextChecks(unittest.TestCase):
         self.assertEqual(self.calls(self.prepare_log), [
             [self.baseline["image"], str(self.patch_dir), str(self.cache / "runtime-patches")],
         ])
-        self.assertEqual([path.name for path in (self.cache / "runtime-patches").iterdir()],
-                         ["vocab_parallel_embedding.py"])
+        self.assertEqual(sorted(path.name for path in (self.cache / "runtime-patches").iterdir()),
+                         ["eagle_worker_v2.py", "vocab_parallel_embedding.py"])
         self.assertEqual(self.cid_file.read_bytes(), OWN_CID.encode("ascii"))
 
     def speculative_baseline(self, name, extra):
@@ -256,6 +257,9 @@ class FlashNextChecks(unittest.TestCase):
         call = self.calls()[-1]
         mounts = [call[index + 1] for index, arg in enumerate(call) if arg == "--mount"]
         self.assertIn(f"type=bind,src={self.model}/optimization,dst=/vocab-maps,readonly", mounts)
+        self.assertIn(f"type=bind,src={self.cache}/runtime-patches/eagle_worker_v2.py,"
+                      "dst=/sgl-workspace/sglang/python/sglang/srt/speculative/eagle_worker_v2.py,readonly",
+                      mounts)
         self.assertEqual(call[call.index(self.baseline["image"]) + 1:],
                          ["python3", "-m", "sglang.launch_server"] + arguments)
 

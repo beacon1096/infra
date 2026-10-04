@@ -1,0 +1,31 @@
+--- eagle_worker_v2.py
++++ eagle_worker_v2.py
+@@ -352,6 +352,28 @@
+ 
+         else:
+             if self.hot_token_id is not None and head is not None:
++                if head.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
++                    scale = getattr(target_lm_head, "weight_scale_inv", None)
++                    block_size = getattr(
++                        getattr(target_lm_head, "quant_method", None),
++                        "weight_block_size",
++                        None,
++                    )
++                    if scale is None or block_size is None:
++                        raise RuntimeError(
++                            "speculative token map requires a block-quantized "
++                            "target lm_head to dequantize before slicing"
++                        )
++                    from sglang.srt.layers.quantization.dequantization import (
++                        dequantize_fp8,
++                    )
++
++                    head = dequantize_fp8(
++                        head,
++                        scale,
++                        block_size=list(block_size),
++                        format_ue8m0=getattr(scale, "format_ue8m0", False),
++                    )
+                 head = head.clone()
+                 self.hot_token_id = self.hot_token_id.to(head.device)
+                 head.data = head.data[self.hot_token_id]

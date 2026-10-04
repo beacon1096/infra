@@ -1112,3 +1112,46 @@ FP8 KV / 上下文长度。服务以子进程 SIGQUIT 结束，容器清理，Me
 
 下一轮若要继续 `32768` 优化，需要先实现该 head 的 loader 或把 head 转成受支持
 dtype，并单独记录转换工件哈希；在此之前不对 `M2` 作性能或质量声明。
+
+### 32768 词表优化：反量化补丁与 M2 对照
+
+2026-10-05，为在 stock 镜像上运行 token map，新增第二个固定 overlay 补丁
+`eagle_worker_v2.py.patch`：在 `init_lm_head` 的 token-map 分支里，当目标 `lm_head`
+是 block-FP8 时，先用其 `weight_scale_inv` 经 `dequantize_fp8` 反量化，再按
+`hot_token_id` 切片（draft head 未量化，需要 bf16）。目标 head 本身保持 FP8，只有
+draft 使用的副本被反量化。`prepare.sh` 改为按 `manifest.json` 列表逐个校验/打补丁，
+`run.sh` 仅在 token map 启用时挂载该补丁文件；head 补丁测试与 harness 同步更新。
+原始/打补丁后的 SHA-256 与 patch SHA-256 均固定在校验清单中。
+
+结果：`M2` 正常加载并提供健康 API；runtime 记录 `speculative_token_map =
+/vocab-maps/vocab-32768-corpus.pt`、`EAGLE`、3 步 / topk 1 / 4 draft token、
+`enable_metrics = true`，draft CUDA graph capture 不再报 `addmm_cuda` 错误。
+`optimization/draft-head-32768-corpus-fp8.safetensors` 仍未使用（按行切片共享 head
+与之等价）。
+
+同一 6 个 greedy 单次样本下，`M2`（32768 词表）对 `M1M`（全词表）：
+
+| Case | M1M tok/s（len / rate） | M2 tok/s（len / rate） | 严格结果 |
+| --- | --- | --- | --- |
+| natural-prose-off | 35.33（2.55 / 0.52） | 22.20（1.38 / 0.13） | 两版均通过 |
+| natural-prose-low | 38.44（2.15 / 0.38） | 23.28（1.15 / 0.05） | 两版均通过 |
+| python-interval-repair-ast | 55.68（3.35 / 0.78） | 53.66（3.00 / 0.67） | 两版均失败 |
+| thinking-digit-low | 57.93（3.83 / 0.94） | 57.94（3.73 / 0.91） | 两版均通过 |
+| thinking-workers-low | 52.35（3.25 / 0.75） | 56.71（3.33 / 0.78） | 两版均 length 失败 |
+| thinking-ledger32-low | 60.00（3.98 / 0.99） | 64.80（3.83 / 0.94） | 两版均通过 |
+
+窗口 150 个采样：`M2` 的 `accept_len` 中位 3.175（min 1.125、max 4.0）、`accept_rate`
+中位 0.725（min 0.042、max 1.0）。限制到前 32768 个 token 后，结构化任务的接受率
+基本不变（0.67–0.94），吞吐与 `M1M` 相当或略好；自然文本的接受率骤降到 0.05–0.13，
+吞吐从 35–38 降到 22–23 tok/s。可见该优化并非普遍收益，更偏向可预测的
+结构化/重复文本；本对照不足以否定词表优化本身，但足以说明它对开放式长文本不利。
+
+边界：每 case 仅一次 greedy 样本；接受率来自 1 秒 gauge 采样与计数器增量；未评估
+质量等价、长上下文或更广样本；反量化只是在加载时把 draft 副本转为 bf16（与 FP8
+切片数值一致），prose 差异来自词表限制而非 head 精度；draft 额外常驻不变。验收后
+服务停止，容器清理，MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。
+raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run4/`。
+
+下一轮：以更有代表性的样本量区分「结构化负载用 token map、开放文本用全词表」，
+并评估质量等价；不改变 BF16 state / FP8 KV / 上下文长度。

@@ -69,6 +69,7 @@ fi
 mapfile -t arguments < <(jq -r '.arguments[]' "$BASELINE_FILE")
 draft_mount=()
 token_mount=()
+eagle_mount=()
 mtp_requested=false
 token_map_requested=false
 for argument in "${arguments[@]}"; do
@@ -96,11 +97,16 @@ if $token_map_requested; then
 fi
 install -d -m 0700 "$CACHE_DIR/ple" "$CACHE_DIR/kernel-cache"
 "$PREPARE_PROGRAM" "$IMAGE" "$PATCH_DIR" "$CACHE_DIR/runtime-patches"
+if $token_map_requested; then
+    test -f "$CACHE_DIR/runtime-patches/eagle_worker_v2.py"
+    eagle_mount=("--mount" "type=bind,src=$CACHE_DIR/runtime-patches/eagle_worker_v2.py,dst=/sgl-workspace/sglang/python/sglang/srt/speculative/eagle_worker_v2.py,readonly")
+fi
 printf 'Starting mixed-target-only baseline; BF16 dtype does not undo mixed/FP8 weights\n'
 
 exec docker run --rm --name "$container" --pull=never \
     "${draft_mount[@]}" \
     "${token_mount[@]}" \
+    "${eagle_mount[@]}" \
     --cidfile="$cid_file" \
     --device=nvidia.com/gpu=all --shm-size=8g --memory=108g --memory-swap=108g \
     --publish=127.0.0.1:8890:8890 \
