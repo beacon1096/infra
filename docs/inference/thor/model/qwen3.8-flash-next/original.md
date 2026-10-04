@@ -930,3 +930,65 @@ raw/evidence 保留在私有
 `/var/lib/thor-flash-next/observations/thinking-stability-20261005/`，不公开 raw chain、
 原始回复、host IP 或运行 UUID。遵循每轮 record + push 的要求，本轮代码和本页记录
 由主 agent 负责后续新 revision 的提交/推送；此处不预填尚未产生的 commit ID。
+
+## 生成安全验收：自然长文本与客户端取消
+
+2026-10-05，在图 `G1`（target-only，C1 full decode graph，max batch 1，BF16 KV、
+FP32 SSM，无 MTP）上补做生成安全验收，不改变任何 inference flags；5400 秒仍只是
+行政窗口。新增 `docs/inference/thor/benchmark/generation-safety.json` 与一个
+`natural_prose` strict gate，并由 `record-flash-next-runtime.py` 的 `G1` 分支核验 runtime
+记录；观测到的 `speculative_algorithm` 为 `disabled`，`cuda_graph_backend_decode` 为
+`full`，`cuda_graph_max_bs_decode` 为 1。
+
+**自然长文本**
+
+提示要求约 700 字、结构完整并自然结束的中文说明文；budget 为 2048（off）和 4096
+（low），temperature 0，每档重复两次。gate 要求 `finish_reason == stop`、无 tool call、
+内容达到 `min_chars`。
+
+| Case | 严格通过 | 输出字符 | completion / reasoning token | Wall（s） | 停止 |
+| --- | ---: | ---: | --- | ---: | --- |
+| natural-prose-off | 2/2 | 837 / 844 | 467 / 483（reasoning 0） | 16.55 / 16.58 | 自然 `stop` |
+| natural-prose-low | 2/2 | 873 / 784 | 687 / 633（reasoning 172 / 176） | 23.68 / 21.53 | 自然 `stop` |
+
+thinking low 在首次内容前先输出 reasoning，`first_content` 约 6.05–6.09 s；off 约
+0.19–0.43 s。
+长度检查只证明在预算内自然终止，不评估事实正确性、连贯性或文风。
+
+**客户端取消与恢复**
+
+对 `cancel-long-generation`（`ignore_eos`，budget 4096）流式生成约 20 秒后由客户端
+主动断开连接，随后立即发送一个短 JSON 请求。
+
+| 轮次 | 断开前 content 事件 | 耗时（s） | 断开后服务存活 | 恢复 JSON |
+| --- | ---: | ---: | --- | --- |
+| 1 | 602 | 20.02 | 是 | 通过 |
+| 2 | 607 | 20.02 | 是 | 通过（0.44–0.48 s） |
+
+两轮断开前都在持续产出 token，说明取消发生在生成中途。取消计数由
+`utils/run-flash-next-safety.py` 从被中断的流中统计并写入 `summary.json`，未保留
+原始 partial stream。此检查证明客户端中断后服务未崩溃且可继续服务，但不证明服务端
+已立即停止 GPU 计算、释放 KV/state 或回收显存；本轮没有测量取消路径的服务端耗时。
+
+**资源与边界**
+
+| 采样 | 观测值 |
+| --- | ---: |
+| 最低 MemAvailable | 37.2333 GiB |
+| 最高温度 | 52 °C |
+| 最高 GPU reported power | 38.76 W |
+
+四次 prose 与两次 recovery 均为 `completed`，无传输失败。样本小，只覆盖 greedy、
+单请求、短上下文；不能证明通用质量、长时稳定性或并发安全。验收结束后服务正常停止，
+容器与 guard 清理；停止后即时采样 MemAvailable 约 119.5–120 GiB，该值未写入证据目录。
+
+本轮不启用 MTP，不存在 speculative 接受率。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/safety-20261005/`，不公开原始回复或运行 UUID。
+代码、fixture 与本页记录由主 agent 负责新 revision 的提交/推送，此处不预填 commit ID。
+
+只读源码核查确认：固定镜像 `lmsysorg/sglang:v0.5.20`
+（`94602c9c`）已内置 `NEXTN`（作为 `EAGLE` 别名）、`qwen4_exp` MTP draft 类以及
+`--speculative-token-map`，draft 目录可按独立模型加载；`optimization/` 中的
+`draft-head-32768-corpus-fp8.safetensors` 在该镜像内没有 loader，`32768` 词表优化
+需要另行实现。下一轮先用该镜像尝试原生 `NEXTN`（3 步 / topk 1 / 4 draft token，
+全词表）对照 `G1`，再单独评估词表优化；不改变 BF16 state、FP8 KV 或上下文长度。

@@ -100,6 +100,11 @@ def check_gate(gate):
             return
     if kind == "manual" and gate.get("criteria") and all(isinstance(x, str) for x in gate["criteria"]):
         return
+    if kind == "natural_prose" and set(gate) <= {"kind", "min_chars", "required_suffix"} and "min_chars" in gate:
+        if (type(gate["min_chars"]) is int and gate["min_chars"] > 0
+                and ("required_suffix" not in gate
+                     or (isinstance(gate["required_suffix"], str) and gate["required_suffix"]))):
+            return
     if kind == "none":
         return
     raise ValueError("invalid correctness gate")
@@ -133,7 +138,8 @@ def load_assets(fixtures_path=ASSETS / "fixtures.json", profiles_path=ASSETS / "
             raise ValueError("model/stream are supplied by the client; thinking uses template kwargs")
         check_gate(case["check"])
         if ((case["check"]["kind"] == "sequence" and case["mode"] != "stress")
-                or (case["check"]["kind"] == "ledger" and case["mode"] != "quality")):
+                or (case["check"]["kind"] == "ledger" and case["mode"] != "quality")
+                or (case["check"]["kind"] == "natural_prose" and case["mode"] != "quality")):
             raise ValueError("invalid mode for continuous correctness gate")
         if "prefix" in case:
             prefix = case["prefix"]
@@ -433,6 +439,15 @@ def correctness(gate, response, mode):
                 "full_task_completed": full, "rows_checked": complete}
     if kind == "none":
         return {"status": "not_checked", "scope": "throughput_only"}
+    if kind == "natural_prose":
+        natural = response["finish_reason"] == "stop"
+        suffix_ok = "required_suffix" not in gate or text.rstrip().endswith(gate["required_suffix"])
+        passed = natural and not response["tool_calls"] and len(text) >= gate["min_chars"] and suffix_ok
+        result = {"status": "passed" if passed else "failed", "scope": "natural_prose",
+                  "chars": len(text), "natural_stop": natural}
+        if not passed:
+            result["reason"] = "incomplete_generation" if not natural else "gate_mismatch"
+        return result
     if response["finish_reason"] not in {"stop", "tool_calls"} and mode != "stress":
         return {"status": "failed", "scope": kind, "reason": "incomplete_generation"}
     if not text and not response["tool_calls"]:

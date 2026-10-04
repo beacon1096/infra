@@ -794,6 +794,57 @@ class BenchmarkChecks(unittest.TestCase):
         self.assertEqual(CLIENT.correctness(gate, response("RECORD 1: amber", "length"), "stress")["status"], "needs_review")
         self.assertEqual(CLIENT.correctness({"kind": "none"}, response("", "length"), "throughput")["status"], "not_checked")
 
+    def test_natural_prose_gate_validation(self):
+        CLIENT.check_gate({"kind": "natural_prose", "min_chars": 10})
+        CLIENT.check_gate({"kind": "natural_prose", "min_chars": 10, "required_suffix": "fin."})
+        for invalid in ({"kind": "natural_prose"}, {"kind": "natural_prose", "min_chars": 0},
+                        {"kind": "natural_prose", "min_chars": "10"},
+                        {"kind": "natural_prose", "min_chars": 10, "extra": 1},
+                        {"kind": "natural_prose", "min_chars": 10, "required_suffix": ""}):
+            with self.subTest(gate=invalid):
+                with self.assertRaises(ValueError):
+                    CLIENT.check_gate(invalid)
+
+    def test_natural_prose_correctness_natural_stop(self):
+        gate = {"kind": "natural_prose", "min_chars": 5}
+        self.assertEqual(CLIENT.correctness(gate, response("你" * 20, "stop"), "quality"),
+                         {"status": "passed", "scope": "natural_prose", "chars": 20, "natural_stop": True})
+        length = CLIENT.correctness(gate, response("你" * 20, "length"), "quality")
+        self.assertEqual((length["status"], length["reason"]), ("failed", "incomplete_generation"))
+        short = CLIENT.correctness(gate, response("你" * 3, "stop"), "quality")
+        self.assertEqual((short["status"], short["reason"]), ("failed", "gate_mismatch"))
+        tools = CLIENT.correctness(gate, response("你" * 20, "tool_calls", tools=[{}]), "quality")
+        self.assertEqual(tools["status"], "failed")
+
+    def test_natural_prose_correctness_required_suffix(self):
+        gate = {"kind": "natural_prose", "min_chars": 5, "required_suffix": "完。"}
+        self.assertEqual(CLIENT.correctness(gate, response("你" * 20 + "完。", "stop"), "quality")["status"], "passed")
+        self.assertEqual(CLIENT.correctness(gate, response("你" * 20 + "毕。", "stop"), "quality")["status"], "failed")
+
+    def test_generation_safety_fixtures_load(self):
+        fixtures, _ = CLIENT.load_assets(fixtures_path=pathlib.Path(__file__).resolve().parent.parent
+                                         / "docs/inference/thor/benchmark/generation-safety.json")
+        cases = {case["id"]: case for case in fixtures["cases"]}
+        self.assertEqual(set(cases), {"natural-prose-off", "natural-prose-low",
+                                      "cancel-long-generation", "recovery-short-json"})
+        self.assertEqual(cases["natural-prose-off"]["check"], {"kind": "natural_prose", "min_chars": 600})
+        self.assertTrue(cases["natural-prose-low"]["request"]["chat_template_kwargs"]["enable_thinking"])
+        self.assertTrue(cases["cancel-long-generation"]["request"]["ignore_eos"])
+        self.assertEqual(cases["cancel-long-generation"]["mode"], "throughput")
+
+    def test_natural_prose_requires_quality_mode(self):
+        path = (pathlib.Path(__file__).resolve().parent.parent
+                / "docs/inference/thor/benchmark/generation-safety.json")
+        fixtures, _ = CLIENT.load_assets(fixtures_path=path)
+        with tempfile.TemporaryDirectory() as directory:
+            bad = pathlib.Path(directory, "fixtures.json")
+            for case in fixtures["cases"]:
+                if case["check"]["kind"] == "natural_prose":
+                    case["mode"] = "stress"
+            bad.write_text(json.dumps(fixtures), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                CLIENT.load_assets(fixtures_path=bad)
+
     def test_cli_default_and_explicit_validate_never_stream(self):
         with mock.patch.object(CLIENT, "stream_request", side_effect=AssertionError("network forbidden")) as stream:
             for argv in ([], ["validate"]):
