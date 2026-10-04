@@ -238,6 +238,29 @@ class HeadAssetsChecks(unittest.TestCase):
         self.assertEqual(self.calls(), [])
         self.assertEqual((self.destination / "unrelated.py").read_text(), "untouched\n")
 
+    def test_multi_entry_failure_installs_nothing(self):
+        patches = self.directory / "multi-patches"
+        patches.mkdir()
+        manifest = json.loads((ASSETS / "manifest.json").read_text())
+        for entry in manifest:
+            shutil.copyfile(ASSETS / f"{entry['file']}.patch", patches / f"{entry['file']}.patch")
+        next(entry for entry in manifest if entry["file"] == EAGLE_FILE)["patched_sha256"] = "0" * 64
+        (patches / "manifest.json").write_text(json.dumps(manifest))
+        result = self.prepare(patches=patches)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SHA256 mismatch", result.stderr)
+        self.assertEqual(self.calls()[-1], ["rm", CID])
+        self.assertFalse(self.destination.exists())
+
+    def test_empty_manifest_rejected_before_Docker(self):
+        patches = self.directory / "empty-patches"
+        patches.mkdir()
+        (patches / "manifest.json").write_text("[]")
+        result = self.prepare(patches=patches)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Invalid patch manifest", result.stderr)
+        self.assertEqual(self.calls(), [])
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)

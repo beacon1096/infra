@@ -22,14 +22,18 @@ check_hash() {
     fi
 }
 
-mapfile -t entries < <(
+if ! manifest=$(
     jq -er '
         if type != "array" or length == 0 then error("Expected at least one source patch")
         else .[] | [.file, .source, .original_sha256, .patched_sha256, .patch_sha256]
         | if all(.[]; type == "string" and length > 0) then @tsv
           else error("Missing manifest field") end end
     ' "$patches/manifest.json"
-)
+); then
+    printf 'Invalid patch manifest: %s\n' "$patches/manifest.json" >&2
+    exit 2
+fi
+mapfile -t entries <<< "$manifest"
 
 declare -A allowed=()
 for entry in "${entries[@]}"; do
@@ -88,16 +92,20 @@ trap 'exit 143' TERM
 source_container=$(docker create --pull=never --network=none --read-only \
     --entrypoint /bin/true "$image")
 [[ $source_container =~ ^[a-f0-9]{64}$ ]]
+# Build and verify every overlay before touching the destination, so a failure
+# on any entry cannot leave a partially installed overlay.
 for entry in "${entries[@]}"; do
     IFS=$'\t' read -r file source original patched patch_hash <<< "$entry"
-    work=$(mktemp -d "$staging/${file}.XXXXXX")
-    docker cp "$source_container:$source" "$work/$file"
-    check_hash "$work/$file" "$original"
-    patch --batch --forward --fuzz=0 --no-backup-if-mismatch -p0 -d "$work" \
+    docker cp "$source_container:$source" "$staging/$file"
+    check_hash "$staging/$file" "$original"
+    patch --batch --forward --fuzz=0 --no-backup-if-mismatch -p0 -d "$staging" \
         < "$patches/$file.patch"
-    check_hash "$work/$file" "$patched"
-    mkdir -p -- "$destination"
-    install -m 0644 -- "$work/$file" "$destination/$file"
+    check_hash "$staging/$file" "$patched"
+done
+mkdir -p -- "$destination"
+for entry in "${entries[@]}"; do
+    IFS=$'\t' read -r file source original patched patch_hash <<< "$entry"
+    install -m 0644 -- "$staging/$file" "$destination/$file"
     check_hash "$destination/$file" "$patched"
     printf 'Prepared %s (sha256:%s)\n' "$destination/$file" "$patched"
     printf 'Server read-only bind target: %s\n' "$source"
