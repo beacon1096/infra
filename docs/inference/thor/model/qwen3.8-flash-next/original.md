@@ -1035,3 +1035,52 @@ draft extend（4）的 full graph，bs 均为 1。没有出现 draft/GDN 的缺�
 下一轮：先补齐 MTP 的正式 accept 计数（启用 metrics）与更大的代码/thinking 负载、
 长上下文检查，再单独实现并评估 `32768` 词表优化；不改变 BF16 state、FP8 KV 或
 上下文长度。
+
+### MTP 正式 accept 计数与代码/thinking 负载
+
+2026-10-05，为 `flash-next.nix` 增加 opt-in `services.thorFlashNext.metrics`
+（追加 `--enable-metrics`），并新增 declared profile `M1M`（= `M1` + `enable_metrics: true`）。
+推理设置与 `M1` 完全一致：NEXTN/EAGLE、3 步 / topk 1 / 4 draft token、全词表、C1
+full decode graph、BF16 KV、FP32 state。runner 每秒抓取 `/metrics` 的
+`spec_accept_length`、`spec_accept_rate`、`spec_verify_calls_total`、
+`generation_tokens_total`，并对每个 case 记录前后增量。
+
+单次 greedy、单请求结果：
+
+| Case | 严格结果 | completion / reasoning | Wall（s） | tok/s | accept_len | accept_rate |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| natural-prose-off | 通过 | 448 / 0 | 12.68 | 35.33 | 2.55 | 0.517 |
+| natural-prose-low | 通过 | 718 / 173 | 18.68 | 38.44 | 2.15 | 0.383 |
+| python-interval-repair-ast | **失败** | 516 / 0 | 9.27 | 55.68 | 3.35 | 0.783 |
+| thinking-digit-low | 通过 | 630 / 620 | 10.87 | 57.93 | 3.83 | 0.942 |
+| thinking-workers-low | **失败（length）** | 4096 / 4097 | 78.25 | 52.35 | 3.25 | 0.750 |
+| thinking-ledger32-low | 通过 | 1146 / 1126 | 19.10 | 60.00 | 3.98 | 0.992 |
+
+窗口内 144 个采样：`accept_len` 中位 3.35（min 1.775，max 4.0），`accept_rate`
+中位 0.783（min 0.258，max 1.0）。结构与重复性强的任务接受率高（0.75–0.99），
+自然文本较低（0.38–0.52）。
+
+与同任务 `G1` 记录的配对对照（G1 每档两次）：
+
+| Case | G1 结果 | G1 tok/s | MTP 结果 | MTP tok/s |
+| --- | --- | ---: | --- | ---: |
+| natural-prose-off | 通过 | 28.23 / 29.13 | 通过 | 35.33 |
+| thinking-digit-low | 通过 / 通过 | 28.62 / 29.81 | 通过 | 57.93 |
+| thinking-workers-low | length 失败 / 通过 | 29.09 / 29.13 | length 失败 | 52.35 |
+| thinking-ledger32-low | 通过 / 通过 | 29.30 / 29.62 | 通过 | 60.00 |
+
+结构化思考任务约提速 1.8–2.0 倍，自然文本约 +22%。`thinking-workers-low` 在两套
+配置下都可能耗尽 4096 预算，属于任务行为而非 MTP 特有。`python-interval-repair-ast`
+在 MTP 下单次 AST 检查失败，`G1` 未跑同一 case，因此这是单样本质量观察，不能据此
+断言 MTP 降低代码质量。
+
+边界：每 case 仅一次 greedy 样本；`accept_len`/`accept_rate` 是指标 gauge 的
+1 秒采样与计数器增量，不是逐 token 精确统计；未做更广质量评估、并发、长上下文
+（`max_total_tokens` 仍为 8192，长 prompt 会被拒）或 `32768` 词表优化；draft 常驻
+约 3.89 GB。验收后服务停止，容器清理，MemAvailable 约 119.99 GiB，并恢复原 `G1`
+运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run3/`。
+
+下一轮：实现并单独评估 `32768` 词表优化（镜像是缺少优化 head 的 loader），并在
+不改 BF16 state / FP8 KV 的前提下尝试提高 `max_total_tokens` 以覆盖长 prompt，
+同时扩大代码与 thinking 样本量。

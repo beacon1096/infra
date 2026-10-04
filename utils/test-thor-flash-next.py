@@ -304,6 +304,8 @@ class DecodeGraphModuleChecks(unittest.TestCase):
                 mtpEnabled = evaluated.config.services.thorFlashNext.mtp;
                 mtpOptionDefault = evaluated.options.services.thorFlashNext.mtp.default;
                 mtpOptionType = evaluated.options.services.thorFlashNext.mtp.type.name;
+                metricsEnabled = evaluated.config.services.thorFlashNext.metrics;
+                metricsOptionDefault = evaluated.options.services.thorFlashNext.metrics.default;
                 baselineText = builtins.readFile service.environment.BASELINE_FILE;
                 service = {
                   inherit (service) environment serviceConfig requires bindsTo after conflicts wantedBy;
@@ -334,6 +336,13 @@ class DecodeGraphModuleChecks(unittest.TestCase):
             });
             mtpOnly = extract (system.extendModules {
               modules = [ { services.thorFlashNext.mtp = true; } ];
+            });
+            mtpMetrics = extract (system.extendModules {
+              modules = [ {
+                services.thorFlashNext.mtp = true;
+                services.thorFlashNext.decodeGraph = true;
+                services.thorFlashNext.metrics = true;
+              } ];
             });
           }
         ''' % json.dumps(str(ROOT))
@@ -453,6 +462,15 @@ class DecodeGraphModuleChecks(unittest.TestCase):
         index = generated["arguments"].index("--cuda-graph-backend-decode")
         self.assertEqual(generated["arguments"][index + 1], "disabled")
         self.assertIn("--speculative-algorithm", generated["arguments"])
+
+    def test_metrics_defaults_off_and_is_appended_when_enabled(self):
+        default = self.evaluated["default"]
+        self.assertFalse(default["metricsEnabled"])
+        self.assertFalse(default["metricsOptionDefault"])
+        self.assertNotIn("--enable-metrics", json.loads(self.evaluated["mtpGraph"]["baselineText"])["arguments"])
+        mtp = json.loads(self.evaluated["mtpMetrics"]["baselineText"])
+        self.assertEqual(mtp["arguments"][-1], "--enable-metrics")
+        self.assertEqual(mtp["arguments"].count("--enable-metrics"), 1)
 
 
 if __name__ == "__main__":

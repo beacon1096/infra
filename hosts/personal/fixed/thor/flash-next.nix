@@ -25,16 +25,26 @@ let
     "--speculative-draft-model-path" "/models/draft"
     "--speculative-draft-model-quantization" "modelopt_mixed"
   ];
+  metricsArguments = lib.optionals config.services.thorFlashNext.metrics [ "--enable-metrics" ];
   graphBaseline = if config.services.thorFlashNext.decodeGraph then decodeGraphBaseline else baseline;
   mtpBaseline = graphBaseline // {
     name = graphBaseline.name + " + NEXTN full-vocab MTP";
     arguments = graphBaseline.arguments ++ mtpArguments;
   };
+  activeBaseline =
+    if config.services.thorFlashNext.mtp then mtpBaseline
+    else if config.services.thorFlashNext.decodeGraph then decodeGraphBaseline
+    else baseline;
+  activeBaselineWithMetrics = activeBaseline // {
+    arguments = activeBaseline.arguments ++ metricsArguments;
+  };
   baselineFile =
     if config.services.thorFlashNext.mtp then
-      pkgs.writeText "thor-flash-next-NEXTN-mtp.json" (builtins.toJSON mtpBaseline)
+      pkgs.writeText "thor-flash-next-NEXTN-mtp.json" (builtins.toJSON activeBaselineWithMetrics)
     else if config.services.thorFlashNext.decodeGraph then
-      pkgs.writeText "thor-flash-next-C1-decodeGraph.json" (builtins.toJSON decodeGraphBaseline)
+      pkgs.writeText "thor-flash-next-C1-decodeGraph.json" (builtins.toJSON activeBaselineWithMetrics)
+    else if config.services.thorFlashNext.metrics then
+      pkgs.writeText "thor-flash-next-metrics.json" (builtins.toJSON activeBaselineWithMetrics)
     else ./flash-next/baseline.json;
   draftDir = "${baseline.model_dir}/draft";
   runtimeDir = "/run/thor-flash-next";
@@ -86,6 +96,11 @@ in
     type = lib.types.bool;
     default = false;
     description = "Enable native NEXTN MTP with the full draft vocabulary (3 steps, topk 1, 4 draft tokens).";
+  };
+  options.services.thorFlashNext.metrics = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = "Expose the Prometheus /metrics endpoint for the running server.";
   };
 
   config = {
