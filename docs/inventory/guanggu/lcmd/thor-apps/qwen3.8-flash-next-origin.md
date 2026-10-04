@@ -90,8 +90,11 @@ python3 -m sglang.launch_server
 - MTP 推测解码为 **NEXTN、3 步、topk 1、每步 4 草稿 token**（未审查版
   vLLM 用 K16/MTP），草稿模型为独立 `/mtp-nvfp4`（modelopt_mmixed 量化）
   外加 `vocab-32768` 词表映射。
-- `mamba-ssm-dtype bfloat16` 且未做精度修复——原版 lm_head 本身 BF16，
-  长上下文漂移问题不存在。
+- `mamba-ssm-dtype bfloat16`。2026-10-04 对既有缓存的只读核验确认，
+  `config.json` 将 `lm_head` 标为 `FP8_PB_WO`、group size 128；实际
+  `lm_head.weight` 是 FP8 `[248320,2560]`，scale 为 FP32 `[1940,20]`。
+  因此不能将此工件描述为 BF16 输出头；此前的短生成与长输入测试也不足以
+  排除长连续生成中的数值漂移。官方运行时的驻留表示与计算路径仍需单独观测。
 - PLE 表通过 `--ple-offload-embedding` 卸载到文件（`/ple`）。
 - 注意力后端 fa4，MoE 与 FP4 GEMM 走 flashinfer_cutlass，FP8 GEMM 走
   triton。
@@ -146,9 +149,9 @@ python3 -m sglang.launch_server
   3 步 × 4 草稿在配置中但观测不到任何接受）——上述速度是在推测解码
   未生效的情况下取得的，属纯步进性能；草稿路径是否真正参与需要另行
   核实（可能为指标口径或草稿词表映射问题）。
-- 未审查版的两处精度修复（FP32 GDN 状态、BF16 lm_head）在原版上不适用，
-  这解释了修复版与原版之间的解码差距；预填充 12.6 倍的差距主要来自
-  运行时（SGLang fa4/fp8 KV vs vLLM）与权重布局差异，而非消融本身。
+- 原版与未审查版的语义权重、量化布局、运行时及缓存配置均不同；不能将
+  解码或预填充差距单独归因于消融或两处精度修复。现存原版工件包含 FP8
+  输出头，后续对照应明确区分 checkpoint 存储精度与实际计算路径。
 
 ### 部署落点与工件键
 

@@ -1,0 +1,13 @@
+[
+  {
+    "file": "vocab_parallel_embedding.py",
+    "source": "/sgl-workspace/sglang/python/sglang/srt/layers/vocab_parallel_embedding.py",
+    "engine_revision": "94602c9c2b7cbdb8efd5c52802dac6a1c180089e",
+    "source_url": "https://raw.githubusercontent.com/sgl-project/sglang/94602c9c2b7cbdb8efd5c52802dac6a1c180089e/python/sglang/srt/layers/vocab_parallel_embedding.py",
+    "original_sha256": "43ca7c6fabd7c66adf14c5c871cf6ec3070b23b53d7786a9d4cee7a4b68d0931",
+    "patched_sha256": "e1b318d23d304d2ba09dfea3312909219eb396139f08408f6035191345a9dea5",
+    "patch_sha256": "670d5af364c57201fe74ec96745564fcf583f2b3b4f89afa880fd2a78520b05b",
+    "scope": "FP32 block scales with [128,128] blocks; TP=1, non-presharded, no added vocabulary",
+    "gpu_numerical_parity": "small Triton block-FP8 matrices passed independent FP64 W8A8 references; full-head/model parity not qualified"
+  }
+]

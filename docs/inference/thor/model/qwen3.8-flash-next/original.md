@@ -575,3 +575,113 @@ Lazycat 厂商技术负责人的博客给出了其自身硬件、模型和 workl
 
 - [所审查修订版的 Qwen3.8 Flash Next Spark 部署](https://github.com/MiaAI-Lab/Qwen3.8-Flash-Next-Single-DGX-Spark/tree/d03809008834124e80223c3482f2ddb59577a48f)
 - [Lazycat 技术负责人的模型适配报告](https://manateelazycat.github.io/2026/08/29/model-adaptation-record/) — 外部结果，并非本地测量。
+
+## SG2026-10-04：自有 SGLang S0 基础验收
+
+本节记录 2026-10-04 已完成的自有 NixOS/SGLang 实验，与上文 vLLM 实验分开。
+S0 是 C1 单请求、target-only、无 MTP、禁用 CUDA Graph 的短输入基线，已正常 ready
+并通过定向功能验收；不是全 BF16 dense-side 的 F0，也不使用 Lazycat 运行时。
+每项实验完成后将结果写回本页；G1 在本次记录中仅为待测配置，不包含新实验结果。
+
+### 来源与权重保全
+
+公开 ARM64 SGLang `v0.5.20`，engine 固定为
+`94602c9c2b7cbdb8efd5c52802dac6a1c180089e`，镜像固定为
+`lmsysorg/sglang@sha256:b0d8718a4424bb22e448e04407ab3ce5f7399a4c5fc702d6fbe36c3772ec8862`。
+target 为 `RadixArk/Qwen3.8-Flash-Next-NVFP4` 修订版
+`7b719225242aacd3dbd3f9407468c2ee9a9d2594`；metadata/conversions 来自
+`manateelazycat/Qwen3.8-Flash-Next-SGLang-Thor` 修订版
+`b8c4002b44544436bfc16b1ff7fe6ebb3ced07a6`。复用其检查点配置不等于使用厂商运行时。
+
+实际检查点为 `modelopt_mixed`，包含 FP8 side；完整词表 head 为 FP8
+`[248320,2560]`，block scale 为 FP32 `[1940,20]`。CLI `--dtype bfloat16`
+不会恢复已经量化的权重，不能据此称为 BF16 head 或全 BF16 dense 基线。
+从原应用缓存复制的 235 个文件共 133,414,193,791 bytes，已核对源 SHA-256 并回读副本。
+原系统盘以只读、`norecovery` 挂载，完成后卸载；源保持不变，没有重新下载。
+
+实现入口为 [flash-next.nix](../../../../../hosts/personal/fixed/thor/flash-next.nix)，
+参数见 [baseline.json](../../../../../hosts/personal/fixed/thor/flash-next/baseline.json)。
+同目录的 [run.sh](../../../../../hosts/personal/fixed/thor/flash-next/run.sh)、
+[prepare.sh](../../../../../hosts/personal/fixed/thor/flash-next/prepare.sh) 和
+[memwatch.sh](../../../../../hosts/personal/fixed/thor/flash-next/memwatch.sh)
+负责启动、源码 overlay 和内存 guard；补丁来源及前后 SHA-256 见
+[manifest.json](../../../../../hosts/personal/fixed/thor/flash-next/manifest.json)。
+定向探测见 [head-probe.py](../../../../../hosts/personal/fixed/thor/flash-next/head-probe.py)、
+[head-gemm-probe.py](../../../../../hosts/personal/fixed/thor/flash-next/head-gemm-probe.py) 和
+[probe.py](../../../../../hosts/personal/fixed/thor/flash-next/probe.py)。
+
+### S0 配置与生命周期
+
+| 项目 | 已验收的 S0 设置或观测 |
+| --- | --- |
+| 执行模式 | C1，最多一个请求，target-only；MTP、decode/prefill Graph 均禁用 |
+| 容量边界 | token pool 8192；原生 context 配置 262144，不代表 262K 可用容量或长上下文已验证 |
+| Cache | BF16 KV、FP32 SSM；SSM cache 8，page size 64 |
+| Prefill / 内存 | chunk 512，prefill/decode interval 1，static fraction 0.8 |
+| PLE | file offload，文件 RSS budget 4 GB |
+| 算子 | FA4 `4.0.0b31`；GDN Triton；MoE/FP4 FlashInfer CUTLASS；FP8 Triton |
+| 隔离与保护 | host 仅发布 loopback `8890`；容器限额 `108g`，主机 memory guard + StopLock；1 小时自动停，无自动重启 |
+| 清理 | 仅清理本实验持有 CID 的容器，不清理其他容器 |
+| 启动观测 | 本 epoch 18:11 启动、18:18 ready，约 7 分钟；仅单次观察，不是时限保证 |
+| 内存观测 | running 时 `MemAvailable` 采样约 36 GiB，不是峰值测量 |
+
+仅在 sandbox builder 构建两项 systemd unit 与运行闭包，完成 copy、runtime link 和
+health 检查，没有完整 system activation。运行时一小时自动停止且不自动恢复原 27B
+服务；用户已允许该服务继续停用。不声称完整系统部署或 cold reboot 已通过。
+
+### 两项兼容性修复
+
+FA4 b31 与 overlay TVM FFI `0.1.14` 曾使 TileLang `0.1.12` 因 `__ffi_repr__`
+重复注册而 SIGABRT。改为仅 overlay FA4，保留镜像 FFI `0.1.11`；b31 声明
+`>=0.1.12` 的元数据例外依据是 [FA4 PR #2948](https://github.com/Dao-AILab/flash-attention/pull/2948)
+已放宽至 `0.1.11`。native imports 及 SM110 上 FA4 dense/varlen 探测通过：
+Q=257、K=1025、query heads=24、KV heads=2、head dimension=256，对独立 FP32
+参考的最大绝对误差为 0.0011687875。这不推广为所有 GPU 或所有 FA4 版本均兼容。
+
+原 vocab loader 把 block scale 的 1940 行误当成 248320 个词表行，导致 assertion。
+补丁严格限于 TP1、non-presharded、无 added vocabulary 的 `BlockQuantScaleParameter`
+分支，只修正 scale 加载坐标，保留数值，不改变数学计算；源码 hash 由 manifest 固定。
+CPU 13 项检查通过，覆盖精确 `[1940,20]` markers、完整真实 scale 和 FP8 bit sample；
+raw head payload 在修复前后不变。
+
+小规模真实 Triton W8A8 kernel 对照独立 FP64 参考，通过 FP32 accumulation 与 BF16
+rounding 误差界检查；activation quantization 另行 bitwise 匹配：
+
+| `(M,N,K)` | W8A8 最大绝对误差 | W8A8 对 BF16 激活 weight-only 的 RMSE |
+| --- | ---: | ---: |
+| `(1,256,128)` | 0.008739 | 0.046205 |
+| `(17,257,256)` | 0.062279 | 0.128116 |
+| `(3,385,256)` | 0.061995 | 0.177644 |
+
+因此 `FP8_PB_WO` 标签不保证 stock SGLang 计算与 weight-only 数值等价。这些检查不是
+完整 head 或完整模型 parity，也不是长生成质量证明。
+
+### 功能与有限计时
+
+| Case | 重复次数 | 结果与边界 |
+| --- | --- | --- |
+| `exact-short-output` | 1 warm + 3 measured | 4/4 pass，精确输出 `372` |
+| `strict-json-schema` | 1 warm + 3 measured | 4/4 pass，`answer=42`、`label=thor` |
+| `tool-get-weather` | 1 warm + 3 measured | 4/4 pass，恰好调用 `get_weather(city=Beijing)` |
+| `historical-water-cycle-128` | 1 warm + 1 measured | 中文生成正常，但被 token budget 截断；`check=not_checked`，不计为完整质量 pass |
+
+前三项共 12 次全部通过，未观察到 reasoning 文本。中文 case 的单次 measured 首内容
+延迟为 0.32513 s、wall time 为 12.93975 s、content decode estimate 为
+10.06768 tokens/s；记录带 isolation label。这只是短时单次观察，不是严格跨模型 A/B、
+正式宽负载基准或速度上限。
+
+已完成的静态测试共 98 项（14 unit + 72 benchmark + 12 patch）通过；两项 Nix unit
+及运行闭包的 sandbox builder build/copy/link/health 检查通过。上述 CPU/GPU 探测
+计数各自独立，不与静态测试计数混合。raw/evidence 保存在远端
+`/var/lib/thor-flash-next/observations/initial-S0/`，不复制原始响应、模型文件、私有地址
+或凭据到公开仓。
+
+### G1 待测边界
+
+G1 为单变量 C1 decodeGraph 对照，由 `services.thorFlashNext.decodeGraph = true`
+从 S0 参数生成：仅启用 full decode Graph 并限制最大 batch size 为 1；prefill Graph
+仍禁用，其他 pins/非 Graph 设置不变且无 MTP。配置定义见上述模块；本节不声称已通过
+capture/replay、正确性或吞吐量测量，结果待主 agent 实测后追加。
+
+自有 SGLang 运行时尚无正式宽负载、长上下文、cancel/stress、MTP 或 Graph 测量。
+上文 vLLM 的 Graph/MTP 结果不能移作本运行时的验收证据。
