@@ -1155,3 +1155,38 @@ raw/evidence 保留在私有
 
 下一轮：以更有代表性的样本量区分「结构化负载用 token map、开放文本用全词表」，
 并评估质量等价；不改变 BF16 state / FP8 KV / 上下文长度。
+
+### 增大样本：M1M 与 M2 分场景确认
+
+2026-10-05，用当前树重新构建 `M1M`（全词表）与 `M2`（32768 词表）两个 unit，同一
+runner、每 case 3 次重复、同一组 prompt（共享前缀、每次 seed 不同），对 6 个 case
+做配对。两轮均无传输失败（`M1M` 241、`M2` 298 个 `/metrics` 采样）。
+
+中位数（pass / tok/s / accept_len / accept_rate）：
+
+| Case | M1M | M2 |
+| --- | --- | --- |
+| natural-prose-off | 3/3 · 35.2 · 2.10 · 0.37 | 3/3 · 22.6 · 1.27 · 0.09 |
+| natural-prose-low | 3/3 · 39.5 · 2.27 · 0.42 | 3/3 · 24.3 · 1.30 · 0.10 |
+| natural-prose-narrative-off | 3/3 · 34.1 · 2.17 · 0.39 | 3/3 · 21.8 · 1.23 · 0.07 |
+| python-interval-repair-ast | 0/3 · 54.8 · 3.42 · 0.81 | 0/3 · 55.4 · 3.12 · 0.71 |
+| thinking-digit-low | 3/3 · 58.1 · 3.65 · 0.88 | 3/3 · 61.3 · 3.45 · 0.82 |
+| thinking-ledger32-low | 3/3 · 62.4 · 3.98 · 0.99 | 3/3 · 66.4 · 3.95 · 0.98 |
+
+三组不同题材的 prose（说明文、带 thinking、记叙文）一致显示：限制到前 32768 个 token
+后接受率从 0.37–0.42 降到 0.07–0.10，吞吐从 34–40 降到 22–24 tok/s（约 −35% 到 −40%）。
+结构化任务基本不受影响甚至略好（`M2` 高 0.6–4 tok/s，接受率仍 0.71–0.98），严格结果
+两版相同（python AST 在两个词表下都 0/3 失败，digit/ledger 都通过）。
+
+结论：在该镜像与这批 greedy 短上下文样本下，`32768` token map 不是普遍收益，而是
+「结构化/可预测负载可用、开放文本有害」。`python-interval-repair-ast` 的稳定失败是
+模型/任务行为，与 token map 无关，也未与 `G1` 对照过。
+
+边界：greedy、短上下文、每 case 3 次，prompt 家族仍有限；接受率来自 gauge 采样；
+未评估质量等价、更长上下文或并发。验收后服务停止，容器清理，MemAvailable 约
+120.0 GiB，并恢复原 `G1` 运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/{run5,run6}/`。
+
+下一轮：若要采用分场景策略，需要可切换的 token-map 路由与真实任务 A/B；否则保持
+`M1M` 全词表，并把 token map 作为结构化服务的前景项记录，不改变 BF16 state /
+FP8 KV / 上下文长度。

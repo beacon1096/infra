@@ -21,6 +21,15 @@
       "check": {"kind": "natural_prose", "min_chars": 600}
     },
     {
+      "id": "natural-prose-narrative-off", "category": "natural-generation", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/generation-safety.json#natural-prose-narrative-off"},
+      "request": {
+        "messages": [{"role": "user", "content": "请写一篇约600字的中文记叙文，讲述一次在陌生城市迷路、最终得到当地人帮助的经历。要求有具体的地名、街景与人物对话，结构完整并自然结束，不要使用 Markdown 标题、列表或代码块。"}],
+        "max_tokens": 2048, "temperature": 0, "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "natural_prose", "min_chars": 500}
+    },
+    {
       "id": "cancel-long-generation", "category": "cancellation", "mode": "throughput",
       "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/generation-safety.json#cancel-long-generation"},
       "request": {

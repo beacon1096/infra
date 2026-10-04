@@ -826,7 +826,8 @@ class BenchmarkChecks(unittest.TestCase):
                                          / "docs/inference/thor/benchmark/generation-safety.json")
         cases = {case["id"]: case for case in fixtures["cases"]}
         self.assertEqual(set(cases), {"natural-prose-off", "natural-prose-low",
-                                      "cancel-long-generation", "recovery-short-json"})
+                                      "natural-prose-narrative-off", "cancel-long-generation",
+                                      "recovery-short-json"})
         self.assertEqual(cases["natural-prose-off"]["check"], {"kind": "natural_prose", "min_chars": 600})
         self.assertTrue(cases["natural-prose-low"]["request"]["chat_template_kwargs"]["enable_thinking"])
         self.assertTrue(cases["cancel-long-generation"]["request"]["ignore_eos"])
