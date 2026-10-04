@@ -581,7 +581,8 @@ Lazycat 厂商技术负责人的博客给出了其自身硬件、模型和 workl
 本节记录 2026-10-04 已完成的自有 NixOS/SGLang 实验，与上文 vLLM 实验分开。
 S0 是 C1 单请求、target-only、无 MTP、禁用 CUDA Graph 的短输入基线，已正常 ready
 并通过定向功能验收；不是全 BF16 dense-side 的 F0，也不使用 Lazycat 运行时。
-每项实验完成后将结果写回本页；G1 在本次记录中仅为待测配置，不包含新实验结果。
+每项实验完成后将结果写回本页；G1 在本节初始记录中仅为待测配置，后续结果见
+[C1 Graph 配对实测](#sg2026-10-04-c1-graph-配对实测)。
 
 ### 来源与权重保全
 
@@ -676,7 +677,10 @@ rounding 误差界检查；activation quantization 另行 bitwise 匹配：
 `/var/lib/thor-flash-next/observations/initial-S0/`，不复制原始响应、模型文件、私有地址
 或凭据到公开仓。
 
-### G1 待测边界
+### G1 待测边界（初始记录）
+
+以下保留初始验收时的待测条款；后续已完成的 Graph 测量见
+[C1 Graph 配对实测](#sg2026-10-04-c1-graph-配对实测)，不替换历史证据。
 
 G1 为单变量 C1 decodeGraph 对照，由 `services.thorFlashNext.decodeGraph = true`
 从 S0 参数生成：仅启用 full decode Graph 并限制最大 batch size 为 1；prefill Graph
@@ -685,3 +689,89 @@ capture/replay、正确性或吞吐量测量，结果待主 agent 实测后追�
 
 自有 SGLang 运行时尚无正式宽负载、长上下文、cancel/stress、MTP 或 Graph 测量。
 上文 vLLM 的 Graph/MTP 结果不能移作本运行时的验收证据。
+
+## SG2026-10-04 C1 Graph 配对实测
+
+本轮在上述 S0 基础验收后完成 C1、无 MTP 的 S0/G1 配对测量。G1 是所测短输入、
+固定输出长度场景的强候选，中文/代码 decode estimate 分别约为 S0 的 **2.97/3.04 倍**；
+不是生产 ready 判定，也不能与上文 vLLM 数字直接作受控比较。
+
+### 配置与协议
+
+| 项目 | 本轮控制与边界 |
+| --- | --- |
+| S0 / G1 | S0 禁用 Graph；G1 full decode Graph、最大 batch size 1；两者 prefill Graph 禁用、无 MTP |
+| G1 来源 | 上述 `flash-next.nix` 的 `services.thorFlashNext.decodeGraph = true` 生成配置，不另写实验参数集 |
+| 相同设置 | SGLang `v0.5.20`、engine `94602c9c2b7cbdb8efd5c52802dac6a1c180089e`、同一 `b0d8718a…` 镜像；实际 mixed FP8 payload、FP32 SSM、BF16 KV、token pool 8192/C1；其余 pins/flags 均同 S0 |
+| Throughput case | 沿用历史水循环中文 128-token、interval 合并代码 256-token 的原 prompt；每配置、每 case 为 1 warm + 3 measured |
+| 请求控制 | `temperature=0`、`seed=42`、`enable_thinking=false`；吞吐请求 `ignore_eos=true` 固定输出长度，质量 smoke 不忽略 EOS |
+| Prefix 协议 | shared-prefix，固定原 prompt，无 isolation nonce；不主动 flush 共享服务，允许 prefix reuse，但不强制 cold，也不保证命中 |
+| 执行顺序 | 先全部 S0，后 G1，仅一次配置切换；不是交叉或 counterbalanced 实验 |
+
+中文/代码各自的所有 wire request hash 在两配置间核对一致。实际日志中部分请求的
+cached token 为 0，因此不宣称实际 90% cache hits，也不把 TTFC 当成冷 prefill 延迟。
+配置为单变量，但生成轨迹并未固定；这不是固定 generated-token 的 kernel benchmark。
+
+### 配对计时与输出
+
+下表为每 case 三次 measured 的中位数，不包含 warmup；decode estimate 沿用本页
+`(completion_tokens - 1) / (stream_end - first_content)` 的定义，TTFC 为首内容延迟。
+
+| Case | 配置 | Decode estimate（tokens/s） | TTFC（s） | Wall（s） | G1/S0 decode |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 中文 128 | S0 | 10.010 | 0.301 | 12.978 | n/a |
+| 中文 128 | G1 | 29.778 | 0.199 | 4.462 | 2.975x |
+| 代码 256 | S0 | 10.022 | 0.298 | 25.741 | n/a |
+| 代码 256 | G1 | 30.466 | 0.199 | 8.568 | 3.040x |
+
+每 case 的三次 measured completion 长度在 S0/G1 下均为指定的 128/256 token。
+三次 measured 的不同 response hash 数：中文 S0/G1 为 3/3，代码为 3/1。
+`temperature=0` 和 `seed=42` 不保证 bitwise 确定性；本轮不认定轨迹差异的单一原因，
+也不将固定长度中文/代码计时当作完整生成质量 pass。
+
+### 功能与 Graph 证据
+
+| 检查 | 本轮结果 |
+| --- | --- |
+| 自动质量 smoke | 每配置的 exact output、strict schema、tool 三项各 1 warm + 3 measured；S0、G1 分别 12/12 通过 |
+| G1 capture/replay | 捕获成功，多个实际请求的 replay 日志记录 `decode cuda_graph=True` |
+| Capture 开销 | elapsed 1.29 s，报告额外 0.01 GB；当时 GPU available 38.44 GB |
+| Prefill | 日志 `graph=False`，与两配置的 prefill Graph 禁用一致 |
+| Nix/运行验证 | 本轮默认 false 与 `extendModules` true 两配置的两项 unit/pinned closure 构建，以及实际 capture/replay 通过；不是 full-system activation 或 cold boot 验证 |
+
+本轮复跑 99 项静态测试（14 unit + 73 benchmark + 12 patch）通过。ignore-EOS
+fixture 仅给这两个固定长度吞吐 case 增加 flag，不改变质量请求或 CLI 默认值。
+
+### 资源与启动观测
+
+| Throughput 采样 | 样本数 | 最低 MemAvailable（GiB） | 最高温度（°C） | 最高 GPU reported power（W） |
+| --- | ---: | ---: | ---: | ---: |
+| S0 | 151 | 36.4852 | 47 | 25.34 |
+| G1 | 51 | 36.3872 | 51 | 39.95 |
+
+这些 min/max 是离散采样，不是精确瞬时 peak。`smi` 时钟为 NA，不能证明同频运行，
+也不能将性能变化归因于 thermal；功耗是 GPU reported rail，不是整机功耗。
+
+| 启动 epoch | Start → ready | 观测 |
+| --- | --- | --- |
+| 本轮 S0 | 20:01 → 20:19，约 18 分钟 | 重新加载模型及写入 PLE |
+| 本轮 G1 | 20:37 → 20:55，约 18 分钟 | engine `load_weight=1008.35 s`、`scheduler=1025.58 s`、`tokenizer=1034.2 s` |
+
+本轮启动主要耗时为重新加载/写入 47.7 GiB PLE，在 4 GiB RSS cap 下，每个 5.2 GB
+分片约 82 s。Graph capture 仅 1.29 s，不能把整体加载延迟归因于 Graph；这些 startup
+字段也不应相加为 wall time。初始 S0 的 18:11 → 18:18、约 7 分钟仍是保留的单次
+观测，不是后续启动时限保证。
+
+### 状态与后续边界
+
+- 用户保持原 27B 服务关闭；没有 production route 切换或 full-system activation。
+  G1 继续作为临时 loopback `8890` 服务，保持 1 小时限时、无自动重启，不自动复活 27B。
+- 默认 module option 仍为 `false`；本轮不在未经 review 的情况下修改默认值。
+  后续先验证 G1 稳定性与实际 thinking，再评估 MTP。
+- 本轮没有长上下文、并发、长输出、实际 reasoning、MTP 或普遍稳定性的验收证据。
+  自动 smoke 与短时吞吐结果不推广为通用质量或生产可用性。
+- raw/evidence 保留在私有目录
+  `/var/lib/thor-flash-next/observations/decode-graph-20261004/{S0,G1}/`；不贴原始模型回复、
+  host IP、user ID 或其他私有运行数据。
+- 初始源码准备已由 `89df3e5` 在独立分支 `feat/thor-flash-next-owned` 提交并推送；
+  本轮文档及 ignore-EOS fixture 作为后续独立提交，每轮实验结果写回本页。

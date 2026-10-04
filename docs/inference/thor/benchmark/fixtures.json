@@ -48,6 +48,7 @@
       "request": {
         "messages": [{"role": "user", "content": "\u8bf7\u5199\u4e00\u7bc7\u8be6\u7ec6\u7684\u79d1\u666e\u6587\u7ae0\uff0c\u89e3\u91ca\u5730\u7403\u6c34\u5faa\u73af\u5982\u4f55\u8fde\u63a5\u6d77\u6d0b\u3001\u5927\u6c14\u3001\u9646\u5730\u548c\u5730\u4e0b\u6c34\uff0c\u5e76\u8ba8\u8bba\u4eba\u7c7b\u6d3b\u52a8\u7684\u5f71\u54cd\u3002"}],
         "max_tokens": 128,
+        "ignore_eos": true,
         "temperature": 0,
         "chat_template_kwargs": {"enable_thinking": false}
       },
@@ -61,6 +62,7 @@
       "request": {
         "messages": [{"role": "user", "content": "Write a Python function that merges overlapping integer intervals. Include type hints and three assert examples. Output only code."}],
         "max_tokens": 256,
+        "ignore_eos": true,
         "temperature": 0,
         "chat_template_kwargs": {"enable_thinking": false}
       },

@@ -129,6 +129,15 @@ class BenchmarkChecks(unittest.TestCase):
         self.assertEqual(self.cases["chinese-synthesis-thinking-low"]["request"]["messages"][0]["content"], text)
         self.assertEqual(json.loads(json.dumps(text, ensure_ascii=True)), text)
 
+    def test_fixed_output_protocol_does_not_force_quality_or_natural_json(self):
+        for case_id in ("historical-water-cycle-128", "historical-interval-256"):
+            self.assertIs(self.cases[case_id]["request"]["ignore_eos"], True)
+            self.assertEqual(self.cases[case_id]["mode"], "throughput")
+            self.assertEqual(self.cases[case_id]["check"]["kind"], "none")
+        for case in self.cases.values():
+            if case["mode"] == "quality" or case["id"] == "historical-json-80":
+                self.assertNotIn("ignore_eos", case["request"])
+
     def test_profile_p_complete_pins(self):
         profile = self.profiles["P"]
         self.assertEqual(profile["status"], "declared")
