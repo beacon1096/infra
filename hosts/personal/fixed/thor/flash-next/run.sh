@@ -30,6 +30,7 @@ esac
 : "${FA4_LAYER:?Set FA4_LAYER to the isolated FA4 layer}"
 : "${PREPARE_PROGRAM:?Set PREPARE_PROGRAM to the hash-checked patch preparer}"
 : "${PATCH_DIR:?Set PATCH_DIR to the immutable patch inputs}"
+: "${DRAFT_DIR:=}"
 
 test -d "$RUNTIME_DIR"
 test ! -e "$RUNTIME_DIR/memory-stop"
@@ -64,12 +65,28 @@ if docker container inspect "$container" >/dev/null 2>&1; then
     printf 'Refusing load: container %s already exists; clean it explicitly\n' "$container" >&2
     exit 1
 fi
+mapfile -t arguments < <(jq -r '.arguments[]' "$BASELINE_FILE")
+draft_mount=()
+mtp_requested=false
+for argument in "${arguments[@]}"; do
+    [[ "$argument" == "--speculative-draft-model-path" ]] && mtp_requested=true
+done
+if $mtp_requested; then
+    if [[ -z "$DRAFT_DIR" ]]; then
+        printf 'DRAFT_DIR is required when the baseline enables MTP\n' >&2
+        exit 1
+    fi
+    test -d "$DRAFT_DIR"
+    test -f "$DRAFT_DIR/config.json"
+    test -f "$DRAFT_DIR/hf_quant_config.json"
+    draft_mount=("--mount" "type=bind,src=$DRAFT_DIR,dst=/models/draft,readonly")
+fi
 install -d -m 0700 "$CACHE_DIR/ple" "$CACHE_DIR/kernel-cache"
 "$PREPARE_PROGRAM" "$IMAGE" "$PATCH_DIR" "$CACHE_DIR/runtime-patches"
-mapfile -t arguments < <(jq -r '.arguments[]' "$BASELINE_FILE")
 printf 'Starting mixed-target-only baseline; BF16 dtype does not undo mixed/FP8 weights\n'
 
 exec docker run --rm --name "$container" --pull=never \
+    "${draft_mount[@]}" \
     --cidfile="$cid_file" \
     --device=nvidia.com/gpu=all --shm-size=8g --memory=108g --memory-swap=108g \
     --publish=127.0.0.1:8890:8890 \

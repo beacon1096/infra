@@ -990,5 +990,48 @@ thinking low 在首次内容前先输出 reasoning，`first_content` 约 6.05–
 （`94602c9c`）已内置 `NEXTN`（作为 `EAGLE` 别名）、`qwen4_exp` MTP draft 类以及
 `--speculative-token-map`，draft 目录可按独立模型加载；`optimization/` 中的
 `draft-head-32768-corpus-fp8.safetensors` 在该镜像内没有 loader，`32768` 词表优化
-需要另行实现。下一轮先用该镜像尝试原生 `NEXTN`（3 步 / topk 1 / 4 draft token，
-全词表）对照 `G1`，再单独评估词表优化；不改变 BF16 state、FP8 KV 或上下文长度。
+需要另行实现。
+
+## 原生 MTP：NEXTN 全词表加载与冒烟
+
+2026-10-05，在同一个 SGLang 镜像（`94602c9c`）上启用原生 `NEXTN`（SGLang 解析为
+`EAGLE`），使用独立的全词表 draft（`/models/draft`，3 步 / topk 1 / 4 draft token），
+保留 C1 full decode graph、BF16 KV、FP32 state，不启用 `32768` token map。为
+`benchmark-thor.py` 新增 declared profile `M1`；其 runtime 记录由
+`record-flash-next-runtime.py` 核验 `speculative_algorithm = EAGLE`、
+`speculative_num_steps = 3`、`speculative_eagle_topk = 1`、
+`speculative_num_draft_tokens = 4`、`speculative_draft_model_path = /models/draft` 与
+`speculative_draft_model_quantization = modelopt_mixed`。实机 `/get_server_info` 另观测
+`speculative_token_map = null`（全词表），`cuda_graph_backend_decode = full`、
+`cuda_graph_max_bs_decode = 1`、`kv_cache_dtype = bfloat16`、`mamba_ssm_dtype = float32`。
+
+加载与 graph：draft 以 `Qwen4ExpForCausalLMMTP`、`modelopt_mixed` 加载，报告 3.89 GB、
+16.49 s；服务捕获了 target verify（num_tokens_per_req 4）、draft decode（1）和
+draft extend（4）的 full graph，bs 均为 1。没有出现 draft/GDN 的缺失 kernel 故障。
+权重加载约 1042 s。
+
+冒烟（greedy、单请求、short context、shared-prefix）：
+
+| Case | 结果 | 输出 | Wall（s） | 端到端 tok/s |
+| --- | --- | --- | ---: | ---: |
+| exact-short-output | exact 通过 | 4 token | 0.539 | 7.42（过短，不代表吞吐） |
+| natural-prose-off | natural_prose 通过 | 733 字符 / 416 token | 12.834 | 32.41 |
+| recovery-short-json | json 通过 | 8 token | 0.406 | 19.69 |
+
+对照 `G1` 的同一 `natural-prose-off`：`G1` 两次为 837 / 844 字符、467 / 483 token、
+16.55 / 16.58 s（约 28.2 / 29.1 tok/s）。本案例下 MTP 约快 11–15%，但输出长度与文本
+不同于 target-only，因此不能据此声称无损等价，也不是严格同输出的吞吐对照。
+
+生成期间解码日志报告 `accept len` 1.88–2.27、`accept rate` 0.29–0.42，说明该 draft
+确实在被接受（与 Lazycat 部署记录的零接受不同）；这些是逐 decode 步日志，不是正式
+计数器或端到端统计，`/metrics` 在本配置下未启用（返回 404）。
+
+边界：只测了一个 greedy、单请求、短上下文样本；未测正式 accept 计数、长上下文、
+并发、质量等价或 token map 优化；draft 额外常驻约 3.89 GB；`32768` 词表优化仍无
+镜像内 loader。验收后服务正常停止，容器清理，MemAvailable 约 119.99 GiB，并恢复原
+`G1` 运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/`，不公开原始回复或运行 UUID。
+
+下一轮：先补齐 MTP 的正式 accept 计数（启用 metrics）与更大的代码/thinking 负载、
+长上下文检查，再单独实现并评估 `32768` 词表优化；不改变 BF16 state、FP8 KV 或
+上下文长度。

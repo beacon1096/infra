@@ -301,6 +301,9 @@ class DecodeGraphModuleChecks(unittest.TestCase):
                 enabled = evaluated.config.services.thorFlashNext.decodeGraph;
                 optionDefault = evaluated.options.services.thorFlashNext.decodeGraph.default;
                 optionType = evaluated.options.services.thorFlashNext.decodeGraph.type.name;
+                mtpEnabled = evaluated.config.services.thorFlashNext.mtp;
+                mtpOptionDefault = evaluated.options.services.thorFlashNext.mtp.default;
+                mtpOptionType = evaluated.options.services.thorFlashNext.mtp.type.name;
                 baselineText = builtins.readFile service.environment.BASELINE_FILE;
                 service = {
                   inherit (service) environment serviceConfig requires bindsTo after conflicts wantedBy;
@@ -322,6 +325,15 @@ class DecodeGraphModuleChecks(unittest.TestCase):
                 services.thorFlashNext.decodeGraph = true;
                 services.thorFlashNext.runtimeMaxSec = 5400;
               } ];
+            });
+            mtpGraph = extract (system.extendModules {
+              modules = [ {
+                services.thorFlashNext.decodeGraph = true;
+                services.thorFlashNext.mtp = true;
+              } ];
+            });
+            mtpOnly = extract (system.extendModules {
+              modules = [ { services.thorFlashNext.mtp = true; } ];
             });
           }
         ''' % json.dumps(str(ROOT))
@@ -408,6 +420,39 @@ class DecodeGraphModuleChecks(unittest.TestCase):
         self.assertEqual(longer["service"]["serviceConfig"]["RuntimeMaxSec"], 5400)
         longer["service"]["serviceConfig"]["RuntimeMaxSec"] = 3600
         self.assertEqual(graph, longer)
+
+    def test_mtp_defaults_disabled_and_has_no_draft_dir(self):
+        default = self.evaluated["default"]
+        self.assertFalse(default["mtpEnabled"])
+        self.assertFalse(default["mtpOptionDefault"])
+        self.assertEqual(default["mtpOptionType"], "bool")
+        self.assertEqual(default["service"]["environment"]["DRAFT_DIR"], "")
+
+    def test_mtp_graph_extends_graph_baseline_with_full_vocab_draft(self):
+        graph = json.loads(self.evaluated["graphFull"]["baselineText"])
+        mtp = self.evaluated["mtpGraph"]
+        self.assertTrue(mtp["mtpEnabled"])
+        generated = json.loads(mtp["baselineText"])
+        self.assertEqual({key: value for key, value in generated.items() if key not in {"name", "arguments"}},
+                         {key: value for key, value in graph.items() if key not in {"name", "arguments"}})
+        self.assertIn("NEXTN", generated["name"])
+        self.assertEqual(generated["arguments"], graph["arguments"] + [
+            "--speculative-algorithm", "NEXTN",
+            "--speculative-num-steps", "3",
+            "--speculative-eagle-topk", "1",
+            "--speculative-num-draft-tokens", "4",
+            "--speculative-draft-model-path", "/models/draft",
+            "--speculative-draft-model-quantization", "modelopt_mixed",
+        ])
+        self.assertFalse(any("token-map" in argument for argument in generated["arguments"]))
+        model_dir = json.loads((FLASH_NEXT / "baseline.json").read_text())["model_dir"]
+        self.assertEqual(mtp["service"]["environment"]["DRAFT_DIR"], model_dir + "/draft")
+
+    def test_mtp_only_leaves_decode_graph_disabled(self):
+        generated = json.loads(self.evaluated["mtpOnly"]["baselineText"])
+        index = generated["arguments"].index("--cuda-graph-backend-decode")
+        self.assertEqual(generated["arguments"][index + 1], "disabled")
+        self.assertIn("--speculative-algorithm", generated["arguments"])
 
 
 if __name__ == "__main__":

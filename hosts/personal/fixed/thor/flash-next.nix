@@ -17,9 +17,26 @@ let
         ++ lib.drop (index + 2) baseline.arguments
         ++ [ "--cuda-graph-max-bs-decode" "1" ];
     };
-  baselineFile = if config.services.thorFlashNext.decodeGraph then
-    pkgs.writeText "thor-flash-next-C1-decodeGraph.json" (builtins.toJSON decodeGraphBaseline)
-  else ./flash-next/baseline.json;
+  mtpArguments = [
+    "--speculative-algorithm" "NEXTN"
+    "--speculative-num-steps" "3"
+    "--speculative-eagle-topk" "1"
+    "--speculative-num-draft-tokens" "4"
+    "--speculative-draft-model-path" "/models/draft"
+    "--speculative-draft-model-quantization" "modelopt_mixed"
+  ];
+  graphBaseline = if config.services.thorFlashNext.decodeGraph then decodeGraphBaseline else baseline;
+  mtpBaseline = graphBaseline // {
+    name = graphBaseline.name + " + NEXTN full-vocab MTP";
+    arguments = graphBaseline.arguments ++ mtpArguments;
+  };
+  baselineFile =
+    if config.services.thorFlashNext.mtp then
+      pkgs.writeText "thor-flash-next-NEXTN-mtp.json" (builtins.toJSON mtpBaseline)
+    else if config.services.thorFlashNext.decodeGraph then
+      pkgs.writeText "thor-flash-next-C1-decodeGraph.json" (builtins.toJSON decodeGraphBaseline)
+    else ./flash-next/baseline.json;
+  draftDir = "${baseline.model_dir}/draft";
   runtimeDir = "/run/thor-flash-next";
   fa4Wheel = pkgs.fetchurl {
     url = "https://files.pythonhosted.org/packages/b1/28/6e0452ec7c42934267be78aa4b2e7b1f886084e9750d8b1ba7ecff2c20f5/flash_attn_4-4.0.0b31-py3-none-any.whl";
@@ -65,6 +82,11 @@ in
     default = 3600;
     description = "Bounded runtime for an explicitly started Flash Next experiment.";
   };
+  options.services.thorFlashNext.mtp = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = "Enable native NEXTN MTP with the full draft vocabulary (3 steps, topk 1, 4 draft tokens).";
+  };
 
   config = {
     systemd.services.thor-flash-next = {
@@ -79,6 +101,7 @@ in
         MODEL_DIR = baseline.model_dir;
         RUNTIME_DIR = runtimeDir;
         CACHE_DIR = "/var/lib/thor-flash-next/${builtins.baseNameOf baseline.model_dir}/runtime-cache";
+        DRAFT_DIR = if config.services.thorFlashNext.mtp then draftDir else "";
         FA4_LAYER = toString fa4Layer;
         PREPARE_PROGRAM = "${prepare}/bin/thor-flash-next-prepare";
         PATCH_DIR = "${./flash-next}";
