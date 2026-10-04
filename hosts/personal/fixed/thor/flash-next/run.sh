@@ -31,6 +31,7 @@ esac
 : "${PREPARE_PROGRAM:?Set PREPARE_PROGRAM to the hash-checked patch preparer}"
 : "${PATCH_DIR:?Set PATCH_DIR to the immutable patch inputs}"
 : "${DRAFT_DIR:=}"
+: "${OPTIMIZATION_DIR:=}"
 
 test -d "$RUNTIME_DIR"
 test ! -e "$RUNTIME_DIR/memory-stop"
@@ -67,9 +68,12 @@ if docker container inspect "$container" >/dev/null 2>&1; then
 fi
 mapfile -t arguments < <(jq -r '.arguments[]' "$BASELINE_FILE")
 draft_mount=()
+token_mount=()
 mtp_requested=false
+token_map_requested=false
 for argument in "${arguments[@]}"; do
     [[ "$argument" == "--speculative-draft-model-path" ]] && mtp_requested=true
+    [[ "$argument" == "--speculative-token-map" ]] && token_map_requested=true
 done
 if $mtp_requested; then
     if [[ -z "$DRAFT_DIR" ]]; then
@@ -81,12 +85,22 @@ if $mtp_requested; then
     test -f "$DRAFT_DIR/hf_quant_config.json"
     draft_mount=("--mount" "type=bind,src=$DRAFT_DIR,dst=/models/draft,readonly")
 fi
+if $token_map_requested; then
+    if [[ -z "$OPTIMIZATION_DIR" ]]; then
+        printf 'OPTIMIZATION_DIR is required when the baseline sets a token map\n' >&2
+        exit 1
+    fi
+    test -d "$OPTIMIZATION_DIR"
+    test -f "$OPTIMIZATION_DIR/vocab-32768-corpus.pt"
+    token_mount=("--mount" "type=bind,src=$OPTIMIZATION_DIR,dst=/vocab-maps,readonly")
+fi
 install -d -m 0700 "$CACHE_DIR/ple" "$CACHE_DIR/kernel-cache"
 "$PREPARE_PROGRAM" "$IMAGE" "$PATCH_DIR" "$CACHE_DIR/runtime-patches"
 printf 'Starting mixed-target-only baseline; BF16 dtype does not undo mixed/FP8 weights\n'
 
 exec docker run --rm --name "$container" --pull=never \
     "${draft_mount[@]}" \
+    "${token_mount[@]}" \
     --cidfile="$cid_file" \
     --device=nvidia.com/gpu=all --shm-size=8g --memory=108g --memory-swap=108g \
     --publish=127.0.0.1:8890:8890 \

@@ -212,6 +212,64 @@ class FlashNextChecks(unittest.TestCase):
                          ["vocab_parallel_embedding.py"])
         self.assertEqual(self.cid_file.read_bytes(), OWN_CID.encode("ascii"))
 
+    def speculative_baseline(self, name, extra):
+        arguments = self.baseline["arguments"] + [
+            "--speculative-algorithm", "NEXTN",
+            "--speculative-num-steps", "3",
+            "--speculative-eagle-topk", "1",
+            "--speculative-num-draft-tokens", "4",
+            "--speculative-draft-model-path", "/models/draft",
+            "--speculative-draft-model-quantization", "modelopt_mixed",
+        ] + extra
+        path = self.directory / f"{name}.json"
+        path.write_text(json.dumps(dict(self.baseline, model_dir=str(self.model), arguments=arguments)))
+        return path, arguments
+
+    def test_mtp_run_mounts_draft_readonly(self):
+        (self.model / "draft/config.json").write_text("{}")
+        (self.model / "draft/hf_quant_config.json").write_text("{}")
+        path, arguments = self.speculative_baseline("mtp", [])
+        result = self.run_script(BASELINE_FILE=str(path), DRAFT_DIR=str(self.model / "draft"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        call = self.calls()[-1]
+        mounts = [call[index + 1] for index, arg in enumerate(call) if arg == "--mount"]
+        self.assertIn(f"type=bind,src={self.model}/draft,dst=/models/draft,readonly", mounts)
+        self.assertEqual(call[call.index(self.baseline["image"]) + 1:],
+                         ["python3", "-m", "sglang.launch_server"] + arguments)
+
+    def test_mtp_without_draft_dir_does_not_load(self):
+        path, _ = self.speculative_baseline("mtp", [])
+        result = self.run_script(BASELINE_FILE=str(path), DRAFT_DIR="")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("DRAFT_DIR", result.stderr)
+        self.assertFalse(any(call[0] == "run" for call in self.calls()))
+
+    def test_token_map_mounts_optimization_readonly(self):
+        (self.model / "draft/config.json").write_text("{}")
+        (self.model / "draft/hf_quant_config.json").write_text("{}")
+        (self.model / "optimization/vocab-32768-corpus.pt").write_text("x")
+        path, arguments = self.speculative_baseline(
+            "tokenmap", ["--speculative-token-map", "/vocab-maps/vocab-32768-corpus.pt"])
+        result = self.run_script(BASELINE_FILE=str(path), DRAFT_DIR=str(self.model / "draft"),
+                                 OPTIMIZATION_DIR=str(self.model / "optimization"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        call = self.calls()[-1]
+        mounts = [call[index + 1] for index, arg in enumerate(call) if arg == "--mount"]
+        self.assertIn(f"type=bind,src={self.model}/optimization,dst=/vocab-maps,readonly", mounts)
+        self.assertEqual(call[call.index(self.baseline["image"]) + 1:],
+                         ["python3", "-m", "sglang.launch_server"] + arguments)
+
+    def test_token_map_without_optimization_dir_does_not_load(self):
+        (self.model / "draft/config.json").write_text("{}")
+        (self.model / "draft/hf_quant_config.json").write_text("{}")
+        path, _ = self.speculative_baseline(
+            "tokenmap", ["--speculative-token-map", "/vocab-maps/vocab-32768-corpus.pt"])
+        result = self.run_script(BASELINE_FILE=str(path), DRAFT_DIR=str(self.model / "draft"),
+                                 OPTIMIZATION_DIR="")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("OPTIMIZATION_DIR", result.stderr)
+        self.assertFalse(any(call[0] == "run" for call in self.calls()))
+
     def test_unpinned_image_does_not_load(self):
         self.assert_no_load(self.run_script(IMAGE="lmsysorg/sglang:v0.5.20"))
         self.assertEqual(self.calls(), [])
@@ -306,6 +364,8 @@ class DecodeGraphModuleChecks(unittest.TestCase):
                 mtpOptionType = evaluated.options.services.thorFlashNext.mtp.type.name;
                 metricsEnabled = evaluated.config.services.thorFlashNext.metrics;
                 metricsOptionDefault = evaluated.options.services.thorFlashNext.metrics.default;
+                tokenMapEnabled = evaluated.config.services.thorFlashNext.tokenMap;
+                tokenMapOptionDefault = evaluated.options.services.thorFlashNext.tokenMap.default;
                 baselineText = builtins.readFile service.environment.BASELINE_FILE;
                 service = {
                   inherit (service) environment serviceConfig requires bindsTo after conflicts wantedBy;
@@ -342,6 +402,14 @@ class DecodeGraphModuleChecks(unittest.TestCase):
                 services.thorFlashNext.mtp = true;
                 services.thorFlashNext.decodeGraph = true;
                 services.thorFlashNext.metrics = true;
+              } ];
+            });
+            mtpTokenMap = extract (system.extendModules {
+              modules = [ {
+                services.thorFlashNext.mtp = true;
+                services.thorFlashNext.decodeGraph = true;
+                services.thorFlashNext.metrics = true;
+                services.thorFlashNext.tokenMap = true;
               } ];
             });
           }
@@ -471,6 +539,19 @@ class DecodeGraphModuleChecks(unittest.TestCase):
         mtp = json.loads(self.evaluated["mtpMetrics"]["baselineText"])
         self.assertEqual(mtp["arguments"][-1], "--enable-metrics")
         self.assertEqual(mtp["arguments"].count("--enable-metrics"), 1)
+
+    def test_token_map_defaults_off_and_appends_relative_path(self):
+        default = self.evaluated["default"]
+        self.assertFalse(default["tokenMapEnabled"])
+        self.assertFalse(default["tokenMapOptionDefault"])
+        plain = json.loads(self.evaluated["mtpMetrics"]["baselineText"])
+        self.assertNotIn("--speculative-token-map", plain["arguments"])
+        mapped = json.loads(self.evaluated["mtpTokenMap"]["baselineText"])
+        index = mapped["arguments"].index("--speculative-token-map")
+        self.assertEqual(mapped["arguments"][index + 1], "/vocab-maps/vocab-32768-corpus.pt")
+        self.assertIn("tokenmap", Path(self.evaluated["mtpTokenMap"]["service"]["environment"]["BASELINE_FILE"]).name)
+        self.assertTrue(self.evaluated["mtpTokenMap"]["service"]["environment"]["OPTIMIZATION_DIR"].endswith("/optimization"))
+        self.assertEqual(default["service"]["environment"]["OPTIMIZATION_DIR"], "")
 
 
 if __name__ == "__main__":

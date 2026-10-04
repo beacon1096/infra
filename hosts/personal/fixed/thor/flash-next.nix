@@ -26,6 +26,8 @@ let
     "--speculative-draft-model-quantization" "modelopt_mixed"
   ];
   metricsArguments = lib.optionals config.services.thorFlashNext.metrics [ "--enable-metrics" ];
+  tokenMapArguments = lib.optionals config.services.thorFlashNext.tokenMap
+    [ "--speculative-token-map" "/vocab-maps/vocab-32768-corpus.pt" ];
   graphBaseline = if config.services.thorFlashNext.decodeGraph then decodeGraphBaseline else baseline;
   mtpBaseline = graphBaseline // {
     name = graphBaseline.name + " + NEXTN full-vocab MTP";
@@ -35,18 +37,22 @@ let
     if config.services.thorFlashNext.mtp then mtpBaseline
     else if config.services.thorFlashNext.decodeGraph then decodeGraphBaseline
     else baseline;
-  activeBaselineWithMetrics = activeBaseline // {
-    arguments = activeBaseline.arguments ++ metricsArguments;
+  activeBaselineWithOverlay = activeBaseline // {
+    arguments = activeBaseline.arguments ++ metricsArguments ++ tokenMapArguments;
   };
   baselineFile =
     if config.services.thorFlashNext.mtp then
-      pkgs.writeText "thor-flash-next-NEXTN-mtp.json" (builtins.toJSON activeBaselineWithMetrics)
+      if config.services.thorFlashNext.tokenMap then
+        pkgs.writeText "thor-flash-next-NEXTN-mtp-tokenmap.json" (builtins.toJSON activeBaselineWithOverlay)
+      else
+        pkgs.writeText "thor-flash-next-NEXTN-mtp.json" (builtins.toJSON activeBaselineWithOverlay)
     else if config.services.thorFlashNext.decodeGraph then
-      pkgs.writeText "thor-flash-next-C1-decodeGraph.json" (builtins.toJSON activeBaselineWithMetrics)
+      pkgs.writeText "thor-flash-next-C1-decodeGraph.json" (builtins.toJSON activeBaselineWithOverlay)
     else if config.services.thorFlashNext.metrics then
-      pkgs.writeText "thor-flash-next-metrics.json" (builtins.toJSON activeBaselineWithMetrics)
+      pkgs.writeText "thor-flash-next-metrics.json" (builtins.toJSON activeBaselineWithOverlay)
     else ./flash-next/baseline.json;
   draftDir = "${baseline.model_dir}/draft";
+  optimizationDir = "${baseline.model_dir}/optimization";
   runtimeDir = "/run/thor-flash-next";
   fa4Wheel = pkgs.fetchurl {
     url = "https://files.pythonhosted.org/packages/b1/28/6e0452ec7c42934267be78aa4b2e7b1f886084e9750d8b1ba7ecff2c20f5/flash_attn_4-4.0.0b31-py3-none-any.whl";
@@ -102,8 +108,17 @@ in
     default = false;
     description = "Expose the Prometheus /metrics endpoint for the running server.";
   };
+  options.services.thorFlashNext.tokenMap = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = "Enable the 32768-token draft token map (requires mtp = true).";
+  };
 
   config = {
+    assertions = [{
+      assertion = !config.services.thorFlashNext.tokenMap || config.services.thorFlashNext.mtp;
+      message = "services.thorFlashNext.tokenMap requires services.thorFlashNext.mtp";
+    }];
     systemd.services.thor-flash-next = {
       description = "Thor Flash Next mixed-target-only baseline (short-input experiment)";
       requires = [ "docker.service" "thor-flash-next-memwatch.service" ];
@@ -117,6 +132,7 @@ in
         RUNTIME_DIR = runtimeDir;
         CACHE_DIR = "/var/lib/thor-flash-next/${builtins.baseNameOf baseline.model_dir}/runtime-cache";
         DRAFT_DIR = if config.services.thorFlashNext.mtp then draftDir else "";
+        OPTIMIZATION_DIR = if config.services.thorFlashNext.tokenMap then optimizationDir else "";
         FA4_LAYER = toString fa4Layer;
         PREPARE_PROGRAM = "${prepare}/bin/thor-flash-next-prepare";
         PATCH_DIR = "${./flash-next}";

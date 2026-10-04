@@ -1084,3 +1084,31 @@ full decode graph、BF16 KV、FP32 state。runner 每秒抓取 `/metrics` 的
 下一轮：实现并单独评估 `32768` 词表优化（镜像是缺少优化 head 的 loader），并在
 不改 BF16 state / FP8 KV 的前提下尝试提高 `max_total_tokens` 以覆盖长 prompt，
 同时扩大代码与 thinking 样本量。
+
+### 32768 词表优化：stock 镜像下启动阻塞
+
+2026-10-05，为 `flash-next.nix` 增加 opt-in `services.thorFlashNext.tokenMap`
+（要求 `mtp = true`），在 `M1M` 基础上追加 `--speculative-token-map
+/vocab-maps/vocab-32768-corpus.pt`，并把 `optimization/` 只读挂载到 `/vocab-maps`；
+新增 declared profile `M2`。`optimization/draft-head-32768-corpus-fp8.safetensors`
+在本镜像内没有 loader，因此未使用。
+
+结果：服务在模型加载后的 draft CUDA graph capture 阶段退出，未提供健康 API。
+日志定位到 `eagle_draft_cuda_graph_runner.py:277` 捕获失败：
+
+```
+NotImplementedError: "addmm_cuda" not implemented for 'Float8_e4m3fn'
+  at sglang/srt/layers/logits_processor.py:936 _compute_lm_head -> torch.matmul
+```
+
+即 token-map 路径会把 FP8 target `lm_head` 切片后直接在 draft 图捕获里做 `matmul/addmm`，
+而 stock 镜像不支持对 `Float8_e4m3fn` 执行该算子。这与只读核查结论一致：该镜像的
+`--speculative-token-map` 只支持按行滑切共享 head，`32768` 优化需要另一个 head
+loader（vendor 镜像包含 `draft-head-32768-corpus-fp8.safetensors`，本镜像没有）。
+
+这是启动阻塞，不是精度或速度结论；本轮没有产生 accept 数据，也未改变 BF16 state /
+FP8 KV / 上下文长度。服务以子进程 SIGQUIT 结束，容器清理，MemAvailable 约 119.5 GiB，
+并恢复原 `G1` 运行时 unit 链接。
+
+下一轮若要继续 `32768` 优化，需要先实现该 head 的 loader 或把 head 转成受支持
+dtype，并单独记录转换工件哈希；在此之前不对 `M2` 作性能或质量声明。
