@@ -1235,9 +1235,9 @@ needle-in-haystack：在一个固定填充句的重复中、约一半深度处�
 | 约 24000 / 24041 | 正确返回 `6183` | 18.47 |
 | 约 34000 / 34031 | 拒绝：HTTP 400，`exceeds 32762 tokens` | 0.34 |
 
-因此把 KV 预算提到 32768 后，9k 与 24k prompt 均可正常处理且正确检索；有效输入上限
-约 32762（比 `max_total_tokens` 略低，为输出/开销保留）。资源：最低 MemAvailable
-34.95 GiB，最高温度 50 °C。
+因此把 KV 预算提到 32768 后，9k 与 24k prompt 均可正常处理且正确检索；实机报错信息
+显示有效输入上限约为 32762，略低于 `max_total_tokens`（原因未进一步确认）。资源：
+最低 MemAvailable 34.95 GiB，最高温度 50 °C。
 
 边界：只测了一个 KV 档位（32768）；vendor 声称的 262144 未验证；needle 只在约一半
 深度放一次、输出仅 5 token、单 prompt 家族、greedy 且启用 MTP；这不是完整 NIAH 扫描

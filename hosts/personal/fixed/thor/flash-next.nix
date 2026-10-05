@@ -55,16 +55,26 @@ let
   activeBaselineWithOverlay = activeBaseline // {
     arguments = adjustArguments activeBaseline.arguments;
   };
-  baselineFile =
+  usesGeneratedBaseline = config.services.thorFlashNext.mtp
+    || config.services.thorFlashNext.decodeGraph
+    || config.services.thorFlashNext.metrics
+    || config.services.thorFlashNext.maxTotalTokens != null
+    || config.services.thorFlashNext.mambaStateDtype != null;
+  baselineName =
     if config.services.thorFlashNext.mtp then
-      if config.services.thorFlashNext.tokenMap then
-        pkgs.writeText "thor-flash-next-NEXTN-mtp-tokenmap.json" (builtins.toJSON activeBaselineWithOverlay)
+      (if config.services.thorFlashNext.tokenMap then
+        "thor-flash-next-NEXTN-mtp-tokenmap.json"
       else
-        pkgs.writeText "thor-flash-next-NEXTN-mtp.json" (builtins.toJSON activeBaselineWithOverlay)
+        "thor-flash-next-NEXTN-mtp.json")
     else if config.services.thorFlashNext.decodeGraph then
-      pkgs.writeText "thor-flash-next-C1-decodeGraph.json" (builtins.toJSON activeBaselineWithOverlay)
+      "thor-flash-next-C1-decodeGraph.json"
     else if config.services.thorFlashNext.metrics then
-      pkgs.writeText "thor-flash-next-metrics.json" (builtins.toJSON activeBaselineWithOverlay)
+      "thor-flash-next-metrics.json"
+    else
+      "thor-flash-next-adjusted.json";
+  baselineFile =
+    if usesGeneratedBaseline then
+      pkgs.writeText baselineName (builtins.toJSON activeBaselineWithOverlay)
     else ./flash-next/baseline.json;
   draftDir = "${baseline.model_dir}/draft";
   optimizationDir = "${baseline.model_dir}/optimization";

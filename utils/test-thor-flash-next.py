@@ -430,6 +430,12 @@ class DecodeGraphModuleChecks(unittest.TestCase):
                 services.thorFlashNext.mambaStateDtype = "bfloat16";
               } ];
             });
+            tokensOnly = extract (system.extendModules {
+              modules = [ { services.thorFlashNext.maxTotalTokens = 16384; } ];
+            });
+            dtypeOnly = extract (system.extendModules {
+              modules = [ { services.thorFlashNext.mambaStateDtype = "bfloat16"; } ];
+            });
           }
         ''' % json.dumps(str(ROOT))
         result = subprocess.run(
@@ -569,6 +575,16 @@ class DecodeGraphModuleChecks(unittest.TestCase):
         self.assertEqual(long_ctx["arguments"][index + 1], "32768")
         self.assertEqual({key: value for key, value in long_ctx.items() if key not in {"name", "arguments"}},
                          {key: value for key, value in default.items() if key not in {"name", "arguments"}})
+
+    def test_single_axis_overrides_generate_baseline_without_other_flags(self):
+        for variant, argument, value in (("tokensOnly", "--max-total-tokens", "16384"),
+                                         ("dtypeOnly", "--mamba-ssm-dtype", "bfloat16")):
+            with self.subTest(variant=variant):
+                generated = json.loads(self.evaluated[variant]["baselineText"])
+                self.assertEqual(generated["arguments"].count(argument), 1)
+                self.assertEqual(generated["arguments"][generated["arguments"].index(argument) + 1], value)
+                name = Path(self.evaluated[variant]["service"]["environment"]["BASELINE_FILE"]).name
+                self.assertTrue(name.endswith("-thor-flash-next-adjusted.json"))
 
     def test_mamba_state_dtype_override_replaces_single_argument(self):
         default = json.loads(self.evaluated["default"]["baselineText"])
