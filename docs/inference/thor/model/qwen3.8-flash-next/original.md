@@ -1354,3 +1354,32 @@ safetensors 实测 dtype 与之一致，例如
 生成转换工件，本仓未做；本页不声称做过该对照，也不据此改变任何服务默认。若要继续
 dense 轴，优先考虑把仍为 BF16 的 `embed_tokens`/`hyper_connection_mixer` 转成 FP8
 以进一步省内存，或按 F0–F2 生成 BF16-dense 工件做反向对照。
+
+### 长上下文 × FP8 KV：L64K（65536 预算）
+
+新增 declared profile `L64K`（= `M1M`，KV 预算 65536，KV 为 fp8_e4m3，使总 KV 与
+`L32` 的 BF16 相近）。服务正常加载，runtime 记录核验 `max_total_tokens = 65536`、
+`kv_cache_dtype = fp8_e4m3`，其余同 `M1M`。
+
+同一 needle-in-haystack（唯一口令置于约一半深度）：
+
+| 实际 prompt token | 检索结果 | Wall（s） |
+| --- | --- | --- |
+| 9041 | 正确返回 `6183` | 7.82 |
+| 48041 | 正确返回 `6183` | 38.83 |
+| 62021 | 正确返回 `6183` | 51.69 |
+| 68021 | 拒绝：HTTP 400，`exceeds 65530 tokens` | 0.45 |
+
+即 FP8 KV 让 65536 预算可用：在约 62k token 处仍能正确检索，有效输入上限约 65530，
+是 `L32`（BF16 KV，32768）的两倍，而内存占用相近（本轮最低 MemAvailable 34.69 GiB、
+最高 53 °C，对比 `L32` 的 34.95 GiB / 50 °C）。9k 深度耗时 7.82 s，略慢于 `L32` 的
+6.99 s，与 FP8 KV 短上下文约 −10% 的观察一致。
+
+边界：只做单 needle（约一半深度）、短输出、greedy、单 prompt 家族；这不是长上下文
+质量评估，也没有隔离「预算翻倍」与「FP8 KV」各自的贡献；此前 vLLM 路径提到的 FP8 KV
+长推理质量回归仍未验证；vendor 的 262144 未测。对照结束后服务停止，容器清理，
+MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run12/`。
+
+下一轮：可继续 131072 档（FP8 KV 下 KV 约再翻倍）并做多深度 NIAH，或用真实长文档任务
+评估 FP8 KV 的质量；不改变 BF16 state / context-length。
