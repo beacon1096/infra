@@ -1475,3 +1475,32 @@ MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。raw/evide
 
 下一轮：可扩大质量样本（更多任务/长度/事实数）或转运维收尾；不改变 BF16 state /
 context-length。
+
+### token map 覆盖率分析（离线）
+
+为解释 `M2`（32768 词表）的负结果，用固定镜像（无 GPU、无网络推理）离线分析：
+载入 target tokenizer 与 `optimization/vocab-32768-corpus.pt`，把全词表 `M1M`/`G1` 的
+真实输出（`run3` + `safety run1`）重新分词，统计生成 token 落在该 map 内的比例。
+map 是 248320 词表的一个 32768-子集（`min=0`、`max=248076`），**不是**前 32768 个 id。
+
+| Case | content-only coverage | full-stream coverage |
+| --- | ---: | ---: |
+| natural-prose-off | 0.232 | 0.232 |
+| natural-prose-low | 0.216 | 0.271 |
+| python-interval-repair-ast | 0.948 | 0.948 |
+| recovery-short-json | 1.000 | 1.000 |
+| thinking-digit-low | 1.000（9 tok） | 0.976（627 tok） |
+| thinking-ledger32-low | 0.842（19 tok） | 0.979（1143 tok） |
+| thinking-workers-low | — | 0.988（4096 tok） |
+| **OVERALL** | **0.340** | **0.728** |
+
+括号内是 thinking 的最终 content（很短）；`full-stream` 计入 reasoning。结论与实测完全
+对应：开放 prose 只有约 **23–27%** 的生成 token 在 32768 map 内，draft 无法命中其余
+约 3/4，所以接受率从 0.37–0.42 崩塌到 0.07–0.10、吞吐下降；结构化/代码/JSON/推理
+则 **95–100%** 在 map 内，接受率基本不变。即 token map 本质是「用 draft 词表覆盖换
+draft head 成本」，对通用 Agent 不适合。
+
+边界：覆盖率来自「反分词后重新分词」，与服务器实际 token 边界可能有差异；样本仅限
+上述 case；map 内容仅按 id 集合判定，未评估概率分布。结论是机制性解释，不替代 A/B。
+
+下一轮：如仍想评估其它 map，先离线算这份覆盖率再决定，不盲目 sweep 48K/64K。
