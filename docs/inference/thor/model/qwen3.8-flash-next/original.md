@@ -1504,3 +1504,35 @@ draft head 成本」，对通用 Agent 不适合。
 上述 case；map 内容仅按 id 集合判定，未评估概率分布。结论是机制性解释，不替代 A/B。
 
 下一轮：如仍想评估其它 map，先离线算这份覆盖率再决定，不盲目 sweep 48K/64K。
+
+### BF16 KV 能否支撑 262K？（L256 与 L256K）
+
+针对「C1 下 262K 是否根本不需要 FP8 KV」的假设，新增 declared profile `L256`
+（= `L256K`，KV 改为 bfloat16），其余同 `M1M`。服务正常加载：BF16 KV full-attention
+`K/V 3.00/3.00 GB` + linear `0.25/0.25 GB`（约 6.5 GB，约为 FP8 的 2×），
+`available_gpu_mem = 28.93 GB`（FP8 版为 35.54 GB）。
+
+| 实际 prompt token | 结果 | Wall（s） |
+| --- | --- | --- |
+| 9041 | 正确 `6183` | 7.13 |
+| 64031 | 正确 `6183` | 51.79 |
+| 128021 | 正确 `6183` | 111.67 |
+| 160031 | 连接被断开（内存护栏停止服务） | 138.88 |
+
+第 4 档期间 `thor-flash-next-memwatch` 在 `MemAvailable≈12.3 GiB`（随后一度约 7 GiB）
+触发 12 GiB 阈值并 `systemctl stop`，`/proc/meminfo` 采样最低 7.18 GiB。对照 `L256K`
+（FP8 KV）在 250031/261041 时最低仍有约 20 GiB、可正常返回。
+
+结论：在 262144 预算下，**BF16 KV 只能覆盖到约 128k prompt 的 long prefill，约 160k
+会触发内存护栏**；而 FP8 KV 到 261k 仍稳定。因此在本机（12 GiB 护栏）下，FP8 KV
+不是单纯的容量选项，而是 **256K 长 prefill 的必要条件**。此前「C1 下 262K 很可能不需要
+FP8 KV」的推断被此结果否定（其基于静态 KV 大小估算，未计入 prefill 期的峰值）。
+
+边界：单 needle、单一预算档（262144）；边界落在 128k–160k 之间但未细分；失败是主机内存
+护栏主动停止服务，不是模型错误；护栏会留下 `/run/thor-flash-next/memory-stop` 闩锁，
+需显式清除后才能再次启动。对照结束后服务停止、闩锁清除、容器清理，MemAvailable 恢复到
+约 119.5 GiB，并恢复原 `G1` 运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/{run17,run18}/`。
+
+下一轮：如需精确边界，可在 128k–160k 间细分，或提高护栏/内存预算复测；否则长 prefill
+默认保留 FP8 KV。
