@@ -1655,3 +1655,33 @@ SM110 被拒。
 
 下一轮：后端路线到此为止；如需继续，可转向 Flash-Next vs 27B 能力对照，或 BF16 state
 长自回归的 teacher-forced 对照。
+
+### 64K prefill trace 细分：MoE 与 dense FP8
+
+对同一份 `run24` trace 离线再分析（`record_shapes` 开启；kernel 事件只带 grid/block，
+不含 Input Dims，故用 launch grid 作 shape 代理），把之前的「GEMM」桶拆开：
+
+- **NVFP4 MoE**：grouped CUTLASS FP4 GEMM（`GroupProblemShape`，SM100_MMA_MXF4）单个
+  kernel 就占 **7.10 s（22.4%）**；TensorRT-LLM CUTLASS 的 MoE 辅助 kernel
+  （`expandInputRows` 1.50 s、`doActivation` 0.88 s、`finalizeMoeRouting` 0.75 s、
+  `blockExpertPrefixSum` 0.21 s、`mergeExpertPrefixSum` 0.07 s）合计约 3.43 s（10.8%）。
+  MoE 合计约 **10.53 s（33.3%）**——即之前的 33.6% GEMM 桶主要是 **MoE**，不是 cuBLAS。
+- **dense FP8**（`_w8a8_block_fp8_matmul`）合计 5.46 s（17.3%），且高度集中：
+  grid `[4096]` 2.69 s / 1116 次、grid `[640]` 1.50 s / 2976 次、grid `[3328]`
+  0.73 s / 372 次；前三个 grid 约占 dense FP8 的 **90%**。
+- cuBLAS（`nvjet`）约 1.1 s（3.5%）；其余为 sparse QSA、GDN、norm、elementwise 等。
+
+由此回答两个后续问题：
+1. dense FP8 的确由**少数固定 shape** 主导（2–3 个 grid 吃掉约 90%），因此
+   **Thor-specific 的 Triton FP8 shape 调优**是值得做的 kernel 项目（类比 27B 的 tile
+   调优），而不是换 backend。
+2. 剩余可动的 GEMM 大头是 **NVFP4 MoE**（约 33%），且走 FlashInfer CUTLASS FP4；
+   若它已接近 SM110 上的实现上限，则属于**上游 FlashInfer 的 Thor kernel** 议题，
+   而非本仓服务配置。
+
+边界：grid 只是 shape 的代理，kernel 事件不含 Input Dims，精确 `(M,N,K)` 需要 op 级
+correlation；profiler 开启 stack/shape，绝对时间偏大；单次请求、单长度；MoE 的 W13/W2
+未再细分。本页不据此改动任何服务默认。
+
+下一轮：若要继续，可对 `_w8a8_block_fp8_matmul` 做精确 shape↔耗时关联并试 Triton
+config；MoE 侧则需要上游 FlashInfer 的 SM110 FP4 grouped GEMM 基准。
