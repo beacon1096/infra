@@ -1413,3 +1413,34 @@ MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。raw/evide
 
 下一轮：可试 262144（claims 上限，FP8 KV 下 KV 约 3 GB）看能否加载并检索，或对同一
 组长 prompt 做质量/一致性评估；不改变 BF16 state / context-length。
+
+### 长上下文 × FP8 KV：L256K（262144，context 上限）
+
+新增 declared profile `L256K`（= `M1M`，`max_total_tokens = 262144` 等于
+`context_length`，KV 为 fp8_e4m3）。服务正常加载：KV full-attention 池
+`K 1.50 / V 1.50 GB` + linear-attention `K 0.13 / V 0.13 GB`，
+`max_total_num_tokens = 262144`。
+
+多深度 needle-in-haystack（唯一口令置于约一半深度）：
+
+| 实际 prompt token | 检索结果 | Wall（s） |
+| --- | --- | --- |
+| 9041 | 正确 `6183` | 7.36 |
+| 64031 | 正确 `6183` | 52.74 |
+| 160031 | 正确 `6183` | 142.76 |
+| 250031 | 正确 `6183` | 239.64 |
+| 261041 | 正确 `6183` | 252.60 |
+| 270045 | 拒绝：HTTP 400，`longer than the model's context length (262144)` | 1.31 |
+
+即在声明的 context 上限下，单一中间位置口令到约 261k token 仍能正确检索；270k 被
+`context_length`（262144）而非 KV 预算拒绝。资源随长度收紧：run14 最低 MemAvailable
+21.00 GiB、最高 58 °C，261k 那次最低降到约 19.96 GiB —— 接近但未触发内存护栏。
+
+边界：仍是单 needle（约一半深度）、短输出、greedy、单 prompt 家族；不是长上下文质量
+评估，也未与其他深度/位置的命中率一起统计；接近上限时主机余量仅约 20 GiB，属于需要
+注意的风险。对照结束后服务停止，容器清理，MemAvailable 约 120.0 GiB，并恢复原 `G1`
+运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/{run14,run14b}/`。
+
+下一轮：转入长上下文质量评估（真实长 prompt 多任务），或在这条 needle 曲线上补更多
+深度/位置；不改变 BF16 state / context-length。
