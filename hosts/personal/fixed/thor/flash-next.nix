@@ -47,8 +47,17 @@ let
       withChunk =
         if config.services.thorFlashNext.chunkedPrefillSize == null then withKv
         else setArgument "--chunked-prefill-size" (toString config.services.thorFlashNext.chunkedPrefillSize) withKv;
+      withFp8 =
+        if config.services.thorFlashNext.fp8GemmBackend == null then withChunk
+        else setArgument "--fp8-gemm-backend" config.services.thorFlashNext.fp8GemmBackend withChunk;
+      withMoe =
+        if config.services.thorFlashNext.moeRunnerBackend == null then withFp8
+        else setArgument "--moe-runner-backend" config.services.thorFlashNext.moeRunnerBackend withFp8;
+      withFp4 =
+        if config.services.thorFlashNext.fp4GemmBackend == null then withMoe
+        else setArgument "--fp4-gemm-backend" config.services.thorFlashNext.fp4GemmBackend withMoe;
     in
-    withChunk ++ metricsArguments ++ tokenMapArguments;
+    withFp4 ++ metricsArguments ++ tokenMapArguments;
   graphBaseline = if config.services.thorFlashNext.decodeGraph then decodeGraphBaseline else baseline;
   mtpBaseline = graphBaseline // {
     name = graphBaseline.name + " + NEXTN full-vocab MTP";
@@ -67,7 +76,10 @@ let
     || config.services.thorFlashNext.maxTotalTokens != null
     || config.services.thorFlashNext.mambaStateDtype != null
     || config.services.thorFlashNext.kvCacheDtype != null
-    || config.services.thorFlashNext.chunkedPrefillSize != null;
+    || config.services.thorFlashNext.chunkedPrefillSize != null
+    || config.services.thorFlashNext.fp8GemmBackend != null
+    || config.services.thorFlashNext.moeRunnerBackend != null
+    || config.services.thorFlashNext.fp4GemmBackend != null;
   baselineName =
     if config.services.thorFlashNext.mtp then
       (if config.services.thorFlashNext.tokenMap then
@@ -165,6 +177,21 @@ in
     type = lib.types.nullOr lib.types.ints.positive;
     default = null;
     description = "Override --chunked-prefill-size for long-prefill scheduling experiments.";
+  };
+  options.services.thorFlashNext.fp8GemmBackend = lib.mkOption {
+    type = lib.types.nullOr (lib.types.enum [ "auto" "deep_gemm" "flashinfer_trtllm" "flashinfer_cutlass" "flashinfer_deepgemm" "flashinfer_cutedsl" "cutlass" "triton" "aiter" ]);
+    default = null;
+    description = "Override --fp8-gemm-backend for the dense FP8 GEMM path.";
+  };
+  options.services.thorFlashNext.moeRunnerBackend = lib.mkOption {
+    type = lib.types.nullOr (lib.types.enum [ "auto" "deep_gemm" "triton" "flashinfer_trtllm" "flashinfer_cutlass" "cutlass" "marlin" "humming" ]);
+    default = null;
+    description = "Override --moe-runner-backend for the MoE GEMM path.";
+  };
+  options.services.thorFlashNext.fp4GemmBackend = lib.mkOption {
+    type = lib.types.nullOr (lib.types.enum [ "auto" "flashinfer_cudnn" "flashinfer_cutedsl" "flashinfer_cutlass" "flashinfer_trtllm" "marlin" ]);
+    default = null;
+    description = "Override --fp4-gemm-backend for the FP4 GEMM path.";
   };
 
   config = {

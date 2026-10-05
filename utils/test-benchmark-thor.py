@@ -73,7 +73,7 @@ class BenchmarkChecks(unittest.TestCase):
 
     def test_load_assets_counts_and_nested_thinking(self):
         self.assertEqual(len(self.cases), 16)
-        self.assertEqual(set(self.profiles), {"P", "L", "S0", "G1", "M1", "M1M", "M2", "L32", "M1B", "M1K", "L64K", "L128K", "L256K", "L64", "L256", "G64", "L64_1024", "L64_2048", "L64_4096", "F0", "F1", "F2", "F3", "F4"})
+        self.assertEqual(set(self.profiles), {"P", "L", "S0", "G1", "M1", "M1M", "M2", "L32", "M1B", "M1K", "L64K", "L128K", "L256K", "L64", "L256", "G64", "L64_1024", "L64_2048", "L64_4096", "L64B_F8CUT", "L64B_F8FC", "L64B_MOECUT", "L64B_F8TRT", "F0", "F1", "F2", "F3", "F4"})
         thinking = {}
         for case in self.cases.values():
             request = case["request"]
@@ -855,7 +855,7 @@ class BenchmarkChecks(unittest.TestCase):
                     result = json.loads(stdout)
                     self.assertEqual(result["status"], "valid")
                     self.assertEqual(result["case_count"], 16)
-                    self.assertEqual(len(result["profiles"]), 24)
+                    self.assertEqual(len(result["profiles"]), 28)
             stream.assert_not_called()
 
     def test_cli_plan_never_stream_and_preserves_assets(self):

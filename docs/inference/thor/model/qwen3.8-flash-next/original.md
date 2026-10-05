@@ -1626,3 +1626,31 @@ profiler 开启 `with_stack`/`record_shapes`，绝对值会被放大，只有相
 
 下一轮：如要继续，可针对 dense FP8 与 MoE GEMM 做后端/kernel 选择实验，或把 chunk 默认
 提升到 2048 并复测长上下文端到端；不改变 BF16 state / context-length。
+
+### GEMM 后端选择实验（dense FP8 / MoE，SM110 全部不可切换）
+
+逐组件分解显示 prefill 的约 59% 是 GEMM，本想在 `L64_2048` 上更换 dense FP8 与 MoE
+后端看能否降低这部分。实测在本机 SM110 上，除基线所用后端外全部不可用：
+
+| 尝试 | 结果 |
+| --- | --- |
+| `--fp8-gemm-backend cutlass` | 启动即失败：该后端在本硬件已弃用 |
+| `--fp8-gemm-backend flashinfer_cutlass` | warmup 失败：`gemm_fp8_nt_groupwise does not support backend 'cutlass' with capability 110` |
+| `--fp8-gemm-backend flashinfer_trtllm` | 初始化失败：需要 SM100/SM103 |
+| `--fp8-gemm-backend deep_gemm` | warmup 失败：`deep_gemm ... Unsupported architecture` |
+| `--moe-runner-backend cutlass` | 初始化失败：NVFP4 MoE 不支持，必须用 `flashinfer_cutlass` |
+
+结论：在本机（SM110）与 `modelopt_mixed` NVFP4 检查点下，dense FP8 GEMM 实际上只能用
+`triton`，NVFP4 MoE 只能用 `flashinfer_cutlass`，FP4 用 `flashinfer_cutlass`——即
+基线后端是被硬件约束的唯一可用组合。因此约 59% 的 GEMM prefill 时间是在现有可用 kernel
+下的固有成本，**后端选择不是可用的加速杠杆**；进一步收益需要 kernel 级工作或不同硬件，
+而不是改配置。
+
+边界：只测了上述取值，未穷举所有 vendor kernel；`deep_gemm`/`flashinfer_trtllm` 面向
+更新的 SM；单一检查点。以上为启动/初始化即失败的定性结论，不含吞吐数字。对照期间服务
+未提供健康 API（均在加载/初始化阶段退出），结束后服务停止、容器清理，MemAvailable 约
+119.4 GiB，并恢复原 `G1` 运行时 unit 链接。相关 profile（`L64B_*`）在清单中标注为在
+SM110 被拒。
+
+下一轮：后端路线到此为止；如需继续，可转向 Flash-Next vs 27B 能力对照，或 BF16 state
+长自回归的 teacher-forced 对照。

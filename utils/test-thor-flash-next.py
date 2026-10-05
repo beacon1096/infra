@@ -451,6 +451,14 @@ class DecodeGraphModuleChecks(unittest.TestCase):
                 services.thorFlashNext.chunkedPrefillSize = 1024;
               } ];
             });
+            backends = extract (system.extendModules {
+              modules = [ {
+                services.thorFlashNext.decodeGraph = true;
+                services.thorFlashNext.fp8GemmBackend = "cutlass";
+                services.thorFlashNext.moeRunnerBackend = "cutlass";
+                services.thorFlashNext.fp4GemmBackend = "marlin";
+              } ];
+            });
           }
         ''' % json.dumps(str(ROOT))
         result = subprocess.run(
@@ -618,6 +626,18 @@ class DecodeGraphModuleChecks(unittest.TestCase):
         self.assertEqual(chunk["arguments"].count("--chunked-prefill-size"), 1)
         self.assertEqual(chunk["arguments"][chunk["arguments"].index("--chunked-prefill-size") + 1], "1024")
         self.assertEqual({key: value for key, value in chunk.items() if key not in {"name", "arguments"}},
+                         {key: value for key, value in default.items() if key not in {"name", "arguments"}})
+
+    def test_gemm_backend_overrides_replace_single_arguments(self):
+        default = json.loads(self.evaluated["default"]["baselineText"])
+        overridden = json.loads(self.evaluated["backends"]["baselineText"])
+        for argument, value in (("--fp8-gemm-backend", "cutlass"),
+                                ("--moe-runner-backend", "cutlass"),
+                                ("--fp4-gemm-backend", "marlin")):
+            with self.subTest(argument=argument):
+                self.assertEqual(overridden["arguments"].count(argument), 1)
+                self.assertEqual(overridden["arguments"][overridden["arguments"].index(argument) + 1], value)
+        self.assertEqual({key: value for key, value in overridden.items() if key not in {"name", "arguments"}},
                          {key: value for key, value in default.items() if key not in {"name", "arguments"}})
 
     def test_mamba_state_dtype_override_replaces_single_argument(self):
