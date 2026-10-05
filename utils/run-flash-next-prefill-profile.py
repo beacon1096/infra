@@ -9,8 +9,7 @@ from pathlib import Path
 
 BASE = "http://127.0.0.1:8890"
 MODEL = "qwen3.8-flash-next-thor"
-ROOT = Path("/var/lib/thor-flash-next/observations/mtp-20261005/client")
-DEPTH = int(sys.argv[2]) if len(sys.argv) > 2 else 64000
+CONTAINER = "thor-flash-next"
 FILLER = ("The northern warehouse receives shipments every morning and the clerks record each crate "
           "in a ledger before moving it to the riverside depot where barges wait. ")
 NEEDLE = "IMPORTANT NOTE: the vault code is six one eight three. "
@@ -18,8 +17,7 @@ QUESTION = "What is the vault code? Reply with only the four digits, no other te
 
 
 def post_json(path, body, timeout=900):
-    data = json.dumps(body).encode()
-    request = urllib.request.Request(BASE + path, data=data, method="POST",
+    request = urllib.request.Request(BASE + path, data=json.dumps(body).encode(), method="POST",
                                      headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -40,25 +38,41 @@ def ask(text, max_tokens=8, timeout=900):
 
 
 def main():
+    if len(sys.argv) < 2:
+        print("Usage: %s OUTPUT_DIR [DEPTH]" % sys.argv[0], file=sys.stderr)
+        return 2
     output = Path(sys.argv[1])
     output.mkdir(parents=True, exist_ok=True)
-    repeats = max(1, DEPTH // 30)
+    depth = int(sys.argv[2]) if len(sys.argv) > 2 else 64000
+    repeats = max(1, depth // 30)
     half = repeats // 2
     text = (FILLER * half) + NEEDLE + (FILLER * (repeats - half)) + QUESTION
-    print("start_profile:", post_json("/start_profile", {}))
+
+    status, body = post_json("/start_profile", {})
+    if status != 200:
+        raise RuntimeError("start_profile failed: %s %s" % (status, body))
     wall, payload = ask(text)
     usage = payload.get("usage")
     content = payload["choices"][0]["message"].get("content")
+    status, body = post_json("/stop_profile", {})
+    if status != 200:
+        raise RuntimeError("stop_profile failed: %s %s" % (status, body))
     print("ask wall=%.3f prompt_tokens=%s content=%r" % (wall, (usage or {}).get("prompt_tokens"), content))
-    print("stop_profile:", post_json("/stop_profile", {}))
-    for command in (["docker", "exec", "thor-flash-next", "bash", "-lc", "ls -la /tmp/*.trace* 2>/dev/null"],
-                    ["docker", "exec", "thor-flash-next", "bash", "-lc",
-                     "find /tmp -maxdepth 3 -name '*trace*' 2>/dev/null"]):
-        print("$", " ".join(command))
-        subprocess.run(command, check=False)
+
+    listed = subprocess.run(["docker", "exec", CONTAINER, "bash", "-lc",
+                             "ls -1t /tmp/*.trace.json.gz 2>/dev/null | head -1"],
+                            capture_output=True, text=True)
+    trace = listed.stdout.strip()
+    if trace:
+        destination = output / "prefill.trace.json.gz"
+        subprocess.run(["docker", "cp", "%s:%s" % (CONTAINER, trace), str(destination)], check=True)
+        print("copied trace %s -> %s" % (trace, destination))
+    else:
+        print("no trace file found in container /tmp")
     (output / "request.json").write_text(json.dumps({"wall_seconds": wall, "usage": usage, "content": content,
-                                                    "depth": DEPTH}, indent=2) + "\n")
+                                                     "depth": depth}, indent=2) + "\n")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

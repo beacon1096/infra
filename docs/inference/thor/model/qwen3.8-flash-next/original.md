@@ -1610,6 +1610,8 @@ wall 35.09 s），把 chrome trace 导出后在主机上按 GPU kernel 名聚合
 | PLE / embedding gather | 0.29 s | 0.9% |
 | 其它 | 0.78 s | 2.5% |
 
+（`attn` 0.1% 与 `mem` 0.0% 因四舍五入未单列。）
+
 结论：64k prefill 是 **GEMM 主导**——通用 cutlass/cuBLAS GEMM（含 MoE grouped GEMM）
 33.6% + FP8 dense 18.1% + FP4 7.6%，合计约 59%；稀疏注意力约 10%，GDN 约 8%；
 PLE 常驻不是 prefill 瓶颈（<1%）。这与「prefill 是 target 计算问题、chunk 是调度层
