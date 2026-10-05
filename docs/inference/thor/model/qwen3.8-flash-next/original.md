@@ -1577,11 +1577,11 @@ prefill 分解；不改变 BF16 state / context-length。
 | 4096 | 31.14 | 2056 |
 
 即把 chunk 从 512 提到 4096，64k prefill 约 **1.67×**（52.15→31.14 s），收益在 2048
-之后开始收敛；四档均正确检索、内存约 33–34 GiB 余量、温度 ≤52 °C。chunk 大小是长
-prefill 的一阶旋钮：512→1024 已有约 −21%。
+之后开始收敛；四档均正确检索、最低 MemAvailable 32.4–34.2 GiB、温度 ≤52 °C。（本轮
+单样本下）chunk 大小是最明显的 prefill 旋钮：512→1024 已有约 −21%。
 
-边界：单长度（约 64k）、单 prompt；未与更长上下文或 FP8 KV 组合；吞吐仍按含 5 个输出
-token 的整请求 wall 粗算；未做逐组件分解。对照结束后服务停止，容器清理，MemAvailable
+边界：单长度（约 64k）、单 prompt、无重复，因此以上为单样本观察而非统计结论；未与更长
+上下文或 FP8 KV 组合；吞吐仍按含 5 个输出 token 的整请求 wall 粗算；未做逐组件分解。对照结束后服务停止，容器清理，MemAvailable
 约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。raw/evidence 保留在私有
 `/var/lib/thor-flash-next/observations/mtp-20261005/{run21,run22,run23}/`。
 
