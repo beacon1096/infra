@@ -1612,16 +1612,23 @@ wall 35.09 s），把 chrome trace 导出后在主机上按 GPU kernel 名聚合
 
 （`attn` 0.1% 与 `mem` 0.0% 因四舍五入未单列。）
 
-结论：64k prefill 是 **GEMM 主导**——通用 cutlass/cuBLAS GEMM（含 MoE grouped GEMM）
-33.6% + FP8 dense 18.1% + FP4 7.6%，合计约 59%；稀疏注意力约 10%，GDN 约 8%；
-PLE 常驻不是 prefill 瓶颈（<1%）。这与「prefill 是 target 计算问题、chunk 是调度层
-收益」一致：进一步优化应针对 MoE grouped GEMM、dense FP8（`w8a8_block_fp8_matmul`
-占 18% 说明 dense 侧在吃掉可观时间）与稀疏注意力的 kernel/后端选择。
+**更正**：上表是朴素的 kernel 名归类，有一处误导——名为
+`tensorrt_llm::...cutlass_kernels::expandInputRowsKernel<...__nv_fp4_e2m1...>` 的 **MoE
+row-expand / activation / routing** kernel 因名字同时含 `cutlass` 与 `fp4`，被算进了
+「CUTLASS/cuBLAS GEMM」和「FP4 kernel」桶，而它们并不是 GEMM。按模块重算见下节
+「64K prefill trace 细分」。修正后的口径：**MoE 整条路径约 33.4%**（grouped FP4 GEMM
+22.5% + 周边 pipeline 10.9%），dense FP8 17.3%，cuBLAS 约 4.6%；稀疏注意力约 10%、
+GDN 约 8%，PLE <1%。
 
-边界：类别来自 kernel 名启发式映射（cutlass 桶混合了 MoE 与通用 GEMM，`other` 2.5%）；
-profiler 开启 `with_stack`/`record_shapes`，绝对值会被放大，只有相对占比有意义；单次
-请求、单长度，不是 nsys 时间线。对照结束后服务停止，容器清理，MemAvailable 约 119.5 GiB，
-并恢复原 `G1` 运行时 unit 链接。trace 与 request 结果保留在私有
+结论：64k prefill 是 **MoE + GEMM 主导**——接近 1/3 是 MoE 路径，dense FP8 约占
+17%；核心 attention（QSA）已降到约 10%，GDN 约 8%；PLE 常驻不是 prefill 瓶颈（<1%）。
+这与「prefill 是 target 计算问题、chunk 是调度层收益」一致；进一步优化落在 MoE
+pipeline 与 dense FP8 的 kernel 层面（见下节），而非 PLE/attention。
+
+边界：类别来自 kernel 名启发式映射，且如上存在误分（本页已更正）；profiler 开启
+`with_stack`/`record_shapes`，绝对值会被放大，只有相对占比有意义；单次请求、单长度，
+不是 nsys 时间线。对照结束后服务停止，容器清理，MemAvailable 约 119.5 GiB，并恢复原
+`G1` 运行时 unit 链接。trace 与 request 结果保留在私有
 `/var/lib/thor-flash-next/observations/mtp-20261005/run24/`（含 178 MB trace，不入库）。
 
 下一轮：如要继续，可针对 dense FP8 与 MoE GEMM 做后端/kernel 选择实验，或把 chunk 默认
@@ -1664,24 +1671,42 @@ SM110 被拒。
 - **NVFP4 MoE**：grouped CUTLASS FP4 GEMM（`GroupProblemShape`，SM100_MMA_MXF4）单个
   kernel 就占 **7.10 s（22.4%）**；TensorRT-LLM CUTLASS 的 MoE 辅助 kernel
   （`expandInputRows` 1.50 s、`doActivation` 0.88 s、`finalizeMoeRouting` 0.75 s、
-  `blockExpertPrefixSum` 0.21 s、`mergeExpertPrefixSum` 0.07 s）合计约 3.43 s（10.8%）。
-  MoE 合计约 **10.53 s（33.3%）**——即之前的 33.6% GEMM 桶主要是 **MoE**，不是 cuBLAS。
+  `blockExpertPrefixSum` 0.21 s、`mergeExpertPrefixSum` 0.07 s）合计约 3.43 s（10.9%）。
+  MoE 合计约 **10.53 s（33.4%）**；其中 grouped FP4 GEMM 22.5%、周边 pipeline 10.9%。
+  **注意**：这些 aux kernel 名字同时含 `cutlass_kernels` 与 `__nv_fp4_e2m1`，朴素分类会把
+  它们误算进「FP4 kernel」或「CUTLASS/cuBLAS GEMM」桶；因此旧桶的 33.6% 不能整体等同
+  MoE，只能说其中约 2/3 可明确归因于 grouped MoE GEMM（7.10 s）。
 - **dense FP8**（`_w8a8_block_fp8_matmul`）合计 5.46 s（17.3%），且高度集中：
   grid `[4096]` 2.69 s / 1116 次、grid `[640]` 1.50 s / 2976 次、grid `[3328]`
   0.73 s / 372 次；前三个 grid 约占 dense FP8 的 **90%**。
-- cuBLAS（`nvjet`）约 1.1 s（3.5%）；其余为 sparse QSA、GDN、norm、elementwise 等。
+- cuBLAS（`nvjet`）约 1.4 s（4.6%）；其余为 sparse QSA、GDN、norm、elementwise 等。
+
+一个很强的模式：以约 2048-token chunk 计，64031 token 约 31 个 full chunk，而三个主
+grid 的调用数正好是 `1116 = 36×31`（36 个 GDN/linear-attention 层）、
+`2976 = 96×31 = 48×2×31`（48 层 shared-expert 的 gate+up）、`372 = 12×31`（12 个
+full-attention 层），与层结构吻合。由此推测这三个 grid 分别对应上述模块族；`[640]`
+很可能就是 `shared_expert.gate_proj/up_proj`（权重 `[640,2560]`，M=2048/N=640/K=2560）。
+**但这只是 launch 计数推断**：本 trace 中 triton kernel 的 `External id` 为 null，且 dense
+FP8 不走 `aten::mm`，无法直接关联到 cpu_op 的 `Input Dims`；精确 `(M,N,K)` 与 module 名
+需要额外 hook。
+
+若 `[640]` 确为 shared-expert gate/up：当前是两次独立 FP8 GEMM，可考虑 **gate/up 融合**
+（load 时把两个 `[640,2560]` 权重并成 `[1280,2560]`，一次 GEMM 后 split + `silu(gate)*up`，
+语义不变），可能比盲调该 shape 的 Triton tile 更值得先 microbenchmark。
 
 由此回答两个后续问题：
 1. dense FP8 的确由**少数固定 shape** 主导（2–3 个 grid 吃掉约 90%），因此
    **Thor-specific 的 Triton FP8 shape 调优**是值得做的 kernel 项目（类比 27B 的 tile
    调优），而不是换 backend。
-2. 剩余可动的 GEMM 大头是 **NVFP4 MoE**（约 33%），且走 FlashInfer CUTLASS FP4；
-   若它已接近 SM110 上的实现上限，则属于**上游 FlashInfer 的 Thor kernel** 议题，
-   而非本仓服务配置。
+2. MoE 路径约 33.4%，但其中 grouped FP4 GEMM 只占 22.5%，另外约 10.9% 是周边 pipeline
+   （row expand / activation / routing / finalize / data movement）。即使 grouped GEMM
+   已接近 SM110 上限，这部分 pipeline 仍可能有 fusion/dispatch 优化空间——属于上游
+   FlashInfer/SGLang 的 MoE pipeline 议题。
 
-边界：grid 只是 shape 的代理，kernel 事件不含 Input Dims，精确 `(M,N,K)` 需要 op 级
-correlation；profiler 开启 stack/shape，绝对时间偏大；单次请求、单长度；MoE 的 W13/W2
-未再细分。本页不据此改动任何服务默认。
+边界：grid 只是 shape 的代理；且本 trace 里 triton kernel 的 `External id` 为 null、dense
+FP8 也不走 `aten::mm`，**无法**用现有字段做 op 级 correlation，精确 `(M,N,K)` 与 module
+名需要额外 hook（如给该 triton op 记录 shape）；profiler 开启 stack/shape，绝对时间偏大；
+单次请求、单长度；MoE 的 W13/W2 未再细分。本页不据此改动任何服务默认。
 
 下一轮：若要继续，可对 `_w8a8_block_fp8_matmul` 做精确 shape↔耗时关联并试 Triton
 config；MoE 侧则需要上游 FlashInfer 的 SM110 FP4 grouped GEMM 基准。
