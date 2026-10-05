@@ -1587,3 +1587,40 @@ prefill 分解；不改变 BF16 state / context-length。
 
 下一轮：如需要，做一次 64k 的逐组件 prefill（PLE/GDN/QSA/FA4/FP8 GEMM）分解，确定
 剩余瓶颈；长 prefill 场景建议至少把 chunk 提到 2048。
+
+### 长 prefill 逐组件分解（64k，chunk=2048）
+
+在 `L64_2048` 上用 SGLang 的 `/start_profile` 与 `/stop_profile`（torch profiler，
+`with_stack`/`record_shapes` 默认开启）包住一次约 64k token 的 prefill（64031 token，
+wall 35.09 s），把 chrome trace 导出后在主机上按 GPU kernel 名聚合，并用启发式映射
+归类。kernel 总计 31.63 s，约占请求 wall 的 90%。
+
+| 类别（kernel 名启发式） | kernel 时间 | 占比 |
+| --- | ---: | ---: |
+| cutlass/cuBLAS GEMM（含 MoE cutlass） | 10.64 s | 33.6% |
+| FP8 dense GEMM（`_w8a8_block_fp8_matmul`） | 5.72 s | 18.1% |
+| 稀疏注意力（`_sparse_gqa_chunk_prefill`） | 3.27 s | 10.4% |
+| GDN（chunk gated delta rule / conv1d 等） | 2.52 s | 8.0% |
+| FP4 kernel | 2.40 s | 7.6% |
+| hyper-connection（`hc_combine`） | 1.66 s | 5.3% |
+| activation/softmax | 1.58 s | 5.0% |
+| elementwise/copy | 1.47 s | 4.6% |
+| norm | 0.71 s | 2.2% |
+| QSA indexer top-k | 0.57 s | 1.8% |
+| PLE / embedding gather | 0.29 s | 0.9% |
+| 其它 | 0.78 s | 2.5% |
+
+结论：64k prefill 是 **GEMM 主导**——通用 cutlass/cuBLAS GEMM（含 MoE grouped GEMM）
+33.6% + FP8 dense 18.1% + FP4 7.6%，合计约 59%；稀疏注意力约 10%，GDN 约 8%；
+PLE 常驻不是 prefill 瓶颈（<1%）。这与「prefill 是 target 计算问题、chunk 是调度层
+收益」一致：进一步优化应针对 MoE grouped GEMM、dense FP8（`w8a8_block_fp8_matmul`
+占 18% 说明 dense 侧在吃掉可观时间）与稀疏注意力的 kernel/后端选择。
+
+边界：类别来自 kernel 名启发式映射（cutlass 桶混合了 MoE 与通用 GEMM，`other` 2.5%）；
+profiler 开启 `with_stack`/`record_shapes`，绝对值会被放大，只有相对占比有意义；单次
+请求、单长度，不是 nsys 时间线。对照结束后服务停止，容器清理，MemAvailable 约 119.5 GiB，
+并恢复原 `G1` 运行时 unit 链接。trace 与 request 结果保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run24/`（含 178 MB trace，不入库）。
+
+下一轮：如要继续，可针对 dense FP8 与 MoE GEMM 做后端/kernel 选择实验，或把 chunk 默认
+提升到 2048 并复测长上下文端到端；不改变 BF16 state / context-length。
