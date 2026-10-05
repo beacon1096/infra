@@ -1324,7 +1324,9 @@ declared profile `M1K`（= `M1M`，KV 为 fp8_e4m3）。服务正常加载，run
 起点。结论：**当前 owned 基线本身就是 FP8 dense**，没有可切换的「dense 精度」参数。
 
 `target/config.json` 的 `quantization_config.quantized_layers` 共 397 项 =
-96 `NVFP4` + 301 `FP8_PB_WO`。按 `model.language_model.layers` 前缀归类：
+96 `NVFP4` + 301 `FP8_PB_WO`；其中 48 个 NVFP4 是 `model.layers.N.mlp.experts` 形式的
+别名，`weight_map` 中只有 `model.language_model.*` 张量，去重后为 48 `NVFP4` +
+301 `FP8_PB_WO` = 349 个模块。按 `model.language_model.layers` 前缀归类：
 
 | 模块 | 数量 | quant_algo |
 | --- | ---: | --- |
@@ -1340,8 +1342,13 @@ safetensors 实测 dtype 与之一致，例如
 `U8`（NVFP4）。
 
 因此 `M1M`（及 `G1` 等 owned 图）在 dense 轴上等价于声明中的 **F3/F4（FP8 dense）**，
-只不过使用 owned 的 `RadixArk` target 配置与全词表 MTP，而非 vendor 覆盖配置。尚未
-量化、仍为 BF16 的只有 `embed_tokens`(PLE)、`hyper_connection_mixer.*` 与各 norm。
+只不过使用 owned 的 `RadixArk` target 配置与全词表 MTP，而非 vendor 覆盖配置。
+
+「dense = 大矩阵乘」为 FP8，但仍为 BF16 的并非只有 norm：还包括 `embed_tokens`(PLE)、
+`hyper_connection_mixer.*`、各 norm（`q_norm`/`k_norm`/`hc_norm` 等）、`linear_attn` 的
+卷积/门控参数（`A_log`、`conv1d`、`dt_bias`、`in_proj_a`、`in_proj_b`）、router
+（`mlp.gate`、`shared_expert_gate`）、`self_attn.indexer.*`、全部 `mtp.*` 张量，以及
+整个 `model.visual.*` 视觉塔。
 
 声明的反向轴（F0–F2 的 BF16 dense）需要把 301 个 `FP8_PB_WO` 张量反量化成 BF16 并
 生成转换工件，本仓未做；本页不声称做过该对照，也不据此改变任何服务默认。若要继续
