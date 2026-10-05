@@ -445,6 +445,12 @@ class DecodeGraphModuleChecks(unittest.TestCase):
             kvOnly = extract (system.extendModules {
               modules = [ { services.thorFlashNext.kvCacheDtype = "fp8_e4m3"; } ];
             });
+            chunk1024 = extract (system.extendModules {
+              modules = [ {
+                services.thorFlashNext.decodeGraph = true;
+                services.thorFlashNext.chunkedPrefillSize = 1024;
+              } ];
+            });
           }
         ''' % json.dumps(str(ROOT))
         result = subprocess.run(
@@ -603,6 +609,15 @@ class DecodeGraphModuleChecks(unittest.TestCase):
         self.assertEqual(kv["arguments"].count("--kv-cache-dtype"), 1)
         self.assertEqual(kv["arguments"][kv["arguments"].index("--kv-cache-dtype") + 1], "fp8_e4m3")
         self.assertEqual({key: value for key, value in kv.items() if key not in {"name", "arguments"}},
+                         {key: value for key, value in default.items() if key not in {"name", "arguments"}})
+
+    def test_chunked_prefill_size_override_replaces_single_argument(self):
+        default = json.loads(self.evaluated["default"]["baselineText"])
+        self.assertEqual(default["arguments"][default["arguments"].index("--chunked-prefill-size") + 1], "512")
+        chunk = json.loads(self.evaluated["chunk1024"]["baselineText"])
+        self.assertEqual(chunk["arguments"].count("--chunked-prefill-size"), 1)
+        self.assertEqual(chunk["arguments"][chunk["arguments"].index("--chunked-prefill-size") + 1], "1024")
+        self.assertEqual({key: value for key, value in chunk.items() if key not in {"name", "arguments"}},
                          {key: value for key, value in default.items() if key not in {"name", "arguments"}})
 
     def test_mamba_state_dtype_override_replaces_single_argument(self):

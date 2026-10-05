@@ -44,8 +44,11 @@ let
       withKv =
         if config.services.thorFlashNext.kvCacheDtype == null then withState
         else setArgument "--kv-cache-dtype" config.services.thorFlashNext.kvCacheDtype withState;
+      withChunk =
+        if config.services.thorFlashNext.chunkedPrefillSize == null then withKv
+        else setArgument "--chunked-prefill-size" (toString config.services.thorFlashNext.chunkedPrefillSize) withKv;
     in
-    withKv ++ metricsArguments ++ tokenMapArguments;
+    withChunk ++ metricsArguments ++ tokenMapArguments;
   graphBaseline = if config.services.thorFlashNext.decodeGraph then decodeGraphBaseline else baseline;
   mtpBaseline = graphBaseline // {
     name = graphBaseline.name + " + NEXTN full-vocab MTP";
@@ -63,7 +66,8 @@ let
     || config.services.thorFlashNext.metrics
     || config.services.thorFlashNext.maxTotalTokens != null
     || config.services.thorFlashNext.mambaStateDtype != null
-    || config.services.thorFlashNext.kvCacheDtype != null;
+    || config.services.thorFlashNext.kvCacheDtype != null
+    || config.services.thorFlashNext.chunkedPrefillSize != null;
   baselineName =
     if config.services.thorFlashNext.mtp then
       (if config.services.thorFlashNext.tokenMap then
@@ -156,6 +160,11 @@ in
     type = lib.types.nullOr (lib.types.enum [ "bfloat16" "fp8_e4m3" ]);
     default = null;
     description = "Override --kv-cache-dtype for the KV precision axis.";
+  };
+  options.services.thorFlashNext.chunkedPrefillSize = lib.mkOption {
+    type = lib.types.nullOr lib.types.ints.positive;
+    default = null;
+    description = "Override --chunked-prefill-size for long-prefill scheduling experiments.";
   };
 
   config = {

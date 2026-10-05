@@ -1563,3 +1563,27 @@ target 前向本身。这与其它 MTP 长上下文轮的 64k 时间（51.8–53
 
 下一轮：扫 `chunked_prefill_size` 512/1024/2048（27B 用 1024），并做一次 64k 的逐组件
 prefill 分解；不改变 BF16 state / context-length。
+
+### 长 prefill：chunked_prefill_size 扫描（512/1024/2048/4096）
+
+固定 `L64` 其余设置（MTP、65536、BF16 KV、C1 graph），只改 `--chunked-prefill-size`，
+跑同一条约 64k token 的 needle prompt：
+
+| chunked_prefill_size | Wall（s） | 输入吞吐（约 tok/s） |
+| ---: | ---: | ---: |
+| 512（原基线） | 52.15 | 1228 |
+| 1024 | 40.96 | 1563 |
+| 2048 | 33.90 | 1889 |
+| 4096 | 31.14 | 2056 |
+
+即把 chunk 从 512 提到 4096，64k prefill 约 **1.67×**（52.15→31.14 s），收益在 2048
+之后开始收敛；四档均正确检索、内存约 33–34 GiB 余量、温度 ≤52 °C。chunk 大小是长
+prefill 的一阶旋钮：512→1024 已有约 −21%。
+
+边界：单长度（约 64k）、单 prompt；未与更长上下文或 FP8 KV 组合；吞吐仍按含 5 个输出
+token 的整请求 wall 粗算；未做逐组件分解。对照结束后服务停止，容器清理，MemAvailable
+约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/{run21,run22,run23}/`。
+
+下一轮：如需要，做一次 64k 的逐组件 prefill（PLE/GDN/QSA/FA4/FP8 GEMM）分解，确定
+剩余瓶颈；长 prefill 场景建议至少把 chunk 提到 2048。
