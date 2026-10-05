@@ -1539,3 +1539,27 @@ prefill 期的主机内存压力，而该压力同时来自 PLE file-backed mmap
 
 下一轮：如需精确边界，可在 128k–160k 间细分，或提高护栏/内存预算复测；否则长 prefill
 默认保留 FP8 KV。
+
+### 长 prefill 归因：target 与 MTP（G64 与 L64）
+
+针对「长 prefill 慢是否来自 MTP draft」的问题，新增 declared profile `G64`
+（= `G1`/target-only，`max_total_tokens = 65536`，无 speculation），与同配置但启用 MTP
+的 `L64` 跑同一条约 64k token 的 needle prompt：
+
+| 档位 | prompt token | 结果 | Wall（s） | 最低 MemAvailable |
+| --- | ---: | --- | ---: | ---: |
+| `G64`（target-only） | 64031 | `6183` | 51.00 | 34.91 GiB |
+| `L64`（MTP） | 64031 | `6183` | 52.15 | 32.38 GiB |
+
+即 MTP draft prefill 只增加约 **1.15 s（约 2.3%）**；约 98% 的 64k prefill 时间是
+target 前向本身。这与其它 MTP 长上下文轮的 64k 时间（51.8–53.0 s）一致。因此长 prefill
+的优化目标应是 target 计算路径（PLE / GDN / QSA / FA4 / FP8 GEMM）与 chunk 调度，
+而不是 speculative。MTP 主要影响 decode，不影响 prefill。
+
+边界：单 prompt、单长度（约 64k），wall 含 5 个输出 token；未做逐组件分解（Nsight 待做）；
+未扫 prefill chunk 大小。对照结束后服务停止，容器清理，MemAvailable 约 120.0 GiB，并
+恢复原 `G1` 运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/{run19,run20}/`。
+
+下一轮：扫 `chunked_prefill_size` 512/1024/2048（27B 用 1024），并做一次 64k 的逐组件
+prefill 分解；不改变 BF16 state / context-length。
