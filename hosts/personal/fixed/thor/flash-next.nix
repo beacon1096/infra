@@ -41,8 +41,11 @@ let
       withState =
         if config.services.thorFlashNext.mambaStateDtype == null then withTokens
         else setArgument "--mamba-ssm-dtype" config.services.thorFlashNext.mambaStateDtype withTokens;
+      withKv =
+        if config.services.thorFlashNext.kvCacheDtype == null then withState
+        else setArgument "--kv-cache-dtype" config.services.thorFlashNext.kvCacheDtype withState;
     in
-    withState ++ metricsArguments ++ tokenMapArguments;
+    withKv ++ metricsArguments ++ tokenMapArguments;
   graphBaseline = if config.services.thorFlashNext.decodeGraph then decodeGraphBaseline else baseline;
   mtpBaseline = graphBaseline // {
     name = graphBaseline.name + " + NEXTN full-vocab MTP";
@@ -59,7 +62,8 @@ let
     || config.services.thorFlashNext.decodeGraph
     || config.services.thorFlashNext.metrics
     || config.services.thorFlashNext.maxTotalTokens != null
-    || config.services.thorFlashNext.mambaStateDtype != null;
+    || config.services.thorFlashNext.mambaStateDtype != null
+    || config.services.thorFlashNext.kvCacheDtype != null;
   baselineName =
     if config.services.thorFlashNext.mtp then
       (if config.services.thorFlashNext.tokenMap then
@@ -147,6 +151,11 @@ in
     type = lib.types.nullOr (lib.types.enum [ "float32" "bfloat16" ]);
     default = null;
     description = "Override --mamba-ssm-dtype for the recurrent state precision axis.";
+  };
+  options.services.thorFlashNext.kvCacheDtype = lib.mkOption {
+    type = lib.types.nullOr (lib.types.enum [ "bfloat16" "fp8_e4m3" ]);
+    default = null;
+    description = "Override --kv-cache-dtype for the KV precision axis.";
   };
 
   config = {

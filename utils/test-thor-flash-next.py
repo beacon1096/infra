@@ -436,6 +436,15 @@ class DecodeGraphModuleChecks(unittest.TestCase):
             dtypeOnly = extract (system.extendModules {
               modules = [ { services.thorFlashNext.mambaStateDtype = "bfloat16"; } ];
             });
+            fp8Kv = extract (system.extendModules {
+              modules = [ {
+                services.thorFlashNext.decodeGraph = true;
+                services.thorFlashNext.kvCacheDtype = "fp8_e4m3";
+              } ];
+            });
+            kvOnly = extract (system.extendModules {
+              modules = [ { services.thorFlashNext.kvCacheDtype = "fp8_e4m3"; } ];
+            });
           }
         ''' % json.dumps(str(ROOT))
         result = subprocess.run(
@@ -578,13 +587,23 @@ class DecodeGraphModuleChecks(unittest.TestCase):
 
     def test_single_axis_overrides_generate_baseline_without_other_flags(self):
         for variant, argument, value in (("tokensOnly", "--max-total-tokens", "16384"),
-                                         ("dtypeOnly", "--mamba-ssm-dtype", "bfloat16")):
+                                         ("dtypeOnly", "--mamba-ssm-dtype", "bfloat16"),
+                                         ("kvOnly", "--kv-cache-dtype", "fp8_e4m3")):
             with self.subTest(variant=variant):
                 generated = json.loads(self.evaluated[variant]["baselineText"])
                 self.assertEqual(generated["arguments"].count(argument), 1)
                 self.assertEqual(generated["arguments"][generated["arguments"].index(argument) + 1], value)
                 name = Path(self.evaluated[variant]["service"]["environment"]["BASELINE_FILE"]).name
                 self.assertTrue(name.endswith("-thor-flash-next-adjusted.json"))
+
+    def test_kv_cache_dtype_override_replaces_single_argument(self):
+        default = json.loads(self.evaluated["default"]["baselineText"])
+        self.assertEqual(default["arguments"][default["arguments"].index("--kv-cache-dtype") + 1], "bfloat16")
+        kv = json.loads(self.evaluated["fp8Kv"]["baselineText"])
+        self.assertEqual(kv["arguments"].count("--kv-cache-dtype"), 1)
+        self.assertEqual(kv["arguments"][kv["arguments"].index("--kv-cache-dtype") + 1], "fp8_e4m3")
+        self.assertEqual({key: value for key, value in kv.items() if key not in {"name", "arguments"}},
+                         {key: value for key, value in default.items() if key not in {"name", "arguments"}})
 
     def test_mamba_state_dtype_override_replaces_single_argument(self):
         default = json.loads(self.evaluated["default"]["baselineText"])

@@ -1283,3 +1283,37 @@ raw/evidence 保留在私有 `/var/lib/thor-flash-next/observations/mtp-20261005
 
 下一轮：若要继续精度轴，优先评估 FP8 KV（有现成参数）或为 FP8 dense 准备转换工件；
 否则把 BF16 state 作为省内存选项记录，默认仍保持 FP32 state。
+
+### KV 精度轴：FP8 KV（M1K 与 M1M）
+
+新增 opt-in `services.thorFlashNext.kvCacheDtype`（非空时替换 `--kv-cache-dtype`），并新增
+declared profile `M1K`（= `M1M`，KV 为 fp8_e4m3）。服务正常加载，runtime 记录核验
+`kv_cache_dtype = fp8_e4m3`，其余与 `M1M` 相同。
+
+8192 token 预算下的 KV 分配：BF16 为 `K 0.09 / V 0.09 GB`，FP8 为 `K 0.05 / V 0.05 GB`
+（约减半，但绝对值仅约 0.18 → 0.10 GB）。
+
+中位数对照（`M1M` BF16 KV vs `M1K` FP8 KV，每 case 3 次）：
+
+| Case | M1M BF16 KV pass / tok/s / len / rate | M1K FP8 KV pass / tok/s / len / rate |
+| --- | --- | --- |
+| natural-prose-off | 3/3 · 35.2 · 2.10 · 0.37 | 3/3 · 31.5 · 1.96 · 0.32 |
+| natural-prose-low | 3/3 · 39.5 · 2.27 · 0.42 | 3/3 · 36.2 · 2.12 · 0.38 |
+| natural-prose-narrative-off | 3/3 · 34.1 · 2.17 · 0.39 | 3/3 · 32.7 · 2.05 · 0.35 |
+| python-interval-repair-ast | 0/3 · 54.8 · 3.42 · 0.81 | 0/3 · 54.7 · 3.40 · 0.80 |
+| thinking-digit-low | 3/3 · 58.1 · 3.65 · 0.88 | 3/3 · 54.0 · 3.38 · 0.79 |
+| thinking-ledger32-low | 3/3 · 62.4 · 3.98 · 0.99 | 3/3 · 61.0 · 3.90 · 0.97 |
+
+严格结果两版一致（prose/thinking 全通过，python 都 0/3）；FP8 KV 略慢（prose 约
+−8% 到 −12%，digit −7%），接受率略低。在 8192 预算下 KV 绝对值很小，省下的约
+0.08 GB 不足以补偿速度损失，因此短上下文下 FP8 KV 并不划算；只有在 KV 占主导的
+超长上下文才可能值得。
+
+边界：短上下文、粗 gate、每 case 3 次；未做 FP8 KV 的长上下文质量评估（此前 vLLM
+路径曾提到 FP8 KV 的长推理质量回归），因此不能据此判断长上下文下的正确性。对照
+结束后服务停止，容器清理，MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit
+链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run11/`。
+
+下一轮：可把 FP8 KV 与长上下文组合（例如 L32 + fp8 KV），确认省下的 KV 是否能支撑
+更大预算以及质量是否保持；否则保留 BF16 KV，并把 FP8 KV 记为长上下文候选项。
