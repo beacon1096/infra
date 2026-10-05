@@ -19,7 +19,7 @@
 | Qwen3.8-27B 原版 NVFP4 | [复测与启动配置](model/qwen3.8-27b/original.md) | 常规解码、MTP、DFlash2 与 FA4 对比 |
 | Huihui Qwen3.8-27B NVFP4 | [试验与性能分析](model/qwen3.8-27b/huihui.md) | 修改版目标模型、能力检查、DFlash2 与输出头分析 |
 | Qwen3.8 Flash Next 懒猫官方应用 | [官方部署与基准测试](../../../inventory/guanggu/lcmd/thor-apps/qwen3.8-flash-next.md) | 应用与运行时版本、K16、8 请求调度、5K 预填充和 260K 上下文 |
-| Qwen3.8 Flash Next 实验性适配 | [部署与性能](model/qwen3.8-flash-next/original.md) | SM110 修复、K3/原生 GDN、草稿头量化和目标模型性能分析 |
+| Qwen3.8 Flash Next 自建 SGLang 与早期 vLLM 实验 | [部署与性能](model/qwen3.8-flash-next/original.md) | 自建 SGLang S0/G1、原生 NEXTN MTP、32768 词表 map、长上下文到 262K、state/KV 精度轴；以及早期 vLLM SM110 修复、K3/原生 GDN 与草稿头量化 |
 | MiniMax H3 VDN FP8 | [官方部署与基准测试](../../../inventory/guanggu/lcmd/thor-apps/minimax-h3.md) | 懒猫应用与运行时组成、API 限制和三种配置的计时矩阵 |
 | DeepSeek-v4 Flash | [可行性评估](model/deepseek-v4-flash.md) | 容量与架构约束；未部署 |
 
