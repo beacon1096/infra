@@ -1444,3 +1444,26 @@ MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。raw/evide
 
 下一轮：转入长上下文质量评估（真实长 prompt 多任务），或在这条 needle 曲线上补更多
 深度/位置；不改变 BF16 state / context-length。
+
+### 长上下文质量：FP8 KV 与 BF16 KV（L64K 与 L64）
+
+为检验 FP8 KV 是否损质量，新增 declared profile `L64`（= `L64K`，仅 KV 为 bfloat16），
+并用同一长文档多事实任务对照：约 32.9k token 的文档中散布 12 组「颜色→整数代码」，
+要求只输出 JSON `{pairs, count, total}`，与 ground truth 精确比对；greedy、每档 3 次。
+
+| 档位 | 严格通过 | prompt token | Wall 中位（s） |
+| --- | --- | ---: | ---: |
+| `L64`（BF16 KV） | 3/3 | 32906 | 28.71 |
+| `L64K`（FP8 KV） | 3/3 | 32906 | 29.88 |
+
+两档都精确返回全部 12 组映射、count 与 total；FP8 KV 约慢 4%。即在这个长文档多事实
+聚合任务上 **FP8 KV 未见质量回归**，此前 vLLM 路径提到的 FP8 KV 长推理质量回归在本
+样本下没有复现。
+
+边界：单一任务家族、单一长度（约 33k）、12 个事实、greedy、每档 3 次；不是广泛质量
+评估，也不能排除其它任务/更长上下文下的差异；无 thinking。对照结束后服务停止，容器
+清理，MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。raw/evidence 保留在
+私有 `/var/lib/thor-flash-next/observations/mtp-20261005/{run15,run16}/`。
+
+下一轮：可扩大质量样本（更多任务/长度/事实数）或转运维收尾；不改变 BF16 state /
+context-length。
