@@ -1519,14 +1519,17 @@ draft head 成本」，对通用 Agent 不适合。
 | 128021 | 正确 `6183` | 111.67 |
 | 160031 | 连接被断开（内存护栏停止服务） | 138.88 |
 
-第 4 档期间 `thor-flash-next-memwatch` 在 `MemAvailable≈12.3 GiB`（随后一度约 7 GiB）
-触发 12 GiB 阈值并 `systemctl stop`，`/proc/meminfo` 采样最低 7.18 GiB。对照 `L256K`
-（FP8 KV）在 250031/261041 时最低仍有约 20 GiB、可正常返回。
+第 4 档期间 `thor-flash-next-memwatch` 因 `MemAvailable` 连续 5 秒低于 12 GiB 而
+`systemctl stop`：run17 记录 `12327060 KiB`（约 11.8 GiB），run18 记录 `11078000 KiB`
+（约 10.6 GiB），`/proc/meminfo` 采样最低 7.18 GiB。对照 `L256K`（FP8 KV）在
+250031/261041 时最低仍有约 20 GiB、可正常返回。
 
-结论：在 262144 预算下，**BF16 KV 只能覆盖到约 128k prompt 的 long prefill，约 160k
-会触发内存护栏**；而 FP8 KV 到 261k 仍稳定。因此在本机（12 GiB 护栏）下，FP8 KV
-不是单纯的容量选项，而是 **256K 长 prefill 的必要条件**。此前「C1 下 262K 很可能不需要
-FP8 KV」的推断被此结果否定（其基于静态 KV 大小估算，未计入 prefill 期的峰值）。
+观察：在 262144 预算下，BF16 KV 到约 128k prompt 的 long prefill 仍正常，约 160k
+触发本机 12 GiB 内存护栏；FP8 KV 到 261k 仍稳定。本结果**不支持**「C1 下 262K 不需要
+FP8 KV」的推断——只按静态 GPU KV 大小（BF16 约 6.5 GB，实测仍能容下）估算会忽略
+prefill 期的主机内存压力，而该压力同时来自 PLE file-backed mmap 与页缓存，因此本实验
+**未隔离 KV dtype 与主机内存行为各自的贡献**；不过实践上，在本机当前护栏下 FP8 KV
+是 262K 长 prefill 的可行前提。
 
 边界：单 needle、单一预算档（262144）；边界落在 128k–160k 之间但未细分；失败是主机内存
 护栏主动停止服务，不是模型错误；护栏会留下 `/run/thor-flash-next/memory-stop` 闩锁，
