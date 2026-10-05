@@ -1190,3 +1190,31 @@ runner、每 case 3 次重复、同一组 prompt（共享前缀、每次 seed �
 下一轮：若要采用分场景策略，需要可切换的 token-map 路由与真实任务 A/B；否则保持
 `M1M` 全词表，并把 token map 作为结构化服务的前景项记录，不改变 BF16 state /
 FP8 KV / 上下文长度。
+
+### MTP 质量对照：G1 与 M1M
+
+2026-10-05，用当前树重建 `G1`（target-only，C1 full decode graph，无 MTP），对与
+`run5`（`M1M`）完全相同的 6 个 case、3 次重复、同 runner 与参数做质量对照；两轮均
+0 传输失败。`G1` 未启用 `/metrics`，因此不接受率采样。
+
+| Case | G1 pass / tok/s | M1M pass / tok/s |
+| --- | --- | --- |
+| natural-prose-off | 3/3 · 29.1 | 3/3 · 35.2 |
+| natural-prose-low | 3/3 · 29.3 | 3/3 · 39.5 |
+| natural-prose-narrative-off | 3/3 · 28.8 | 3/3 · 34.1 |
+| python-interval-repair-ast | 0/3 · 29.5 | 0/3 · 54.8 |
+| thinking-digit-low | 3/3 · 29.3 | 3/3 · 58.1 |
+| thinking-ledger32-low | 3/3 · 29.5 | 3/3 · 62.4 |
+
+严格结果两版逐 case 完全一致：prose 与 thinking 全部 3/3 通过，`python-interval-repair-ast`
+在两版下都是 0/3。即在这批 gate 下 **MTP 没有可检测的质量回归**，同时结构化任务约
+1.98–2.12 倍、开放文本约 +17% 到 +35%。`python-interval-repair-ast` 的稳定失败在
+target-only 下同样出现，因此是模型/任务行为，与 MTP 无关。
+
+边界：gate 较粗（Python 仅语法/assert 存在性、thinking 为精确 JSON、prose 仅自然结束
+与长度），greedy、短上下文、每 case 3 次；这不是完整质量等价或人工评分。对照结束后
+服务停止，容器清理，MemAvailable 约 120.0 GiB，并保持原 `G1` 运行时 unit 链接。
+raw/evidence 保留在私有 `/var/lib/thor-flash-next/observations/mtp-20261005/run7/`。
+
+结论：现有证据支持在结构化负载上使用原生 MTP，且未见质量回归；默认仍保持实验性，
+不晋升生产配置。下一步转向长上下文能力验证。
