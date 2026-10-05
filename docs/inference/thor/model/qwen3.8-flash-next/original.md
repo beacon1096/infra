@@ -1247,3 +1247,39 @@ needle-in-haystack：在一个固定填充句的重复中、约一半深度处�
 
 下一轮：可按同样方式测试 65536/131072 档位与多深度 NIAH，确认容量与检索随长度是否
 保持；不改变 BF16 state / FP8 KV / context-length。
+
+### 精度轴：BF16 SSM state（M1B 与 M1M）
+
+用户放开「暂不改精度」后，先选无需转换工件的 state 轴：新增 opt-in
+`services.thorFlashNext.mambaStateDtype`（非空时替换 `--mamba-ssm-dtype`），并新增
+declared profile `M1B`（= `M1M`，但 SSM state 为 bfloat16）。服务正常加载，runtime
+记录核验 `mamba_ssm_dtype = bfloat16`；其余（MTP、draft、C1 graph、BF16 KV）与 `M1M`
+相同。
+
+加载时 Mamba cache 分配（`max_mamba_cache_size: 8`）从 FP32 的
+`ssm_state 0.95 GB / intermediate_ssm_state_cache 0.84 GB` 降到 BF16 的
+`ssm_state 0.47 GB / intermediate_ssm_state_cache 0.42 GB`，即 state 常驻约减少
+0.9 GB（其余 conv/window 不变）。
+
+中位数对照（`M1M` FP32 vs `M1B` BF16，每 case 3 次）：
+
+| Case | M1M FP32 pass / tok/s / len / rate | M1B BF16 pass / tok/s / len / rate |
+| --- | --- | --- |
+| natural-prose-off | 3/3 · 35.2 · 2.10 · 0.37 | 3/3 · 36.8 · 2.12 · 0.38 |
+| natural-prose-low | 3/3 · 39.5 · 2.27 · 0.42 | 3/3 · 37.8 · 2.17 · 0.39 |
+| natural-prose-narrative-off | 3/3 · 34.1 · 2.17 · 0.39 | 3/3 · 33.8 · 2.02 · 0.34 |
+| python-interval-repair-ast | 0/3 · 54.8 · 3.42 · 0.81 | 1/3 · 58.5 · 3.50 · 0.83 |
+| thinking-digit-low | 3/3 · 58.1 · 3.65 · 0.88 | 3/3 · 59.1 · 3.50 · 0.83 |
+| thinking-ledger32-low | 3/3 · 62.4 · 3.98 · 0.99 | 3/3 · 64.8 · 3.98 · 0.99 |
+
+在此样本下未检测到质量回归（`python-interval-repair-ast` 在 BF16 state 下还偶然通过
+一次），吞吐与接受率基本持平。因此 BF16 SSM state 可作为省内存候选项（约省 0.9 GB），
+但需要更大样本与更长上下文确认数值稳定性。
+
+边界：只改了 state dtype；FP8 dense（F3/F4）与 FP8 KV 仍未做，FP8 dense 需要转换工件；
+gate 仍较粗（语法/精确 JSON/长度），greedy、短上下文、每 case 3 次。对照结束后服务
+停止，容器清理，MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。
+raw/evidence 保留在私有 `/var/lib/thor-flash-next/observations/mtp-20261005/run10/`。
+
+下一轮：若要继续精度轴，优先评估 FP8 KV（有现成参数）或为 FP8 dense 准备转换工件；
+否则把 BF16 state 作为省内存选项记录，默认仍保持 FP32 state。

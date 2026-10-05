@@ -371,6 +371,7 @@ class DecodeGraphModuleChecks(unittest.TestCase):
                 tokenMapEnabled = evaluated.config.services.thorFlashNext.tokenMap;
                 tokenMapOptionDefault = evaluated.options.services.thorFlashNext.tokenMap.default;
                 maxTotalTokensDefault = evaluated.options.services.thorFlashNext.maxTotalTokens.default;
+                stateDtypeDefault = evaluated.options.services.thorFlashNext.mambaStateDtype.default;
                 baselineText = builtins.readFile service.environment.BASELINE_FILE;
                 service = {
                   inherit (service) environment serviceConfig requires bindsTo after conflicts wantedBy;
@@ -421,6 +422,12 @@ class DecodeGraphModuleChecks(unittest.TestCase):
               modules = [ {
                 services.thorFlashNext.decodeGraph = true;
                 services.thorFlashNext.maxTotalTokens = 32768;
+              } ];
+            });
+            bf16State = extract (system.extendModules {
+              modules = [ {
+                services.thorFlashNext.decodeGraph = true;
+                services.thorFlashNext.mambaStateDtype = "bfloat16";
               } ];
             });
           }
@@ -561,6 +568,16 @@ class DecodeGraphModuleChecks(unittest.TestCase):
         index = long_ctx["arguments"].index("--max-total-tokens")
         self.assertEqual(long_ctx["arguments"][index + 1], "32768")
         self.assertEqual({key: value for key, value in long_ctx.items() if key not in {"name", "arguments"}},
+                         {key: value for key, value in default.items() if key not in {"name", "arguments"}})
+
+    def test_mamba_state_dtype_override_replaces_single_argument(self):
+        default = json.loads(self.evaluated["default"]["baselineText"])
+        self.assertIsNone(self.evaluated["default"]["stateDtypeDefault"])
+        self.assertEqual(default["arguments"][default["arguments"].index("--mamba-ssm-dtype") + 1], "float32")
+        state = json.loads(self.evaluated["bf16State"]["baselineText"])
+        self.assertEqual(state["arguments"].count("--mamba-ssm-dtype"), 1)
+        self.assertEqual(state["arguments"][state["arguments"].index("--mamba-ssm-dtype") + 1], "bfloat16")
+        self.assertEqual({key: value for key, value in state.items() if key not in {"name", "arguments"}},
                          {key: value for key, value in default.items() if key not in {"name", "arguments"}})
 
     def test_token_map_defaults_off_and_appends_relative_path(self):

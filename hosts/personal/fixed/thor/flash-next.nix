@@ -34,9 +34,15 @@ let
     assert index != null;
     lib.take index arguments ++ [ name value ] ++ lib.drop (index + 2) arguments;
   adjustArguments = arguments:
-    (if config.services.thorFlashNext.maxTotalTokens == null then arguments
-     else setArgument "--max-total-tokens" (toString config.services.thorFlashNext.maxTotalTokens) arguments)
-    ++ metricsArguments ++ tokenMapArguments;
+    let
+      withTokens =
+        if config.services.thorFlashNext.maxTotalTokens == null then arguments
+        else setArgument "--max-total-tokens" (toString config.services.thorFlashNext.maxTotalTokens) arguments;
+      withState =
+        if config.services.thorFlashNext.mambaStateDtype == null then withTokens
+        else setArgument "--mamba-ssm-dtype" config.services.thorFlashNext.mambaStateDtype withTokens;
+    in
+    withState ++ metricsArguments ++ tokenMapArguments;
   graphBaseline = if config.services.thorFlashNext.decodeGraph then decodeGraphBaseline else baseline;
   mtpBaseline = graphBaseline // {
     name = graphBaseline.name + " + NEXTN full-vocab MTP";
@@ -126,6 +132,11 @@ in
     type = lib.types.nullOr lib.types.ints.positive;
     default = null;
     description = "Override --max-total-tokens (KV budget) for long-context experiments.";
+  };
+  options.services.thorFlashNext.mambaStateDtype = lib.mkOption {
+    type = lib.types.nullOr (lib.types.enum [ "float32" "bfloat16" ]);
+    default = null;
+    description = "Override --mamba-ssm-dtype for the recurrent state precision axis.";
   };
 
   config = {
