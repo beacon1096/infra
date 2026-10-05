@@ -1317,3 +1317,33 @@ declared profile `M1K`（= `M1M`，KV 为 fp8_e4m3）。服务正常加载，run
 
 下一轮：可把 FP8 KV 与长上下文组合（例如 L32 + fp8 KV），确认省下的 KV 是否能支撑
 更大预算以及质量是否保持；否则保留 BF16 KV，并把 FP8 KV 记为长上下文候选项。
+
+### dense 精度确认：当前基线即 FP8 dense
+
+2026-10-05 只读核查固定 `RadixArk` target，以确认声明中「dense 精度轴」（F0–F4）的
+起点。结论：**当前 owned 基线本身就是 FP8 dense**，没有可切换的「dense 精度」参数。
+
+`target/config.json` 的 `quantization_config.quantized_layers` 共 397 项 =
+96 `NVFP4` + 301 `FP8_PB_WO`。按 `model.language_model.layers` 前缀归类：
+
+| 模块 | 数量 | quant_algo |
+| --- | ---: | --- |
+| `mlp.experts` | 48 | NVFP4 |
+| `linear_attn.in_proj_qkv` / `in_proj_z` / `out_proj` | 36 / 36 / 36 | FP8_PB_WO |
+| `mlp.shared_expert.down_proj` / `gate_proj` / `up_proj` | 48 / 48 / 48 | FP8_PB_WO |
+| `self_attn.q/k/v/o_proj`（每 4 层一个 full attention） | 12 each（共 48） | FP8_PB_WO |
+| `lm_head` | 1 | FP8_PB_WO |
+
+safetensors 实测 dtype 与之一致，例如
+`...linear_attn.in_proj_qkv.weight` 为 `F8_E4M3 [10240,2560]` + `F32` block scale，
+`...mlp.shared_expert.gate_proj.weight` 为 `F8_E4M3 [640,2560]` + `F32`，专家为打包
+`U8`（NVFP4）。
+
+因此 `M1M`（及 `G1` 等 owned 图）在 dense 轴上等价于声明中的 **F3/F4（FP8 dense）**，
+只不过使用 owned 的 `RadixArk` target 配置与全词表 MTP，而非 vendor 覆盖配置。尚未
+量化、仍为 BF16 的只有 `embed_tokens`(PLE)、`hyper_connection_mixer.*` 与各 norm。
+
+声明的反向轴（F0–F2 的 BF16 dense）需要把 301 个 `FP8_PB_WO` 张量反量化成 BF16 并
+生成转换工件，本仓未做；本页不声称做过该对照，也不据此改变任何服务默认。若要继续
+dense 轴，优先考虑把仍为 BF16 的 `embed_tokens`/`hyper_connection_mixer` 转成 FP8
+以进一步省内存，或按 F0–F2 生成 BF16-dense 工件做反向对照。
