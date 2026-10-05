@@ -370,6 +370,7 @@ class DecodeGraphModuleChecks(unittest.TestCase):
                 metricsOptionDefault = evaluated.options.services.thorFlashNext.metrics.default;
                 tokenMapEnabled = evaluated.config.services.thorFlashNext.tokenMap;
                 tokenMapOptionDefault = evaluated.options.services.thorFlashNext.tokenMap.default;
+                maxTotalTokensDefault = evaluated.options.services.thorFlashNext.maxTotalTokens.default;
                 baselineText = builtins.readFile service.environment.BASELINE_FILE;
                 service = {
                   inherit (service) environment serviceConfig requires bindsTo after conflicts wantedBy;
@@ -414,6 +415,12 @@ class DecodeGraphModuleChecks(unittest.TestCase):
                 services.thorFlashNext.decodeGraph = true;
                 services.thorFlashNext.metrics = true;
                 services.thorFlashNext.tokenMap = true;
+              } ];
+            });
+            longContext = extract (system.extendModules {
+              modules = [ {
+                services.thorFlashNext.decodeGraph = true;
+                services.thorFlashNext.maxTotalTokens = 32768;
               } ];
             });
           }
@@ -543,6 +550,18 @@ class DecodeGraphModuleChecks(unittest.TestCase):
         mtp = json.loads(self.evaluated["mtpMetrics"]["baselineText"])
         self.assertEqual(mtp["arguments"][-1], "--enable-metrics")
         self.assertEqual(mtp["arguments"].count("--enable-metrics"), 1)
+
+    def test_max_total_tokens_override_replaces_single_argument(self):
+        default = json.loads(self.evaluated["default"]["baselineText"])
+        self.assertIsNone(self.evaluated["default"]["maxTotalTokensDefault"])
+        self.assertEqual(default["arguments"].count("--max-total-tokens"), 1)
+        self.assertEqual(default["arguments"][default["arguments"].index("--max-total-tokens") + 1], "8192")
+        long_ctx = json.loads(self.evaluated["longContext"]["baselineText"])
+        self.assertEqual(long_ctx["arguments"].count("--max-total-tokens"), 1)
+        index = long_ctx["arguments"].index("--max-total-tokens")
+        self.assertEqual(long_ctx["arguments"][index + 1], "32768")
+        self.assertEqual({key: value for key, value in long_ctx.items() if key not in {"name", "arguments"}},
+                         {key: value for key, value in default.items() if key not in {"name", "arguments"}})
 
     def test_token_map_defaults_off_and_appends_relative_path(self):
         default = self.evaluated["default"]

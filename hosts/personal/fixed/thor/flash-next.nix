@@ -28,6 +28,15 @@ let
   metricsArguments = lib.optionals config.services.thorFlashNext.metrics [ "--enable-metrics" ];
   tokenMapArguments = lib.optionals config.services.thorFlashNext.tokenMap
     [ "--speculative-token-map" "/vocab-maps/vocab-32768-corpus.pt" ];
+  setArgument = name: value: arguments:
+    let index = lib.lists.findFirstIndex (item: item == name) null arguments;
+    in
+    assert index != null;
+    lib.take index arguments ++ [ name value ] ++ lib.drop (index + 2) arguments;
+  adjustArguments = arguments:
+    (if config.services.thorFlashNext.maxTotalTokens == null then arguments
+     else setArgument "--max-total-tokens" (toString config.services.thorFlashNext.maxTotalTokens) arguments)
+    ++ metricsArguments ++ tokenMapArguments;
   graphBaseline = if config.services.thorFlashNext.decodeGraph then decodeGraphBaseline else baseline;
   mtpBaseline = graphBaseline // {
     name = graphBaseline.name + " + NEXTN full-vocab MTP";
@@ -38,7 +47,7 @@ let
     else if config.services.thorFlashNext.decodeGraph then decodeGraphBaseline
     else baseline;
   activeBaselineWithOverlay = activeBaseline // {
-    arguments = activeBaseline.arguments ++ metricsArguments ++ tokenMapArguments;
+    arguments = adjustArguments activeBaseline.arguments;
   };
   baselineFile =
     if config.services.thorFlashNext.mtp then
@@ -112,6 +121,11 @@ in
     type = lib.types.bool;
     default = false;
     description = "Enable the 32768-token draft token map (requires mtp = true).";
+  };
+  options.services.thorFlashNext.maxTotalTokens = lib.mkOption {
+    type = lib.types.nullOr lib.types.ints.positive;
+    default = null;
+    description = "Override --max-total-tokens (KV budget) for long-context experiments.";
   };
 
   config = {

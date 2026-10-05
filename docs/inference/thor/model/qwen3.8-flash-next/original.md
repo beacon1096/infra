@@ -1218,3 +1218,32 @@ raw/evidence 保留在私有 `/var/lib/thor-flash-next/observations/mtp-20261005
 
 结论：现有证据支持在结构化负载上使用原生 MTP，且未见质量回归；默认仍保持实验性，
 不晋升生产配置。下一步转向长上下文能力验证。
+
+### 长上下文：KV 预算提升到 32768
+
+2026-10-05，新增 opt-in `services.thorFlashNext.maxTotalTokens`（非空时替换
+`--max-total-tokens`），并新增 declared profile `L32`（= `M1M`，KV 预算 32768）。
+服务以该配置正常加载，runtime 记录核验 `max_total_tokens = 32768`，MTP / draft /
+decode graph / BF16 KV / FP32 state 均与 `M1M` 相同。
+
+needle-in-haystack：在一个固定填充句的重复中、约一半深度处插入唯一口令
+「the vault code is six one eight three」，末尾要求只回四位数字：
+
+| 目标 / 实际 prompt token | 检索结果 | Wall（s） |
+| --- | --- | --- |
+| 约 9000 / 9041 | 正确返回 `6183` | 6.99 |
+| 约 24000 / 24041 | 正确返回 `6183` | 18.47 |
+| 约 34000 / 34031 | 拒绝：HTTP 400，`exceeds 32762 tokens` | 0.34 |
+
+因此把 KV 预算提到 32768 后，9k 与 24k prompt 均可正常处理且正确检索；有效输入上限
+约 32762（比 `max_total_tokens` 略低，为输出/开销保留）。资源：最低 MemAvailable
+34.95 GiB，最高温度 50 °C。
+
+边界：只测了一个 KV 档位（32768）；vendor 声称的 262144 未验证；needle 只在约一半
+深度放一次、输出仅 5 token、单 prompt 家族、greedy 且启用 MTP；这不是完整 NIAH 扫描
+或长上下文质量评估。对照结束后服务停止，容器清理，MemAvailable 约 120.0 GiB，并
+恢复原 `G1` 运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run9/`。
+
+下一轮：可按同样方式测试 65536/131072 档位与多深度 NIAH，确认容量与检索随长度是否
+保持；不改变 BF16 state / FP8 KV / context-length。
