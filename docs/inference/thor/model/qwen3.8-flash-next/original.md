@@ -1383,3 +1383,33 @@ MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。raw/evide
 
 下一轮：可继续 131072 档（FP8 KV 下 KV 约再翻倍）并做多深度 NIAH，或用真实长文档任务
 评估 FP8 KV 的质量；不改变 BF16 state / context-length。
+
+### 长上下文 × FP8 KV：L128K（131072）多深度 NIAH
+
+新增 declared profile `L128K`（= `M1M`，KV 预算 131072，KV 为 fp8_e4m3）。服务正常
+加载，runtime 记录核验 `max_total_tokens = 131072`、`kv_cache_dtype = fp8_e4m3`。
+
+多深度 needle-in-haystack（唯一口令置于约一半深度）：
+
+| 实际 prompt token | 检索结果 | Wall（s） |
+| --- | --- | --- |
+| 9041 | 正确 `6183` | 7.38 |
+| 32021 | 正确 `6183` | 25.66 |
+| 64031 | 正确 `6183` | 53.00 |
+| 96041 | 正确 `6183` | 81.24 |
+| 124031 | 正确 `6183` | 107.21 |
+| 134021 | 拒绝：HTTP 400，`exceeds 131066 tokens` | 0.81 |
+
+即在 131072 预算下，直到约 124k token 的中间位置注入都能正确检索；有效输入上限约
+131066，是 `L64K`（约 65530）的两倍、`L32`（约 32762）的四倍。资源：最低 MemAvailable
+32.65 GiB、最高温度 57 °C（随长度缓慢上升）。Wall 随长度近似线性增长（约 0.86 s/1k
+token）。
+
+边界：仍是单 needle、约一半深度、短输出、greedy、单 prompt 家族；不是长上下文质量
+评估，也未验证 FP8 KV 在超长推理下的质量回归；vendor 声称的 262144 仍未测。对照
+结束后服务停止，容器清理，MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit
+链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run13/`。
+
+下一轮：可试 262144（claims 上限，FP8 KV 下 KV 约 3 GB）看能否加载并检索，或对同一
+组长 prompt 做质量/一致性评估；不改变 BF16 state / context-length。
