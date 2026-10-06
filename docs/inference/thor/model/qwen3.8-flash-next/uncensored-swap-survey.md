@@ -112,3 +112,29 @@ config / index），未上 GPU。**
 - 相关 revision：RadixArk `7b719225…`（公开 main 2026-08-26）；huginnfork
   `2d064773…`（2026-09-28）；orcarouter（2026-10-02，gated）；jpezzulli/dealignai main。
 - 未上 GPU；gated 仓库（orcarouter/mazinb/gitcommit90）未核验；未做数值/质量验证。
+
+## 8. Stage 1 target-only bring-up 结果（`jpezzulli`，2026-10-07）
+
+- 源：`jpezzulli/OrcaRouter-Qwen3.8-Flash-Next-Uncensored-ModelOpt-NVFP4`（126 GiB，206 shards，
+  RadixArk 式 192 routed + 14 model）。手动 docker 启动（`run-flash-next-uncensored-stage1.sh`），
+  绕过 managed unit——后者与 RadixArk `prepared.json` / `modelopt_mixed` 绑定；无 runtime-patches
+  （BF16 lm_head 下 FP8-head/token-map 补丁为 no-op）。
+- 加载：`Using ModelOptModelLoader`，`quant=modelopt_fp4, quant_algo=NVFP4`，load 364.8 s，
+  GPU `mem usage=83.36 GB / avail=32.34 GB`；PLE `file-backed mmap ... float8_e4m3fn`
+  （47.7 GiB sparse，RSS 上限 4 GiB，随加载 trim）。`--mamba-ssm-dtype float32`。
+  两档 KV 预算都正常启动：`max_total_num_tokens=8192` 与 `65536`（后者 avail 33.27 GB）。
+- 长 prefill（chunk=512，重复固定流）：8K 986 tok/s；32K 1598；48K 1208；65000 1178
+  （约 55 s）。最大可接受输入 **65530**（65535/65536 报 `400 exceeds maximum allowed length`）。
+- 能力 A/B（同 10 case ×3，profile `M1M`/runtime `run6`）：**30/30 通过**，含
+  `exact-short-output`（27B 曾 0/3）。即该 uncensored target 在这组 gate 上无能力回归。
+- over-refusal 探针（12 条 benign-but-sensitive：SQL 防御/勒索软件原理/钓鱼构造/锁具/药物过量
+  first-aid/化学混用/恐怖受伤/战争小说/反派独白/暗色笑话/成瘾小说）：**0/12 拒绝**（少数被
+  500-token 上限截断，非拒绝）。
+- decode 吞吐约 12–21 tok/s，显著低于 `M1M` 的 ~57：因 **BF16 dense（无 FP8）+ 无 MTP**，
+  按 Stage 1 约定**不作为性能结论**（非 apples-to-apples）。
+- 结论：`jpezzulli` target-only 在 Thor 上**可加载、可跑 32K/64K prefill、无 gate 回归、
+  reduced-refusal 生效**。下一步：接 stock draft 测 MTP acceptance（注意第 6 节的 draft
+  mismatch 风险），再决定是否值得做 Stage 2 的 production-matched FP8 dense/head 重建。
+- 证据（私有）：`/var/lib/thor-flash-next/observations/state-drift-20261006/stage1-jpezzulli{,-64k}.log`；
+  `mtp-20261005/run7-ab-uncensored/`；`mtp-20261005/overrefusal-uncensored/`。
+  下载件：`/var/lib/thor-inference/flash-next/jpezzulli-orcarouter-uncensored-nvfp4`（126 GiB）。
