@@ -1888,3 +1888,35 @@ greedy 轨迹分叉，而非 state dtype 的稳定特征。四臂都**没有**�
 「Flash-Next BF16 state 是否在长 decode 中积累误差并影响 logits ranking」，必须做
 **逐 token decode-step teacher-forced** 的机制实验（固定 token 流、同一初始 state、只改
 state dtype，采样 early/mid/late GDN 层的 state 误差与 logits 指标）。
+
+### API-only 机制实验的阻断：decode 路径本身非确定
+
+2026-10-06。先按「不加重叠补丁、只用 API」的路径尝试 teacher-forced logits 对照，发现一个
+更基础的障碍：**Flash-Next 的 decode 路径在 temp 0 / top_k=1 下 run-to-run 不可复现**，而
+prefill 可复现。测量在 target-only 的 `G1`（无 MTP、无 token map，仍 `mamba-ssm-dtype
+float32`）上完成，避免 speculative 干扰。
+
+协议：原生 `/generate`，`input_ids` = 固定 64 token 前缀，采样参数**嵌套在
+`sampling_params`**（`temperature=0, top_k=1, top_p=1`），`return_logprob=True` 取
+`input/output_token_logprobs`。注意：把 `temperature`/`max_new_tokens` 放在顶层会被忽略
+（回落到默认采样与 128 token），一度造成「非确定」的误判；正确 API 必须嵌套。
+
+| 观测量 | 10–12 次重复结果 |
+| --- | --- |
+| prefill：第 1 个 token 的 logprob / id | **唯一值** `-0.73524` / `4960`（10/10 一致） |
+| decode：greedy 32 token 输出 | **8 次中 7 种不同**序列 |
+| decode 逐 step logprob（step 3） | 3 个不同值（`-1.068 / -1.118 / -1.269`） |
+| decode 逐 step logprob（step 5） | 4 个不同值，跨度 `-0.704 … -1.655` |
+| 与 modal 序列的首个分歧位置 | 4 / 11 / 21（随运行变化） |
+
+`M1M`（NEXTN MTP）表现相同（6 次 5–6 种输出，首个分歧位置 4/11/21）。因为首个 token
+（prefill 末尾 logits）在所有运行中逐位一致，非确定性出现在**进入 decode 之后**并在数步内
+发散；来源是 decode 阶段的算子（`fa4` full-attention 与/或 Triton GDN linear-attn decode
+的归约/原子累加），与 MTP 无关。
+
+后果：(1) 本服务在 temp 0 下**不是逐位可复现**的，greedy 输出会随机分叉；(2) 用它做
+「同一 token 流、只改 state dtype」的 A/B，测到的差异会被这个 O(1) 量级的固有 logprob 噪声
+污染，无法把差异**归因**给 state 精度。因此还缺一个**确定性的单进程 replay + state/logits
+dump** 才能回答漂移问题（需要给 decode 换成确定性 kernel，或在同一前向内 teacher-force 固定
+token 并直接 dump 中间 state，而不是靠对外 sampling）。下一步按此前 scope 的补丁路线做。
+
