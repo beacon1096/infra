@@ -466,7 +466,8 @@ def correctness(gate, response, mode):
                       and calls[0]["function"]["name"] == gate["name"]
                       and digest(json.loads(calls[0]["function"]["arguments"], object_pairs_hook=unique_object)) == digest(gate["arguments"]))
         elif kind == "python_ast":
-            tree = ast.parse(text)
+            fence = re.search(r"```[a-zA-Z0-9_+-]*\s*\n(.*?)```", text, re.S)
+            tree = ast.parse(fence.group(1) if fence else text)
             passed = (not response["tool_calls"]
                       and any(isinstance(node, ast.FunctionDef) and node.name == gate["function"] for node in tree.body)
                       and sum(isinstance(node, ast.Assert) for node in ast.walk(tree)) >= gate["minimum_asserts"])

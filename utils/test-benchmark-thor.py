@@ -767,6 +767,10 @@ class BenchmarkChecks(unittest.TestCase):
                      "def merge_intervals(x):\n    return x\n" + "assert True\n" * 4):
             with self.subTest(code=code):
                 self.assertEqual(CLIENT.correctness(gate, response(code), "quality")["status"], "failed")
+        fenced = "```python\ndef merge_intervals(x):\n    return x\n" + "assert True\n" * 5 + "```"
+        self.assertEqual(CLIENT.correctness(gate, response(fenced), "quality"),
+                         {"status": "passed", "scope": "syntax_only"})
+        self.assertEqual(CLIENT.correctness(gate, response("```\nno function\n```"), "quality")["status"], "failed")
 
     def test_correctness_manual_needs_review(self):
         gate = self.cases["agent-plan-thinking-low"]["check"]
