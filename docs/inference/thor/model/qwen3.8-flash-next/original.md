@@ -10,9 +10,12 @@
 > 路径。自建 SGLang 结论摘要：`G1`（target-only + C1 full decode graph）为 owned 基线，
 > 生成安全验收（自然长文本、客户端取消与恢复）通过；原生 `NEXTN` 全词表 MTP 在结构化
 > 任务约 1.8–2.1×、自然文本 +17%–35%，短上下文 gate 未见质量回归；`32768` 词表 map
-> 对开放文本有害、未采用；dense 侧本就是 FP8（`F3/F4` 等价）；BF16 SSM state 与 FP8 KV
-> 是可选省内存项（短上下文下 FP8 KV 略慢）；长上下文在 FP8 KV 下已验证到约 261K token。
-> **默认不晋升生产**，仍以实验方式按需启动，27B 保持停止。细节见下文各节。
+> 对开放文本有害、未采用；dense 侧本就是 FP8（`F3/F4` 等价）；FP8 KV 是可选省内存项
+> （短上下文下略慢）；长上下文在 FP8 KV 下已验证到约 261K token。**能力 A/B（3 重复 + held-out）
+> 中 Flash-Next gate 30/30 vs 27B 27/30。BF16 SSM state 虽省约 0.9 GiB，但 teacher-forced
+> prefill 对照显示它会从第一个 state 边界起系统性改变 logits（chunk=64 时 0–2047 内 top-1
+> 翻转 18.3%），故保持 FP32 state 默认、BF16 仅作实验选项。**默认不晋升生产**，仍以实验
+> 方式按需启动，27B 保持停止。细节见下文各节。
 
 ## 检查点与内存布局
 
@@ -1841,7 +1844,7 @@ shared-prefix）重跑，并调整 case set：去掉首轮两个 length 失败�
 `exact-short-output`：27B **稳定地 0/3**（连续三次都答 ~272 这类的错误整数，不是单次抖动），
 Flash 3/3。首轮 6/10 vs 7/10 在去掉单样本噪声后翻转为 **Flash 有明确正确性优势**。
 
-时延到正确答案：**27B target-only 在 8/10 个 case 更快**——结构化与 thinking 解码约快
+时延到正确答案：**27B（DFlash2 K16）在 8/10 个 case 更快**——结构化与 thinking 解码约快
 1.3–2×（ledger 124 vs 63 tok/s，digit 84.6 vs 57.6），短结构化 case 也略快；**Flash 仅在
 `natural-prose-off` 快约 2×**（14.2 vs 28.8s，33.4 vs 18.9 tok/s）。通过样本的中位
 wall-to-valid：27B 0.74s、Flash 2.18s（两者都被亚秒级结构化 case 拉低）；若把 27B 的 3 次
@@ -1849,9 +1852,17 @@ wall-to-valid：27B 0.74s、Flash 2.18s（两者都被亚秒级结构化 case �
 正确性是可复现的真实差异，而非采样偶然。
 
 结论：**能力不是 Flash-Next 的阻断项，重复采样下它的 gate 正确性甚至优于 27B**；代价是
-target-only/BF16 的 27B 在结构化与 thinking 解码上约 1.3–2× 更快，Flash 只在 prose 上更快。
-是否替换取决于负载结构。边界：10 case × 3，仍是小集、单机、greedy；未做采样温度下的稳定性，
-也未覆盖长上下文质量（见下节机制实验）。
+27B 在结构化与 thinking 解码上约 1.3–2× 更快，Flash 只在 prose 上更快。是否替换取决于负载
+结构。注意这不是同轴对照：27B 臂是 **DFlash2 K16 投机解码 + `mamba_ssm_dtype=bfloat16` +
+head bfloat16**，Flash 臂是 **target-only + NEXTN MTP + FP32 state**，延迟/吞吐同时差了
+draft 与 state dtype 两个因素。
+
+边界：10 case × 3，仍是小集、单机、greedy；`python_*` gate 只做 **AST/语法校验、不执行**
+生成代码，因此 30/30 不等于“代码语义全对”（强语义 gate 是 `exact` / `strict-json`）；未做
+采样温度下的稳定性，也未覆盖长上下文质量（见下节机制实验）。27B runtime 记录
+（`27b-20261006/run1/runtime.json`）核验：`joshebbs/qwen3.8-27b-uncensored-nvfp4-modelopt@e5ff498`
++ `maurienne-ai/Qwen3.8-27B-DFlash2-NVFP4-RTNcal@bd7a934`、`speculative_algorithm=DFLASH`、
+`speculative_num_draft_tokens=16`。
 
 ## recurrent-state 漂移：BF16 vs FP32（27B 破限版，行为层）
 
@@ -1958,16 +1969,17 @@ teacher-forced 对照：把整条固定 token 流作为 `input_ids` 一次提交
    store/restore 处被 round 到 state dtype」一致。4096 token 整体 mean \|Δlogprob\|≈0.24、
    top-1 翻转 13.7%、top-10 重叠 0.77。也就是说 BF16 state 并非「数值无害」，在 4K 上下文就
    明显改变 ranking。
-3. **BF16 state 自身在 >2048 token 后不可复现**：三次 BF16 捕获两两相比，0–2047 token 完全
-   相同，从 2048 起 mean\|Δ\|≈0.11、top-1 翻转约 6%。即 BF16 的 state 路径（很可能是 bf16
-   state 的累积/原子操作）在更长上下文变得非确定；FP32 无此问题。
+3. **BF16 state 在 >2048 token 后不可复现**：三次 BF16 捕获两两相比，0–2047 token 完全
+   相同，从 2048 起 mean\|Δ\|≈0.11、top-1 翻转约 6%。当时据此怀疑是 BF16 的 state 路径
+   （bf16 累积/原子）在长上下文变得非确定；**该初判随后被收窄**：chunk=64 时 **FP32 自身**
+   在 >2048 也有同量级非确定（见下节），故 >2048 非确定是 **dtype-independent** 的
+   checkpoint/restore 伪影，不能归给 BF16；只有 chunk=512 的 FP32 恰好全程逐位可复现。
 
-边界与解释：这是 **prefill**（chunk=512）而非 decode（每 token 一个 state 边界）的测量；
-decode 下 state 每步都 round，所以 dtype 影响预期**不小于**此处，但 decode 本身不可复现
-（见上一节），无法用对外 sampling 精确归因。分箱结果精确地刻画了「state 精度只在边界生效」
-这一机制，并给出 BF16 的**下界**敏感性。要拿到逐层 GDN state 的 rel-L2/cosine（而非 logits
-代理），仍需确定性 replay + state dump 的补丁。就本实验：BF16 SSM state 会改变 logits
-ranking 且引入非确定，**不应**作为默认；它只适合作为省内存（约 0.9 GiB）选项并标注此风险。
+边界与解释：这是 **prefill**（chunk=512）而非 decode（每 token 一个 state 边界）的测量。
+decode 下 state 每步都 round，**预期** dtype 影响更强，但真 decode 的 kernel/执行路径与
+chunked prefill 不同、且本身带额外非确定（见上一节），所以这只是方向性预期，不是 decode 的
+实测下界。分箱结果刻画了「state 精度只在边界生效」这一机制。就本实验：BF16 SSM state 会改变
+logits ranking，**不应**作为默认；它只适合作为省内存（约 0.9 GiB）选项并标注此风险。
 
 ### chunk 粒度扫描：state 精度影响随 state 边界频率增大
 
@@ -1983,8 +1995,9 @@ ranking 且引入非确定，**不应**作为默认；它只适合作为省内�
 | chunk=64：FP32 vs BF16 | 64 | 0.315 | 375/2047（18.3%） |
 
 即 **state 边界越密、BF16 与 FP32 的分歧越早越大**（onset 从第 512 个 token 提前到第 64 个，
-top-1 翻转 14.0%→18.3%）。decode 是每 token 一个 state 边界，因此真 decode 下 dtype 影响预期
-**不小于** chunk=64 的结果。
+top-1 翻转 14.0%→18.3%）。这支持「boundary 频率升高会增强 dtype 差异」，对逐-token decode
+构成**更强影响的预期**；但真 decode 的 kernel/执行路径与 chunked prefill 不同、且本身带额外
+非确定，是否构成实测下界尚待 deterministic replay 证实。
 
 自身可复现性（同 arm 重复捕获）：
 
