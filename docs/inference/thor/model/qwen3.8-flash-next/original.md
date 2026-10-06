@@ -1969,4 +1969,42 @@ decode 下 state 每步都 round，所以 dtype 影响预期**不小于**此处�
 代理），仍需确定性 replay + state dump 的补丁。就本实验：BF16 SSM state 会改变 logits
 ranking 且引入非确定，**不应**作为默认；它只适合作为省内存（约 0.9 GiB）选项并标注此风险。
 
+### chunk 粒度扫描：state 精度影响随 state 边界频率增大
+
+2026-10-06。继续用同一 prefill scoring，把 `chunked-prefill-size` 从 512 降到最小。约束：
+`chunked_prefill_size` 必须能被 `page_size`（64）整除，因此 **最小 chunk = 64**（`page_size=1`
+未尝试；改变 page 会改变 KV/attention 路径）。两臂仍只差 `mamba-ssm-dtype`。
+
+对照限制在 **token 0–2047**（该窗口内四臂自身都逐位可复现；>2048 的伪影见下）：
+
+| 配置 | 首个分叉 token | mean \|Δlogprob\|（0–2047） | top-1 改变（0–2047） |
+| --- | ---: | ---: | ---: |
+| chunk=512：FP32 vs BF16 | 512 | 0.237 | 286/2047（14.0%） |
+| chunk=64：FP32 vs BF16 | 64 | 0.315 | 375/2047（18.3%） |
+
+即 **state 边界越密、BF16 与 FP32 的分歧越早越大**（onset 从第 512 个 token 提前到第 64 个，
+top-1 翻转 14.0%→18.3%）。decode 是每 token 一个 state 边界，因此真 decode 下 dtype 影响预期
+**不小于** chunk=64 的结果。
+
+自身可复现性（同 arm 重复捕获）：
+
+| 配置 | 0–2047 | 2048–4095 |
+| --- | --- | --- |
+| chunk=512 FP32 | 逐位一致 | 逐位一致（mean\|Δ\|=0） |
+| chunk=512 BF16 | 逐位一致 | 非确定：mean\|Δ\|≈0.111、top-1 6% |
+| chunk=64 FP32 | 逐位一致 | **非确定**：mean\|Δ\|≈0.109、top-1 6% |
+| chunk=64 BF16 | 逐位一致 | **非确定**：mean\|Δ\|≈0.110、top-1 6% |
+
+注意 chunk=64 时 **FP32 自身**在 >2048 也非确定，且与 BF16 的噪声量级相同——说明这里的 >2048
+非确定性来自 **state checkpoint/restore 机制本身**（细粒度下必现），与 dtype 无关；只有
+chunk=512 的 FP32 恰好全程逐位可复现。因此「0–2047 窗口」内 BF16-vs-FP32 的差异可以干净归因给
+state dtype，而 >2048 的 decode-like 归因仍需确定性 replay 补丁。
+
+结论：本服务在 prefill chunk=512 下 FP32 state 可复现；一旦把 state 更新细化到 decode 粒度，
+**即使 FP32 的 state 路径也不再逐位可复现**，BF16 则在此之上额外引入约 14–18% top-1 翻转的确定性
+分歧。综合两节：**FP32 state 保持默认；BF16 仅作省内存选项且标注数值/可复现性风险**；要给出
+逐层 state rel-L2/cosine 的最终机制结论，仍需确定性单进程 replay + state dump。证据保留在私有
+`/var/lib/thor-flash-next/observations/state-drift-20261006/`（`fp32`、`bf16`、`bf16b`、`c64-*`）。
+
+
 
