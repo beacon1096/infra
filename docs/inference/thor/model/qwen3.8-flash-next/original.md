@@ -1920,3 +1920,53 @@ float32`）上完成，避免 speculative 干扰。
 dump** 才能回答漂移问题（需要给 decode 换成确定性 kernel，或在同一前向内 teacher-force 固定
 token 并直接 dump 中间 state，而不是靠对外 sampling）。下一步按此前 scope 的补丁路线做。
 
+### 机制实验（API-only，prefill scoring）：BF16 state 改变 logits，且 >2048 不可复现
+
+2026-10-06。上面是 **decode** 路径不可复现；但 **prefill 路径可复现**，于是不需要补丁即可做
+teacher-forced 对照：把整条固定 token 流作为 `input_ids` 一次提交，`return_logprob=True`、
+`logprob_start_len=0`、`top_logprobs_num=10`，采样参数嵌套
+`sampling_params={temperature:0, top_k:1, max_new_tokens:1}`，读取
+`input_token_logprobs` / `input_top_logprobs`——这是**逐位置 teacher-forced** 的 logits，
+且由 chunked prefill 顺序累积 state（`chunked-prefill-size=512`、`page-size=64`）。两个 arm
+只有 `mamba-ssm-dtype` 不同：`G1`（float32）与 `G1-BF16`（用 `/run` drop-in 覆盖
+`BASELINE_FILE` 指向改过 dtype 的 `C1-decodeGraph` baseline，`docker inspect .Args` 核验为
+`bfloat16`）。固定流为 4096 token。
+
+| 对照 | n | mean \|Δlogprob\| | max |Δ| | top-1 改变 | top-10 overlap |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| FP32 vs FP32（3 次） | 4095 | **0.0** | 0.0 | **0/4095** | 1.0 |
+| FP32 vs BF16 | 4095 | 0.2429 | 6.04 | 559/4095（13.7%） | 0.77 |
+| BF16 vs BF16（3 对） | 4095 | 0.111 | 5.51 | ~250/4095（6.1–6.4%） | — |
+
+按 512 分箱（每箱 512 token，`mean|Δ|` / top-1 改变数）：
+
+| 起始位置 | FP32 vs BF16 | BF16 vs BF16 |
+| --- | --- | --- |
+| 0 | 0.0 / 0 | 0.0 / 0 |
+| 512 | 0.315 / 93 | 0.0 / 0 |
+| 1024 | 0.328 / 106 | 0.0 / 0 |
+| 1536 | 0.303 / 87 | 0.0 / 0 |
+| 2048 | 0.269 / 66 | 0.238 / 74 |
+| 2560 | 0.195 / 53 | 0.178 / 52 |
+| 3072 | 0.299 / 78 | 0.279 / 75 |
+| 3584 | 0.233 / 76 | 0.193 / 60 |
+
+结论：
+1. **FP32 SSM state 的 prefill logits 逐位可复现**（4096 token、3 次全 0 差异）。
+2. **换成 BF16 state 会系统性改变 logits**：**前 512 token（第一个 prefill chunk）逐位相同**，
+   从第 512 个 token（第一个 state 边界）起开始分叉——与「state 只在 chunk 边界的
+   store/restore 处被 round 到 state dtype」一致。4096 token 整体 mean \|Δlogprob\|≈0.24、
+   top-1 翻转 13.7%、top-10 重叠 0.77。也就是说 BF16 state 并非「数值无害」，在 4K 上下文就
+   明显改变 ranking。
+3. **BF16 state 自身在 >2048 token 后不可复现**：三次 BF16 捕获两两相比，0–2047 token 完全
+   相同，从 2048 起 mean\|Δ\|≈0.11、top-1 翻转约 6%。即 BF16 的 state 路径（很可能是 bf16
+   state 的累积/原子操作）在更长上下文变得非确定；FP32 无此问题。
+
+边界与解释：这是 **prefill**（chunk=512）而非 decode（每 token 一个 state 边界）的测量；
+decode 下 state 每步都 round，所以 dtype 影响预期**不小于**此处，但 decode 本身不可复现
+（见上一节），无法用对外 sampling 精确归因。分箱结果精确地刻画了「state 精度只在边界生效」
+这一机制，并给出 BF16 的**下界**敏感性。要拿到逐层 GDN state 的 rel-L2/cosine（而非 logits
+代理），仍需确定性 replay + state dump 的补丁。就本实验：BF16 SSM state 会改变 logits
+ranking 且引入非确定，**不应**作为默认；它只适合作为省内存（约 0.9 GiB）选项并标注此风险。
+
+
