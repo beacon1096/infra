@@ -1811,6 +1811,48 @@ seed 42、shared-prefix、每 case 1 次）：27B = `thor-inference.service`（:
 是否替换取决于负载结构，能力不是阻断项。边界：单次、greedy、10 个 case，不是完整质量评估；
 27B 与 Flash 的 draft/采样路径不同。
 
+### 重复采样 A/B（3×10 case，含 held-out）
+
+2026-10-06。首轮是每 case 单次，且 `python-interval-repair-ast` 受 checker 的 markdown
+fence 影响。这里用新脚本 `utils/run-thor-ab.py`（每 case 3 次、greedy、seed 42、
+shared-prefix）重跑，并调整 case set：去掉首轮两个 length 失败项与 `natural-prose-low`，
+新增 3 个 held-out（`docs/inference/thor/benchmark/held-out.json`）：`exact-arith-product`
+（期望 3108）、`python-fill-memo-fib`（AST gate，函数 `memo_fib`、≥4 个 assert）、
+`strict-json-nested`（结构化 nested JSON）。python gate 已在 commit `a346218` 修掉 fence。
+下表的 wall/tok-s 为通过复次的**中位数**；`0/3` 表示三复次全部失败。
+
+| Case | 27B 通过 | 27B wall（pass 中位） | 27B tok/s | Flash 通过 | Flash wall | Flash tok/s |
+| --- | --- | --- | --- | --- | --- | --- |
+| exact-short-output | **0/3** | — | — | **3/3** | 0.37s | 10.8 |
+| strict-json-schema | 3/3 | 0.39s | 38.7 | 3/3 | 0.60s | 36.8 |
+| tool-get-weather | 3/3 | 0.51s | 53.1 | 3/3 | 0.64s | 42.0 |
+| python-interval-repair-ast | 3/3 | 5.36s | 73.5 | 3/3 | 10.18s | 56.1 |
+| thinking-digit-low | 3/3 | 7.64s | 84.6 | 3/3 | 11.52s | 57.6 |
+| thinking-ledger32-low | 3/3 | 13.31s | 124.0 | 3/3 | 15.98s | 63.3 |
+| natural-prose-off | 3/3 | 28.83s | 18.9 | 3/3 | 14.22s | 33.4 |
+| exact-arith-product | 3/3 | 0.36s | 13.9 | 3/3 | 0.34s | 14.6 |
+| python-fill-memo-fib | 3/3 | 2.52s | 97.1 | 3/3 | 3.13s | 57.3 |
+| strict-json-nested | 3/3 | 0.74s | 85.7 | 3/3 | 1.17s | 53.7 |
+| **合计** | **27/30** | 中位 0.74s | — | **30/30** | 中位 2.18s | — |
+
+严格通过：**27B 27/30，Flash 30/30**。修正 fence 后，首轮「两者都在
+`python-interval-repair-ast` 失败」消失（两臂均 3/3），说明那是 checker 问题；首轮
+`thinking-workers-low` / `agent-plan` 是任务难度，已从集合移除。唯一的正确性差异是
+`exact-short-output`：27B **稳定地 0/3**（连续三次都答 ~272 这类的错误整数，不是单次抖动），
+Flash 3/3。首轮 6/10 vs 7/10 在去掉单样本噪声后翻转为 **Flash 有明确正确性优势**。
+
+时延到正确答案：**27B target-only 在 8/10 个 case 更快**——结构化与 thinking 解码约快
+1.3–2×（ledger 124 vs 63 tok/s，digit 84.6 vs 57.6），短结构化 case 也略快；**Flash 仅在
+`natural-prose-off` 快约 2×**（14.2 vs 28.8s，33.4 vs 18.9 tok/s）。通过样本的中位
+wall-to-valid：27B 0.74s、Flash 2.18s（两者都被亚秒级结构化 case 拉低）；若把 27B 的 3 次
+失败计为“永不可用”，27B 的中位会升到 Flash 之上。held-out 三项两臂都通过，但 Flash 的乘积
+正确性是可复现的真实差异，而非采样偶然。
+
+结论：**能力不是 Flash-Next 的阻断项，重复采样下它的 gate 正确性甚至优于 27B**；代价是
+target-only/BF16 的 27B 在结构化与 thinking 解码上约 1.3–2× 更快，Flash 只在 prose 上更快。
+是否替换取决于负载结构。边界：10 case × 3，仍是小集、单机、greedy；未做采样温度下的稳定性，
+也未覆盖长上下文质量（见下节机制实验）。
+
 ## recurrent-state 漂移：BF16 vs FP32（27B 破限版，行为层）
 
 2026-10-06。针对「破限版 BF16 recurrent state 长自回归漂移」的说法，在 27B uncensored

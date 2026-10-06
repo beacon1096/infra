@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "purpose": "New held-out capability variants (not historical results) for the Flash-Next vs 27B A/B. Each is auto-gated; they are deliberately different prompts from the main fixtures so a single favourite synthetic item does not drive the comparison.",
+  "cases": [
+    {
+      "id": "exact-arith-product", "category": "exact-short", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/held-out.json#exact-arith-product"},
+      "request": {
+        "messages": [{"role": "user", "content": "Return only the integer product of 37 and 84. No other text, Markdown or explanation."}],
+        "max_tokens": 40, "temperature": 0, "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "exact", "expected": "3108"}
+    },
+    {
+      "id": "python-fill-memo-fib", "category": "code-repair", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/held-out.json#python-fill-memo-fib"},
+      "request": {
+        "messages": [{"role": "user", "content": "Implement a Python function `memo_fib(n: int) -> int` that returns the n-th Fibonacci number (memo_fib(0)=0, memo_fib(1)=1) using memoization, and is iterative or recursion-with-cache. Add type hints and at least four assert examples that cover n=0, n=1, a small n and a larger n. Output only Python code."}],
+        "max_tokens": 2048, "temperature": 0, "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "python_ast", "function": "memo_fib", "minimum_asserts": 4}
+    },
+    {
+      "id": "strict-json-nested", "category": "structured-output", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/held-out.json#strict-json-nested"},
+      "request": {
+        "messages": [{"role": "user", "content": "Return only a JSON object with exactly these fields and values: name is the string \"thor\", tags is the array [\"gpu\",\"arm64\",\"fp4\"], and meta is an object with active true and revision 7. No Markdown or explanation."}],
+        "max_tokens": 128, "temperature": 0, "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "json", "expected": {"name": "thor", "tags": ["gpu", "arm64", "fp4"], "meta": {"active": true, "revision": 7}}}
+    }
+  ]
+}
