@@ -1830,3 +1830,19 @@ vs FP32（`inference.nix` 新增 `services.thorInference.mambaStateDtype`，用 
 都未出现可检测的漂移**，也没有复现 Lazycat 那个 abliterated Flash-Next 的漂移（那是另一个
 模型）。边界：仅行为层、每臂单次、两臂因数值不同 greedy 轨迹会分叉；要判定数值漂移的机制，
 需要 teacher-forced 固定 token 流下的逐层 state/logits 对照（需加 state-dump hook），本页未做。
+
+同一行为层测试也补到了 **Flash-Next 本身**（RadixArk，FP8 head + MTP）：`M1M`（FP32 state）vs
+`M1B`（BF16 state），en/zh 各 16384 token：
+
+| arm | en | zh |
+| --- | --- | --- |
+| FP32（M1M） | 无非目标脚本；模板 token 行 x2 | **443× `user/assistant/<think>` 循环** |
+| BF16（M1B） | 无非目标脚本；模板 token 行 x4 | 无非目标脚本；模板 token 行 x4 |
+
+四个运行的末尾都出现了 **chat-template 角色 token 泄漏**（`user` / `assistant` / `<think>`），
+这是 `ignore_eos` 下原始补全路径的产物；zh 两臂的差异（FP32 出现 443 次循环、BF16 没有）来自
+greedy 轨迹分叉，而非 state dtype 的稳定特征。四臂都**没有**非目标脚本字符。结论：该行为层
+测试**无法区分 FP32/BF16**，且被模板 token 泄漏污染，不能用来判断数值稳定性；要回答
+「Flash-Next BF16 state 是否在长 decode 中积累误差并影响 logits ranking」，必须做
+**逐 token decode-step teacher-forced** 的机制实验（固定 token 流、同一初始 state、只改
+state dtype，采样 early/mid/late GDN 层的 state 误差与 logits 指标）。
