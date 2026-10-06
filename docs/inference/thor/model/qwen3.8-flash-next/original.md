@@ -1779,3 +1779,54 @@ shape 与 config、没有耗时，耗时需与上一节按 grid 的统计配对�
 解决；剩余 prefill 是 GEMM/MoE，backend 与 Triton config 都无可用旋钮**（MoE 若要继续
 需上游 FlashInfer 的 SM110 FP4）；PLE/attention 都不是瓶颈。进一步的性能收益需要
 kernel 级/上游工作，而不是本仓配置。
+
+## 能力 A/B：Flash-Next（M1M）vs 27B（DFlash K16）首轮
+
+2026-10-06。同一套 10 个 case，用同一个 orchestrator 分别在两个服务上各跑一遍（greedy、
+seed 42、shared-prefix、每 case 1 次）：27B = `thor-inference.service`（:8888，
+`joshebbs/qwen3.8-27b-uncensored-nvfp4-modelopt` + DFlash2 K16，BF16 state），Flash-Next
+= `M1M`（:8890，原生 NEXTN MTP）。27B 的 runtime 记录由新脚本
+`record-thor-27b-runtime.py` 对齐 profile `P` 后生成。
+
+| Case | 27B 结果 | 27B wall / tok/s | Flash 结果 | Flash wall / tok/s |
+| --- | --- | --- | --- | --- |
+| exact-short-output | **失败** | 2.54s / 1.6 | 通过 | 0.51s / 7.9 |
+| strict-json-schema | 通过 | 0.72s / 20.7 | 通过 | 1.00s / 22.0 |
+| tool-get-weather | 通过 | 0.54s / 50.2 | 通过 | 0.97s / 27.7 |
+| python-interval-repair-ast | **失败** | 6.51s / 81.1 | **失败** | 11.50s / 54.5 |
+| agent-plan-thinking-low | **失败（length）** | 116.9s / 35.0 | 自然停止（需人工复核） | 82.2s / 40.3 |
+| thinking-digit-low | 通过 | 7.65s / 84.5 | 通过 | 10.34s / 57.4 |
+| thinking-workers-low | **失败（length）** | 55.1s / 74.3 | **失败** | 46.7s / 53.4 |
+| thinking-ledger32-low | 通过 | 10.71s / 127.4 | 通过 | 17.42s / 59.0 |
+| natural-prose-off | 通过 | 28.73s / 18.9 | 通过 | 14.02s / 33.4 |
+| natural-prose-low | 通过 | 46.0s / 43.3 | 通过 | 19.41s / 36.2 |
+
+严格通过：**27B 6/10，Flash 7/10**。两者都在 `python-interval-repair-ast` 与
+`thinking-workers-low` 失败——说明这两项是任务/模型难度，而非某一模型特有。差异点：
+27B 额外在 `exact-short-output` 失败、且在 `agent-plan` 用尽 4096 预算；Flash 通过 exact、
+`agent-plan` 自然收尾。吞吐上 27B 的 DFlash 在结构化 thinking 上明显更快（digit 84 / ledger
+127 tok/s），Flash 在自然 prose 上约快 1.7–2×。
+
+结论：**首轮样本下 Flash-Next 在 gate 上不输 27B（7 vs 6），prose 更快、结构化解码更慢**；
+是否替换取决于负载结构，能力不是阻断项。边界：单次、greedy、10 个 case，不是完整质量评估；
+27B 与 Flash 的 draft/采样路径不同。
+
+## recurrent-state 漂移：BF16 vs FP32（27B 破限版，行为层）
+
+2026-10-06。针对「破限版 BF16 recurrent state 长自回归漂移」的说法，在 27B uncensored
+上做行为层对照：thinking off、限定单语、`ignore_eos`、连续生成 16384 token；BF16（默认）
+vs FP32（`inference.nix` 新增 `services.thorInference.mambaStateDtype`，用 FP32 unit 的
+`ExecStart` 经 `/run` drop-in 覆盖）。检测非目标语言脚本、重复行、符号循环。
+
+| arm | 语言 | 结果 | 非目标脚本字符 | Latin 串（合法缩写/公式） |
+| --- | --- | --- | ---: | ---: |
+| BF16 | en | 无异常 | 0 | 0 |
+| BF16 | zh | 无异常 | 0 | 11（CO₂/ENSO/PDO/AMO/pH/IPCC） |
+| FP32 | en | 无异常 | 0 | 0 |
+| FP32 | zh | 无异常 | 0 | 165（CO₂/kJ/km/GRACE/CMIP/GPM/…） |
+
+两臂的 16K 连续生成都**没有**非目标脚本字符、重复行或符号循环；启发式标出的 “foreign”
+全部是中文技术文本里合法的拉丁缩写与化学式/单位。因此在本行为层测试下 **BF16 与 FP32
+都未出现可检测的漂移**，也没有复现 Lazycat 那个 abliterated Flash-Next 的漂移（那是另一个
+模型）。边界：仅行为层、每臂单次、两臂因数值不同 greedy 轨迹会分叉；要判定数值漂移的机制，
+需要 teacher-forced 固定 token 流下的逐层 state/logits 对照（需加 state-dump hook），本页未做。
