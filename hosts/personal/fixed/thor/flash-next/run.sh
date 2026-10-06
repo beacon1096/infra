@@ -33,6 +33,8 @@ esac
 : "${DRAFT_DIR:=}"
 : "${OPTIMIZATION_DIR:=}"
 : "${W8A8_SHAPE_LOG:=}"
+: "${GDN_STATE_DUMP:=}"
+: "${GDN_STATE_DUMP_LAYERS:=}"
 
 test -d "$RUNTIME_DIR"
 test ! -e "$RUNTIME_DIR/memory-stop"
@@ -109,6 +111,20 @@ if [[ -n "$W8A8_SHAPE_LOG" ]]; then
     shape_env=("--env" "SGLANG_W8A8_SHAPE_LOG=$W8A8_SHAPE_LOG")
     shape_mount=("--mount" "type=bind,src=$CACHE_DIR/runtime-patches/fp8_kernel.py,dst=/sgl-workspace/sglang/python/sglang/kernels/ops/quantization/fp8_kernel.py,readonly")
 fi
+gdn_env=()
+gdn_mount=()
+if [[ -n "$GDN_STATE_DUMP" ]]; then
+    test -f "$CACHE_DIR/runtime-patches/gdn_backend.py"
+    install -d -m 0755 "$GDN_STATE_DUMP"
+    gdn_env=("--env" "SGLANG_GDN_STATE_DUMP=/gdn-state")
+    if [[ -n "$GDN_STATE_DUMP_LAYERS" ]]; then
+        gdn_env+=("--env" "SGLANG_GDN_STATE_DUMP_LAYERS=$GDN_STATE_DUMP_LAYERS")
+    fi
+    gdn_mount=(
+        "--mount" "type=bind,src=$GDN_STATE_DUMP,dst=/gdn-state"
+        "--mount" "type=bind,src=$CACHE_DIR/runtime-patches/gdn_backend.py,dst=/sgl-workspace/sglang/python/sglang/srt/layers/attention/linear/gdn_backend.py,readonly"
+    )
+fi
 printf 'Starting mixed-target-only baseline; BF16 dtype does not undo mixed/FP8 weights\n'
 
 exec docker run --rm --name "$container" --pull=never \
@@ -116,10 +132,12 @@ exec docker run --rm --name "$container" --pull=never \
     "${token_mount[@]}" \
     "${eagle_mount[@]}" \
     "${shape_mount[@]}" \
+    "${gdn_mount[@]}" \
     --cidfile="$cid_file" \
     --device=nvidia.com/gpu=all --shm-size=8g --memory=108g --memory-swap=108g \
     --publish=127.0.0.1:8890:8890 \
     "${shape_env[@]}" \
+    "${gdn_env[@]}" \
     --env HF_HOME=/root/.cache/huggingface --env HF_HUB_OFFLINE=1 --env TRANSFORMERS_OFFLINE=1 \
     --env PYTHONPATH=/opt/owned-fa4 --env SGLANG_INKLING_FA4_USE_PIP=1 \
     --env SGLANG_QWEN4_PLE_FILE_RSS_BUDGET_GB=4 \

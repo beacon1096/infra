@@ -198,6 +198,16 @@ in
     default = false;
     description = "Enable the patched dense-FP8 kernel shape log (SGLANG_W8A8_SHAPE_LOG=/tmp/w8a8-shapes.log) for offline shape inventory.";
   };
+  options.services.thorFlashNext.gdnStateDump = lib.mkOption {
+    type = lib.types.nullOr lib.types.str;
+    default = null;
+    description = "Dump per-layer GDN SSM state to this host directory (uses the diagnostic gdn_backend.py overlay) for state-dtype drift analysis.";
+  };
+  options.services.thorFlashNext.gdnStateDumpLayers = lib.mkOption {
+    type = lib.types.nullOr lib.types.str;
+    default = null;
+    description = "Comma-separated GDN layer ids to dump; unset or \"all\" dumps every layer. Only used with gdnStateDump.";
+  };
 
   config = {
     assertions = [{
@@ -219,6 +229,8 @@ in
         DRAFT_DIR = if config.services.thorFlashNext.mtp then draftDir else "";
         OPTIMIZATION_DIR = if config.services.thorFlashNext.tokenMap then optimizationDir else "";
         W8A8_SHAPE_LOG = if config.services.thorFlashNext.w8a8ShapeLog then "/tmp/w8a8-shapes.log" else "";
+        GDN_STATE_DUMP = if config.services.thorFlashNext.gdnStateDump == null then "" else config.services.thorFlashNext.gdnStateDump;
+        GDN_STATE_DUMP_LAYERS = if config.services.thorFlashNext.gdnStateDumpLayers == null then "" else config.services.thorFlashNext.gdnStateDumpLayers;
         FA4_LAYER = toString fa4Layer;
         PREPARE_PROGRAM = "${prepare}/bin/thor-flash-next-prepare";
         PATCH_DIR = "${./flash-next}";

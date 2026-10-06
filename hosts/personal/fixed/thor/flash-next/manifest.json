@@ -31,5 +31,16 @@
     "patch_sha256": "248298cc4cf04aa24318d9febb7d984cb6acaf9c888a604a4ee2724bedfa43e2",
     "scope": "Optional W8A8 dense-FP8 shape logging in w8a8_block_fp8_matmul_triton, gated by env SGLANG_W8A8_SHAPE_LOG; no behavior change when unset. Used only for offline shape inventory.",
     "gpu_numerical_parity": null
+  },
+  {
+    "file": "gdn_backend.py",
+    "source": "/sgl-workspace/sglang/python/sglang/srt/layers/attention/linear/gdn_backend.py",
+    "engine_revision": "94602c9c2b7cbdb8efd5c52802dac6a1c180089e",
+    "source_url": "https://raw.githubusercontent.com/sgl-project/sglang/94602c9c2b7cbdb8efd5c52802dac6a1c180089e/python/sglang/srt/layers/attention/linear/gdn_backend.py",
+    "original_sha256": "3bc3cf81319ad0cac2bf606d35d50d24f961d4a92b2a814ef502e531f7c76217",
+    "patched_sha256": "a5adc72bc078cc7f0010c4d22b0d51f121d4c0558f1d69145da69370d1a5e0f6",
+    "patch_sha256": "adf21da589b8f30336cc9e882c265f7ff374147f99664b74a1dc0dd1f18fcf29",
+    "scope": "Diagnostic only, no-op unless SGLANG_GDN_STATE_DUMP is set: after the prefill/extend kernel, dump the written per-layer SSM state to <dir>/layerNNN_seqNNNNNN.npy for offline state-dtype drift analysis. Layers selectable via SGLANG_GDN_STATE_DUMP_LAYERS (comma list, default all).",
+    "gpu_numerical_parity": null
   }
 ]

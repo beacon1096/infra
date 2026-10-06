@@ -1945,9 +1945,11 @@ teacher-forced 对照：把整条固定 token 流作为 `input_ids` 一次提交
 
 | 对照 | n | mean \|Δlogprob\| | max |Δ| | top-1 改变 | top-10 overlap |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| FP32 vs FP32（3 次） | 4095 | **0.0** | 0.0 | **0/4095** | 1.0 |
-| FP32 vs BF16 | 4095 | 0.2429 | 6.04 | 559/4095（13.7%） | 0.77 |
-| BF16 vs BF16（3 对） | 4095 | 0.111 | 5.51 | ~250/4095（6.1–6.4%） | — |
+| FP32 vs FP32，0–2047（跑 3 次） | 2047 | **0.0** | 0.0 | **0/2047** | 1.0 |
+| FP32 vs FP32，2048–4095（同 dtype 噪声） | 2048 | 0.113 | — | 248/2048（12.1%） | — |
+| FP32 vs BF16，0–2047 | 2047 | 0.236 | — | 286/2047（14.0%） | — |
+| FP32 vs BF16，4096 | 4095 | 0.2429 | 6.04 | 559/4095（13.7%） | 0.77 |
+| BF16 vs BF16，2048–4095 | 2048 | 0.111 | 5.51 | ~250/2048（~12%） | — |
 
 按 512 分箱（每箱 512 token，`mean|Δ|` / top-1 改变数）：
 
@@ -1963,17 +1965,15 @@ teacher-forced 对照：把整条固定 token 流作为 `input_ids` 一次提交
 | 3584 | 0.233 / 76 | 0.193 / 60 |
 
 结论：
-1. **FP32 SSM state 的 prefill logits 逐位可复现**（4096 token、3 次全 0 差异）。
+1. **FP32 SSM state 只在 0–2047 token 逐位可复现**；**超过 2048 后 FP32 自身也不可复现**
+   （同 dtype 两次 mean \|Δlogprob\|≈0.113、top-1 12.1%）。下节的 state dump 直接证实了这一点。
 2. **换成 BF16 state 会系统性改变 logits**：**前 512 token（第一个 prefill chunk）逐位相同**，
    从第 512 个 token（第一个 state 边界）起开始分叉——与「state 只在 chunk 边界的
-   store/restore 处被 round 到 state dtype」一致。4096 token 整体 mean \|Δlogprob\|≈0.24、
-   top-1 翻转 13.7%、top-10 重叠 0.77。也就是说 BF16 state 并非「数值无害」，在 4K 上下文就
-   明显改变 ranking。
-3. **BF16 state 在 >2048 token 后不可复现**：三次 BF16 捕获两两相比，0–2047 token 完全
-   相同，从 2048 起 mean\|Δ\|≈0.11、top-1 翻转约 6%。当时据此怀疑是 BF16 的 state 路径
-   （bf16 累积/原子）在长上下文变得非确定；**该初判随后被收窄**：chunk=64 时 **FP32 自身**
-   在 >2048 也有同量级非确定（见下节），故 >2048 非确定是 **dtype-independent** 的
-   checkpoint/restore 伪影，不能归给 BF16；只有 chunk=512 的 FP32 恰好全程逐位可复现。
+   store/restore 处被 round 到 state dtype」一致。0–2047 窗口内 mean \|Δlogprob\|≈0.236、
+   top-1 翻转 14.0%；4096 整体 mean≈0.24、top-1 13.7%、top-10 重叠 0.77。BF16 state 并非
+   「数值无害」，在 4K 上下文就明显改变 ranking。
+3. **>2048 的非确定性是 dtype-independent 的**：FP32 与 BF16 自身重复都有同量级噪声
+   （mean\|Δ\|≈0.11、top-1 ~12%），来自 state checkpoint/restore 路径，而非某种 dtype。
 
 边界与解释：这是 **prefill**（chunk=512）而非 decode（每 token 一个 state 边界）的测量。
 decode 下 state 每步都 round，**预期** dtype 影响更强，但真 decode 的 kernel/执行路径与
@@ -2003,21 +2003,56 @@ top-1 翻转 14.0%→18.3%）。这支持「boundary 频率升高会增强 dtype
 
 | 配置 | 0–2047 | 2048–4095 |
 | --- | --- | --- |
-| chunk=512 FP32 | 逐位一致 | 逐位一致（mean\|Δ\|=0） |
-| chunk=512 BF16 | 逐位一致 | 非确定：mean\|Δ\|≈0.111、top-1 6% |
-| chunk=64 FP32 | 逐位一致 | **非确定**：mean\|Δ\|≈0.109、top-1 6% |
-| chunk=64 BF16 | 逐位一致 | **非确定**：mean\|Δ\|≈0.110、top-1 6% |
+| chunk=512 FP32 | 逐位一致 | **非确定**：mean\|Δ\|≈0.113、top-1 ~12% |
+| chunk=512 BF16 | 逐位一致 | 非确定：mean\|Δ\|≈0.111、top-1 ~12% |
+| chunk=64 FP32 | 逐位一致 | **非确定**：mean\|Δ\|≈0.109、top-1 ~12% |
+| chunk=64 BF16 | 逐位一致 | **非确定**：mean\|Δ\|≈0.110、top-1 ~12% |
 
-注意 chunk=64 时 **FP32 自身**在 >2048 也非确定，且与 BF16 的噪声量级相同——说明这里的 >2048
-非确定性来自 **state checkpoint/restore 机制本身**（细粒度下必现），与 dtype 无关；只有
-chunk=512 的 FP32 恰好全程逐位可复现。因此「0–2047 窗口」内 BF16-vs-FP32 的差异可以干净归因给
-state dtype，而 >2048 的 decode-like 归因仍需确定性 replay 补丁。
+修正：四臂的 **0–2047 都逐位可复现，>2048 都不确定**，噪声量级与 dtype、chunk 都无关。此前
+以为「chunk=512 FP32 全程可复现」是错的——那是 1024-token 短测（未越过 2048）的结论；补做
+4096 后 FP32 自身也在 >2048 分叉（见上一节表格首两行）。因此 >2048 非确定来自 **state
+checkpoint/restore 机制本身**，能干净归因 state dtype 的窗口是 **token 0–2047**。
 
-结论：本服务在 prefill chunk=512 下 FP32 state 可复现；一旦把 state 更新细化到 decode 粒度，
-**即使 FP32 的 state 路径也不再逐位可复现**，BF16 则在此之上额外引入约 14–18% top-1 翻转的确定性
-分歧。综合两节：**FP32 state 保持默认；BF16 仅作省内存选项且标注数值/可复现性风险**；要给出
-逐层 state rel-L2/cosine 的最终机制结论，仍需确定性单进程 replay + state dump。证据保留在私有
-`/var/lib/thor-flash-next/observations/state-drift-20261006/`（`fp32`、`bf16`、`bf16b`、`c64-*`）。
+结论：四臂的 prefill logits 在 0–2047 逐位可复现，BF16-vs-FP32 在此窗口的差异（14–18% top-1）
+可干净归因给 state dtype；>2048 被 dtype-independent 的 checkpoint 噪声污染。**FP32 state
+保持默认；BF16 仅作省内存选项并标注数值/可复现性风险**。逐层 state 的 rel-L2/cosine 已由下节的
+诊断补丁直接测得。logits 证据保留在私有 `/var/lib/thor-flash-next/observations/state-drift-20261006/`。
+
+### 逐层 GDN state 直接对照（诊断补丁 + state dump）
+
+2026-10-06。为摆脱「只看 logits」的间接性，给 pinned 源码加了一个**诊断补丁**：`gdn_backend.py`
+在 prefill/extend kernel 写回 state 后，把每层 SSM state 存成
+`$SGLANG_GDN_STATE_DUMP/layerNNN_seqNNNNNN.npy`（env 未设则完全 no-op；`SGLANG_GDN_STATE_DUMP_LAYERS`
+可选层）。补丁进入 `flash-next/manifest.json`（原文件 `3bc3cf81…` → `a5adc72b…`），`run.sh` 在
+设了 `GDN_STATE_DUMP` 时挂载它并把 dump 目录 bind 进容器。实验用 G1 baseline（chunk=512，FP32）
+与仅把 `mamba-ssm-dtype` 改成 bfloat16 的同一 baseline，各 dump 两次（第二次用于自噪声基线）。
+
+36 个 GDN 层（`layer000`…`layer046`）在每个 512-token 边界各一份。**自噪声**：FP32 与 BF16 在
+seq ≤ 2048 全部 **逐位为 0**（rel-L2 = 0、cos = 1）；seq > 2048 两臂都出现同量级噪声（rel-L2
+≈ 0.08–0.10），与上一节 logits 结论一致。
+
+**FP32 vs BF16 的逐层 state 分歧**（自噪声为 0，故此窗口内可纯归因 dtype）：
+
+| seq（state 边界） | 全层 mean rel-L2 | max rel-L2 | min cos |
+| ---: | ---: | ---: | ---: |
+| 512（第 1 个边界） | **1.66e-3** | 1.77e-3 | 0.999998 |
+| 1024 | 9.46e-2 | 0.388 | 0.924 |
+| 1536 | 1.01e-1 | 0.408 | 0.915 |
+| 2048 | 9.67e-2 | 0.324 | 0.947 |
+
+第 1 个边界处每层几乎一致地 ~1.6e-3 rel-L2（≈ 一次 BF16 round，2^-9），到第 2 个边界即放大到
+~0.1。逐层结构（seq=2048，`layer: rel-L2 / cos`）：
+
+| 层 | 早期 | 中期 | 晚期 |
+| --- | --- | --- | --- |
+| 代表值 | L000 0.002 / 1.000；L005 0.041 / 0.999 | L014 0.104 / 0.995；L020 0.101 / 0.995；L026 0.125 / 0.992 | L030 0.201 / 0.980；L036 0.182 / 0.984；L044 **0.324** / 0.947 |
+
+即：BF16 的 state 误差在**每个 state 边界注入一次 ~2^-9 的 round**，随后被 recurrent 动态
+**沿层深与序列长度放大**——浅层基本保持，晚期层（L030/L036/L044）在 1–2K token 就到
+rel-L2 0.2–0.39、cos 0.92–0.98。机制结论：**BF16 SSM state 是可复现的真实数值退化**（非噪声），
+量化在 state store/restore 处生效并在长序列中放大；这直接支持「保持 FP32 state 默认」。
+边界：仍是 prefill（chunk=512）；decode 每 token 一个边界，预期更频繁注入误差，但 decode 路径
+本身不可复现，无法用同一 dump 直接测，需确定性 replay。
 
 
 
