@@ -1750,3 +1750,32 @@ shape 与 config、没有耗时，耗时需与上一节按 grid 的统计配对�
 
 下一轮：可对上述 5 个 M=2048 shape 做 Triton config sweep（微基准 → service-level A/B），
 或用 op hook 再补 MoE 的 W13/W2 细分。
+
+### dense FP8 Triton config sweep（微基准）
+
+在固定镜像里做独立微基准（占 GPU、但不加载模型）：对上面 5 个 M=2048 shape，monkeypatch
+`get_w8a8_block_fp8_configs` 注入候选 config，直接计 `w8a8_block_fp8_matmul_triton`
+（fp8 输入、block 128×128、bf16 输出），并与默认输出对照 `max_abs_diff`。默认 config 为
+`BM64,BN128,BK128,G32,w4,s3`。
+
+| shape (N,K) | 默认 min（µs） | 最佳 min（µs） | 最佳 config | 相对默认 |
+| --- | ---: | ---: | --- | ---: |
+| 2560, 6144 | 934.5 | 914.1 | G8（其余同默认） | −2.2% |
+| 2560, 640 | 168.2 | 163.0 | BM128,BN64 | −3.1% |
+| 1280, 2560 | 264.8 | 238.9 | G1,G32→1,w4,s4 | −9.8% |
+| 16384, 2560 | 2522.9 | 2522.9 | **默认即最佳** | 0% |
+| 13312, 2560 | 2052.7 | 2052.7 | **默认即最佳** | 0% |
+
+结论：**两个最大 shape 默认 config 已经最优**，其余仅有 2–3%（个别 ~10%）的零碎收益；
+按上一节各 grid 的耗时加权，整体收益约 **0.2%**，不值得为它加补丁。另有几个候选
+（`BK=256`、`BM256/BN256`）输出与默认不一致（`max_abs_diff>0`），在本模型/block 下无效，
+已排除。因此 dense FP8 在本运行时同样基本到顶：backend 锁死（前节）+ 默认 Triton config
+接近最优（本节）——继续抠它需要手写/上游 kernel，而不是配置。
+
+边界：候选集只有 10 个、单一 M=2048、合成随机输入、未加载模型；时间为 min-of-30；这是
+微基准，不是 service-level A/B。GPU 已释放，无容器残留。
+
+至此性能线基本到头：**decode 已好；长 prefill 的大头靠 chunk（512→4096 约 1.67×）
+解决；剩余 prefill 是 GEMM/MoE，backend 与 Triton config 都无可用旋钮**（MoE 若要继续
+需上游 FlashInfer 的 SM110 FP4）；PLE/attention 都不是瓶颈。进一步的性能收益需要
+kernel 级/上游工作，而不是本仓配置。
