@@ -32,6 +32,7 @@ esac
 : "${PATCH_DIR:?Set PATCH_DIR to the immutable patch inputs}"
 : "${DRAFT_DIR:=}"
 : "${OPTIMIZATION_DIR:=}"
+: "${W8A8_SHAPE_LOG:=}"
 
 test -d "$RUNTIME_DIR"
 test ! -e "$RUNTIME_DIR/memory-stop"
@@ -101,15 +102,24 @@ if $token_map_requested; then
     test -f "$CACHE_DIR/runtime-patches/eagle_worker_v2.py"
     eagle_mount=("--mount" "type=bind,src=$CACHE_DIR/runtime-patches/eagle_worker_v2.py,dst=/sgl-workspace/sglang/python/sglang/srt/speculative/eagle_worker_v2.py,readonly")
 fi
+shape_env=()
+shape_mount=()
+if [[ -n "$W8A8_SHAPE_LOG" ]]; then
+    test -f "$CACHE_DIR/runtime-patches/fp8_kernel.py"
+    shape_env=("--env" "SGLANG_W8A8_SHAPE_LOG=$W8A8_SHAPE_LOG")
+    shape_mount=("--mount" "type=bind,src=$CACHE_DIR/runtime-patches/fp8_kernel.py,dst=/sgl-workspace/sglang/python/sglang/kernels/ops/quantization/fp8_kernel.py,readonly")
+fi
 printf 'Starting mixed-target-only baseline; BF16 dtype does not undo mixed/FP8 weights\n'
 
 exec docker run --rm --name "$container" --pull=never \
     "${draft_mount[@]}" \
     "${token_mount[@]}" \
     "${eagle_mount[@]}" \
+    "${shape_mount[@]}" \
     --cidfile="$cid_file" \
     --device=nvidia.com/gpu=all --shm-size=8g --memory=108g --memory-swap=108g \
     --publish=127.0.0.1:8890:8890 \
+    "${shape_env[@]}" \
     --env HF_HOME=/root/.cache/huggingface --env HF_HUB_OFFLINE=1 --env TRANSFORMERS_OFFLINE=1 \
     --env PYTHONPATH=/opt/owned-fa4 --env SGLANG_INKLING_FA4_USE_PIP=1 \
     --env SGLANG_QWEN4_PLE_FILE_RSS_BUDGET_GB=4 \

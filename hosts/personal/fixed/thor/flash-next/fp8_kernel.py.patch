@@ -1,0 +1,21 @@
+--- fp8_kernel.py
++++ fp8_kernel.py
+@@ -1592,6 +1592,18 @@
+             triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(N, META["BLOCK_SIZE_N"]),
+         )
+ 
++    import os as _os
++    _shape_log = _os.environ.get("SGLANG_W8A8_SHAPE_LOG")
++    if _shape_log:
++        try:
++            with open(_shape_log, "a") as _handle:
++                _handle.write(
++                    "M=%d,N=%d,K=%d,BM=%d,BN=%d,BK=%d,warps=%d,stages=%d\n"
++                    % (M, N, K, config["BLOCK_SIZE_M"], config["BLOCK_SIZE_N"],
++                       config["BLOCK_SIZE_K"], config["num_warps"], config["num_stages"])
++                )
++        except OSError:
++            pass
+     kernel[grid](
+         A,
+         B,

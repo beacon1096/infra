@@ -20,5 +20,16 @@
     "patch_sha256": "9625968d73b374d8c9b0df3798fbc927b332da1cb24a938bc5cc4a06c284774a",
     "scope": "NEXTN/EAGLE speculative token map: dequantize a block-FP8 target lm_head with its weight_scale_inv before selecting the reduced vocabulary rows, because the draft head is unquantized. No-op when no token map is set; target head stays FP8.",
     "gpu_numerical_parity": null
+  },
+  {
+    "file": "fp8_kernel.py",
+    "source": "/sgl-workspace/sglang/python/sglang/kernels/ops/quantization/fp8_kernel.py",
+    "engine_revision": "94602c9c2b7cbdb8efd5c52802dac6a1c180089e",
+    "source_url": "https://raw.githubusercontent.com/sgl-project/sglang/94602c9c2b7cbdb8efd5c52802dac6a1c180089e/python/sglang/kernels/ops/quantization/fp8_kernel.py",
+    "original_sha256": "70e77198045fb8b7308be9c314392dee972ffd910260c53a36e2fd596f8b43bc",
+    "patched_sha256": "3fc4e609e9b77aa742ea6a64ad7f1c042dbf48025a5a098b7967e5d61bc772a0",
+    "patch_sha256": "248298cc4cf04aa24318d9febb7d984cb6acaf9c888a604a4ee2724bedfa43e2",
+    "scope": "Optional W8A8 dense-FP8 shape logging in w8a8_block_fp8_matmul_triton, gated by env SGLANG_W8A8_SHAPE_LOG; no behavior change when unset. Used only for offline shape inventory.",
+    "gpu_numerical_parity": null
   }
 ]

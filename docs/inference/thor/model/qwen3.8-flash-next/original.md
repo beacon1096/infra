@@ -1710,3 +1710,43 @@ FP8 也不走 `aten::mm`，**无法**用现有字段做 op 级 correlation，精
 
 下一轮：若要继续，可对 `_w8a8_block_fp8_matmul` 做精确 shape↔耗时关联并试 Triton
 config；MoE 侧则需要上游 FlashInfer 的 SM110 FP4 grouped GEMM 基准。
+
+### dense FP8 精确 shape inventory（w8a8 shape hook）
+
+为拿到 dense FP8 的精确 `(M,N,K)` 与当前 Triton config，新增第三个固定 overlay 补丁
+`fp8_kernel.py.patch`：在 `w8a8_block_fp8_matmul_triton` 启动 kernel 前，若设置了环境变量
+`SGLANG_W8A8_SHAPE_LOG`，就把 `M,N,K` 与最终 `config`（`BLOCK_SIZE_M/N/K`、`num_warps`、
+`num_stages`）追加到该文件。配套新增 opt-in `services.thorFlashNext.w8a8ShapeLog`（设为 true
+时挂载补丁并设置该环境变量）；未启用时不挂载、无行为变化。在 `L64_2048` + shape log 上跑
+一次 64k prefill，日志（私有 `run25/w8a8-shapes.log`）聚合如下（M=2048 为 full chunk，
+31 个）：
+
+| M | N | K | 归因 | 调用数 |
+| ---: | ---: | ---: | --- | ---: |
+| 2048 | 2560 | 6144 | `out_proj` / `o_proj`（48 层） | 1488 = 48×31 |
+| 2048 | 2560 | 640 | `shared_expert.down_proj`（48 层） | 1488 = 48×31 |
+| 2048 | 1280 | 2560 | `shared_expert` gate+up（48 层） | 1488 = 48×31 |
+| 2048 | 16384 | 2560 | GDN/linear-attn `in_proj`（36 层） | 1116 = 36×31 |
+| 2048 | 13312 | 2560 | full-attn qkv（12 层） | 372 = 12×31 |
+
+其余为 decode/draft/tail：`M=1,N=248320,K=2560`（`lm_head`，80 次）、`M=4`（draft 步）、
+`M=122/543`（tail chunk）。**所有 shape 都用同一个 Triton 默认 config
+`BM=64,BN=128,BK=128,warps=4,stages=3`**——因为该镜像没有 Thor/Blackwell 的 tuned config，
+`get_w8a8_block_fp8_configs` 全部返回 None，所以落到默认分支。
+
+这精确对上了上一节的 grid 计数：`[4096]=N16384`、`[640]=N2560`、`[3328]=N13312`、
+`[320]=N1280`。同时**纠正一个假设**：`[640]`（2976 次）不是 shared-expert gate/up，而是
+N=2560 的两个模块（`o_proj` + `down_proj`）；shared-expert 的 **gate+up 已经是融合形式**
+（权重按 N=1280 一次 GEMM），因此“gate/up 融合”这条优化点本仓已经具备，无需再做。
+
+结论：dense FP8 的优化对象是这 5 个固定 shape（在同一条默认 Triton config 下），
+shape-specific Triton 调参仍是未被利用的杠杆，优先 `N=16384,K=2560`（单通道最大，
+上一节累计 2.69 s）与 `N=2560,K=6144`。
+
+边界：日志含加载/warmup 与一次请求，`M=4/1/122/543` 属于 draft/decode/tail；该日志只有
+shape 与 config、没有耗时，耗时需与上一节按 grid 的统计配对；单请求、单长度。服务已停止，
+容器清理，MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。raw 证据在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run25/`。
+
+下一轮：可对上述 5 个 M=2048 shape 做 Triton config sweep（微基准 → service-level A/B），
+或用 op hook 再补 MoE 的 W13/W2 细分。

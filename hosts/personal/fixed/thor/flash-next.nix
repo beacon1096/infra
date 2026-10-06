@@ -193,6 +193,11 @@ in
     default = null;
     description = "Override --fp4-gemm-backend for the FP4 GEMM path.";
   };
+  options.services.thorFlashNext.w8a8ShapeLog = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = "Enable the patched dense-FP8 kernel shape log (SGLANG_W8A8_SHAPE_LOG=/tmp/w8a8-shapes.log) for offline shape inventory.";
+  };
 
   config = {
     assertions = [{
@@ -213,6 +218,7 @@ in
         CACHE_DIR = "/var/lib/thor-flash-next/${builtins.baseNameOf baseline.model_dir}/runtime-cache";
         DRAFT_DIR = if config.services.thorFlashNext.mtp then draftDir else "";
         OPTIMIZATION_DIR = if config.services.thorFlashNext.tokenMap then optimizationDir else "";
+        W8A8_SHAPE_LOG = if config.services.thorFlashNext.w8a8ShapeLog then "/tmp/w8a8-shapes.log" else "";
         FA4_LAYER = toString fa4Layer;
         PREPARE_PROGRAM = "${prepare}/bin/thor-flash-next-prepare";
         PATCH_DIR = "${./flash-next}";

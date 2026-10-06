@@ -31,6 +31,7 @@ if Path(sys.argv[0]).name == "prepare":
     destination.mkdir(parents=True)
     (destination / "vocab_parallel_embedding.py").write_text("# Fake overlay\\n")
     (destination / "eagle_worker_v2.py").write_text("# Fake overlay\\n")
+    (destination / "fp8_kernel.py").write_text("# Fake overlay\\n")
     sys.exit(0)
 with open(os.environ["FAKE_DOCKER_LOG"], "a", encoding="utf-8") as log:
     log.write(json.dumps(args) + "\\n")
@@ -210,7 +211,7 @@ class FlashNextChecks(unittest.TestCase):
             [self.baseline["image"], str(self.patch_dir), str(self.cache / "runtime-patches")],
         ])
         self.assertEqual(sorted(path.name for path in (self.cache / "runtime-patches").iterdir()),
-                         ["eagle_worker_v2.py", "vocab_parallel_embedding.py"])
+                         ["eagle_worker_v2.py", "fp8_kernel.py", "vocab_parallel_embedding.py"])
         self.assertEqual(self.cid_file.read_bytes(), OWN_CID.encode("ascii"))
 
     def speculative_baseline(self, name, extra):
@@ -273,6 +274,21 @@ class FlashNextChecks(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("OPTIMIZATION_DIR", result.stderr)
         self.assertFalse(any(call[0] == "run" for call in self.calls()))
+
+    def test_w8a8_shape_log_mounts_patched_kernel_and_sets_env(self):
+        (self.model / "draft/config.json").write_text("{}")
+        (self.model / "draft/hf_quant_config.json").write_text("{}")
+        path, _ = self.speculative_baseline("shape", [])
+        result = self.run_script(BASELINE_FILE=str(path), DRAFT_DIR=str(self.model / "draft"),
+                                 W8A8_SHAPE_LOG="/tmp/w8a8-shapes.log")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        call = self.calls()[-1]
+        mounts = [call[index + 1] for index, arg in enumerate(call) if arg == "--mount"]
+        self.assertIn(f"type=bind,src={self.cache}/runtime-patches/fp8_kernel.py,"
+                      "dst=/sgl-workspace/sglang/python/sglang/kernels/ops/quantization/fp8_kernel.py,readonly",
+                      mounts)
+        environment = [call[index + 1] for index, arg in enumerate(call) if arg == "--env"]
+        self.assertIn("SGLANG_W8A8_SHAPE_LOG=/tmp/w8a8-shapes.log", environment)
 
     def test_unpinned_image_does_not_load(self):
         self.assert_no_load(self.run_script(IMAGE="lmsysorg/sglang:v0.5.20"))
@@ -459,6 +475,12 @@ class DecodeGraphModuleChecks(unittest.TestCase):
                 services.thorFlashNext.fp4GemmBackend = "marlin";
               } ];
             });
+            shapeLog = extract (system.extendModules {
+              modules = [ {
+                services.thorFlashNext.decodeGraph = true;
+                services.thorFlashNext.w8a8ShapeLog = true;
+              } ];
+            });
           }
         ''' % json.dumps(str(ROOT))
         result = subprocess.run(
@@ -639,6 +661,11 @@ class DecodeGraphModuleChecks(unittest.TestCase):
                 self.assertEqual(overridden["arguments"][overridden["arguments"].index(argument) + 1], value)
         self.assertEqual({key: value for key, value in overridden.items() if key not in {"name", "arguments"}},
                          {key: value for key, value in default.items() if key not in {"name", "arguments"}})
+
+    def test_w8a8_shape_log_option_sets_environment(self):
+        self.assertEqual(self.evaluated["default"]["service"]["environment"]["W8A8_SHAPE_LOG"], "")
+        self.assertEqual(self.evaluated["shapeLog"]["service"]["environment"]["W8A8_SHAPE_LOG"],
+                         "/tmp/w8a8-shapes.log")
 
     def test_mamba_state_dtype_override_replaces_single_argument(self):
         default = json.loads(self.evaluated["default"]["baselineText"])
