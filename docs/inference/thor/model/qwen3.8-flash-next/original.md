@@ -2054,5 +2054,15 @@ rel-L2 0.2–0.39、cos 0.92–0.98。机制结论：**BF16 SSM state 是可复�
 边界：仍是 prefill（chunk=512）；decode 每 token 一个边界，预期更频繁注入误差，但 decode 路径
 本身不可复现，无法用同一 dump 直接测，需确定性 replay。
 
+**声明式单元验收（2026-10-07）。** 默认 `gdnStateDump = null`：`nix eval` 单元的
+`GDN_STATE_DUMP = ""`，run 包装里的 gdn 挂载/env 分支以 `[[ -n "$GDN_STATE_DUMP" ]]` 门控，
+空值时完全不触发（overlay 文件会被 prepare 生成但**不挂载**，行为与改动前一致，即 no-op）。
+临时设 `services.thorFlashNext.decodeGraph = true` + `gdnStateDump = <dir>` 重建单元（走
+`nix build …systemd.units."thor-flash-next.service".unit` + `nix copy`）后，`docker inspect`
+核验容器：`SGLANG_GDN_STATE_DUMP=/gdn-state`、`/gdn-state` 为可写 bind、patched
+`gdn_backend.py`（sha256 `a5adc72b…`）只读挂到 linear-attention 路径。发一条 1024-token 请求
+（chunk=512）后 dump 目录得到 36 层 × {seq 512, 1024}（外加启动 warmup 的 seq=1），smoke 通过。
+随后停服、恢复 G1 idle 链接、撤销临时 config。`gdnStateDump` 默认关闭、**未**晋升为默认。
+
 
 
