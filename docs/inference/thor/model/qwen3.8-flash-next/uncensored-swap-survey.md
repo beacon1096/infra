@@ -256,5 +256,42 @@ weight_block_size=[128,128])`，即**权重 FP8 block[128,128] + 动态激活**�
   prefill；**关键新 A/B：Stage1 BF16-dense uncensored vs Stage2 mixed uncensored**（FP8 dense/head
   是否损伤已验证行为）。
 - **待确认**：走路径 A（需先清盘/外部存储）还是路径 B（推荐）。
+
+## 13. Stage 2 结果（路径 B：从 jpezzulli 派生 production-matched mixed，2026-10-07）
+
+按路径 B 构造：硬链接 jpezzulli 全量，重写含 301 个 production `FP8_PB_WO` 目标的 4 个
+`model-bf16-*` shard——把 BF16 权重按 `[128,128]` 块量化为 **F8_E4M3 + `weight_scale_inv`(F32,
+= 块 amax/448)**（先验证 production 约定：每块 fp8 amax 恰为 448）；experts(NVFP4)/PLE(FP8)/
+其余保持不动；`config.json`/`hf_quant_config.json` 改成 `modelopt_mixed` / `MIXED_PRECISION` +
+397 `quantized_layers`（96 NVFP4 g16 + 301 FP8_PB_WO g128）。脚本 `build-stage2.py` 产出
+`conversion-manifest.json`。
+
+**静态核验**（与 production 对齐）：`modelopt_mixed/MIXED_PRECISION`；index **296,776** 张量、
+**301** 个 `weight_scale_inv`；`linear_attn.out_proj` → F8_E4M3 [2560,6144] + scale [20,48]；
+`lm_head` → F8_E4M3 [248320,2560] + scale [1940,20]；experts 仍 `U8`+`weight_scale`；`ple_
+embedding_dtype=float8_e4m3fn`。
+
+**GPU 结果**（`modelopt_mixed` + FP8-head loader 补丁 + stock draft；`--mamba-ssm-dtype float32`）：
+
+| 项目 | Stage 1（BF16 dense） | **Stage 2（mixed）** |
+| --- | --- | --- |
+| 加载 | 83.4 GB | **78.0 GB**（FP8 dense 更省） |
+| 能力 A/B（10×3，+MTP） | run9 30/30 | **29/30**（仅 `python-interval-repair-ast` 2/3，`finish=stop` 内容级 gate 抖动，非 no-EOS/错答） |
+| over-refusal（12） | 0/12 | **0/12** |
+| decode tok/s（thinking） | ~21（target-only）/ ~50（MTP） | **~57–60**（回到 M1M 区间） |
+| acceptance neutral/code/refusal | ~0.57/0.78/0.54 | 0.641/0.747/0.527（与 aligned 0.600/0.721/0.505 同量级） |
+| prefill 8K/32K/65K tok/s | 986/1598/1178 | **887/1451/2059**（长 prefill 约 1.75×） |
+
+**结论**：把已验证行为的 uncensored target 恢复成 production 的 dense/head/PLE 配方后，
+**FP8 dense/head 未观察到对已验证行为的损伤**（over-refusal 0/12 保持；能力唯一一次 29/30 是
+已知的罕见抖动），且**性能回到接近 production（M1M）水平、长 prefill 更快**。Stage 2 artifact
+是可行的 production candidate。
+
+**边界/待办**：① 29/30 的 1 次是内容级抖动，需要在 soak（多小时/数百请求，盯 no-EOS 与
+gate flake 率）中确认；② provenance 是**从 jpezzulli 派生**（其 `base_model` =
+`OrcaRouter/Qwen3.8-Flash-Next-Uncensored`，card 未 pin revision），不是从 OrcaRouter BF16 源
+直接重建；若要严格可复现，需补 pin 源 revision 或改走路径 A；③ 目标 artifact 在
+`/var/lib/thor-inference/flash-next/jpezzulli-stage2-mixed`（123G，硬链接自 jpezzulli）。
+证据：`mtp-20261005/run16-ab-stage2/`、`overrefusal-stage2/`、`state-drift-20261006/stage2-*.log`。
 - 证据：`state-drift-20261006/stage1.5-jpezzulli.log`；`mtp-20261005/run8-ab-uncensored-mtp/`、
   `run9-ab-uncensored-mtp/`、`spec-metrics*.py`。
