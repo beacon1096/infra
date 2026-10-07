@@ -465,17 +465,28 @@ decode graph）在 managed unit 上**稳定可用**。
 | `python-interval-repair-ast` | **15/15**（+首轮 3/3 = 18/18） | ≈**21/25**（run18 9/10 + soak2 12/15） |
 | `python-fill-memo-fib` | 15/15 | 25/25 |
 
-→ 这是**首个在真实 gate 下的行为差异**：在代码修复 case 上，uncensored 候选有约 **16% 的真实执行
-失败率**（失败多为模型自己写了“先错后改”的 assert 使文件不可运行），而 aligned production 为 **0**
-（18/18）。之前 AST gate 完全掩盖了这一差异。**样本仍有限**（stage2 merge 25 次、M1M 18 次）。
+→ 小样本（stage2 merge 25 次、M1M 18 次）下曾看似“uncensored 更弱（≈16% vs 0%）”；但**该印象
+被下方 N=40 复核推翻**（见下）。
 
 **provenance 校验（补上）**：managed 单元现在会在启动时校验本地产物完整性——`run.sh` 在 baseline
 带 `conversion_manifest_sha256` 时，比对 `$MODEL_ROOT/conversion-manifest.json` 的 sha256，不符即
 **拒绝启动**；该 hash 由声明式选项 `services.thorFlashNext.uncensoredStage2ManifestSha256`
 （`4b95f883…`）提供，且 stage2 assertion 要求它非空。重建单元 `2wn0qfq…` 部署后启动成功 = 校验通过。
 
-**结论**：Stage-2 作为“可用”成立；但同门禁对照显示 **uncensored 在代码修复 case 上弱于 aligned
-production（≈16% vs 0% 的执行失败，样本小）**。是否接受取决于用途——若要求严格，建议在 `prod` 之前
-扩大该 case 的重复次数（或换更稳的代码 case）。
+**N=40 复核（推翻上面的小样本印象）**：在同一门禁下把两条代码 case 各跑 **40 次**：
+
+| case | aligned `M1M` | uncensored Stage-2 |
+| --- | ---: | ---: |
+| `python-interval-repair-ast` | **35/40** | **39/40** |
+| `python-fill-memo-fib` | 40/40 | 40/40 |
+
+两边失败**同因**：模型偶尔写出**自相矛盾的 assert**（先写错、再在注释里自我更正，如
+`assert merge_intervals([(5,8),(1,3),(2,6)]) == [(1,6),(5,8)]` 之后紧跟 `== [(1,8)]`），错误
+assert 让文件不可运行 → `tests 0/6`。→ **无证据表明 uncensored 更弱**；N=40 下反而是 `M1M` 略多
+（5 vs 1 失败，样本仍不足以称显著）。前述“uncensored ≈16% vs 0%”是**小样本噪声**（且那次 uncensored
+还在 **decode graph 关**的单元上跑，图开/关会改变 greedy 轨迹）。
+
+**修正后结论**：在代码修复 case 上**两个模型等价**（失败率约 2–13%，同一“自相矛盾 assert”模式），
+Stage-2 candidate 未显示相对 aligned production 的能力劣势。Stage-2 作为“可用”成立。
 - 证据：`state-drift-20261006/stage1.5-jpezzulli.log`；`mtp-20261005/run8-ab-uncensored-mtp/`、
   `run9-ab-uncensored-mtp/`、`spec-metrics*.py`。
