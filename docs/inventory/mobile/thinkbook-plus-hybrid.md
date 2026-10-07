@@ -42,6 +42,10 @@ hyprctl dispatch dpms on eDP-1
 
 内屏为 2880×1800 Samsung eDP 面板，缩放比例 `1.5`，逻辑工作区 1920×1200。F5/F6 亮度调节有效，但视觉变化可能不明显。
 
+## 故障恢复：电源重置
+
+偶尔会出现单侧 Type-C 完全无响应，或主机不响应键盘等故障；这类情况需要电源重置。操作方法：**开机状态下长按电源键 60 秒以上**。
+
 ## 指纹识别
 
 电源键集成 Goodix MOC 指纹设备 `27c6:6512 Goodix USB2.0 MISC`，由 `libfprint`/`fprintd` 支持。`services.fprintd.enable = true` 也将指纹认证加入生成的 PAM 配置，包括 greetd、sudo 和 polkit。右手食指于 2026-08-19 登记并验证。
