@@ -63,14 +63,31 @@ let
     name = graphBaseline.name + " + NEXTN full-vocab MTP";
     arguments = graphBaseline.arguments ++ mtpArguments;
   };
+  stage2 = config.services.thorFlashNext.modelSource == "uncensored-stage2";
+  modelDir =
+    if stage2 then config.services.thorFlashNext.uncensoredStage2Dir else baseline.model_dir;
+  targetDir = if stage2 then modelDir else "${modelDir}/target";
   activeBaseline =
-    if config.services.thorFlashNext.mtp then mtpBaseline
-    else if config.services.thorFlashNext.decodeGraph then decodeGraphBaseline
-    else baseline;
+    let
+      base =
+        if config.services.thorFlashNext.mtp then mtpBaseline
+        else if config.services.thorFlashNext.decodeGraph then decodeGraphBaseline
+        else baseline;
+    in
+    if stage2 then
+      builtins.removeAttrs (base // {
+        name = "thor-flash-next uncensored stage2 (modelopt_mixed derived)";
+        model_dir = modelDir;
+        target_repository = "jpezzulli/OrcaRouter-Qwen3.8-Flash-Next-Uncensored-ModelOpt-NVFP4";
+        target_revision = config.services.thorFlashNext.uncensoredStage2Revision;
+        configuration_revision = "thor-stage2-mixed-converter";
+      }) [ "prepared_observation" ]
+    else base;
   activeBaselineWithOverlay = activeBaseline // {
     arguments = adjustArguments activeBaseline.arguments;
   };
-  usesGeneratedBaseline = config.services.thorFlashNext.mtp
+  usesGeneratedBaseline = stage2
+    || config.services.thorFlashNext.mtp
     || config.services.thorFlashNext.decodeGraph
     || config.services.thorFlashNext.metrics
     || config.services.thorFlashNext.maxTotalTokens != null
@@ -81,7 +98,9 @@ let
     || config.services.thorFlashNext.moeRunnerBackend != null
     || config.services.thorFlashNext.fp4GemmBackend != null;
   baselineName =
-    if config.services.thorFlashNext.mtp then
+    if stage2 then
+      "thor-flash-next-stage2-mixed.json"
+    else if config.services.thorFlashNext.mtp then
       (if config.services.thorFlashNext.tokenMap then
         "thor-flash-next-NEXTN-mtp-tokenmap.json"
       else
@@ -208,11 +227,29 @@ in
     default = null;
     description = "Comma-separated GDN layer ids to dump; unset or \"all\" dumps every layer. Only used with gdnStateDump.";
   };
+  options.services.thorFlashNext.modelSource = lib.mkOption {
+    type = lib.types.enum [ "radixark" "uncensored-stage2" ];
+    default = "radixark";
+    description = "Which target artifact to serve. 'radixark' = the prepared production checkpoint; 'uncensored-stage2' = the derived modelopt_mixed uncensored candidate (flat model dir, no prepared pipeline).";
+  };
+  options.services.thorFlashNext.uncensoredStage2Dir = lib.mkOption {
+    type = lib.types.nullOr lib.types.str;
+    default = null;
+    description = "Flat model directory for modelSource = uncensored-stage2 (the Stage-2 mixed artifact).";
+  };
+  options.services.thorFlashNext.uncensoredStage2Revision = lib.mkOption {
+    type = lib.types.nullOr lib.types.str;
+    default = null;
+    description = "Upstream revision pinned in the Stage-2 baseline (jpezzulli HF revision); recorded in the generated baseline.";
+  };
 
   config = {
     assertions = [{
       assertion = !config.services.thorFlashNext.tokenMap || config.services.thorFlashNext.mtp;
       message = "services.thorFlashNext.tokenMap requires services.thorFlashNext.mtp";
+    } {
+      assertion = !stage2 || config.services.thorFlashNext.uncensoredStage2Dir != null;
+      message = "services.thorFlashNext.modelSource = uncensored-stage2 requires uncensoredStage2Dir";
     }];
     systemd.services.thor-flash-next = {
       description = "Thor Flash Next mixed-target-only baseline (short-input experiment)";
@@ -223,9 +260,11 @@ in
       environment = {
         BASELINE_FILE = "${baselineFile}";
         IMAGE = baseline.image;
-        MODEL_DIR = baseline.model_dir;
+        MODEL_DIR = modelDir;
+        MODEL_ROOT = modelDir;
+        TARGET_DIR = targetDir;
         RUNTIME_DIR = runtimeDir;
-        CACHE_DIR = "/var/lib/thor-flash-next/${builtins.baseNameOf baseline.model_dir}/runtime-cache";
+        CACHE_DIR = "/var/lib/thor-flash-next/${builtins.baseNameOf modelDir}/runtime-cache";
         DRAFT_DIR = if config.services.thorFlashNext.mtp then draftDir else "";
         OPTIMIZATION_DIR = if config.services.thorFlashNext.tokenMap then optimizationDir else "";
         W8A8_SHAPE_LOG = if config.services.thorFlashNext.w8a8ShapeLog then "/tmp/w8a8-shapes.log" else "";

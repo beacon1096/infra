@@ -393,5 +393,26 @@ over-refusal 0/12、python 15/15）无 FP8 退化。Stage 2 具备进入 **manag
 
 Stage 2 candidate：`/var/lib/thor-inference/flash-next/jpezzulli-stage2-mixed`（123 G，硬链接自
 jpezzulli）；手动 harness 脚本在私有 obs（`run-stage2.sh`）。
+
+## 17. managed Nix unit（opt-in，2026-10-07）
+
+把 Stage-2 candidate 纳入声明式单元（**默认仍 radixark、不晋升**）：
+
+- 新选项 `services.thorFlashNext.modelSource = "radixark" | "uncensored-stage2"`（默认 `radixark`）、
+  `uncensoredStage2Dir`、`uncensoredStage2Revision`（assertion：选 stage2 时必须给 dir）。
+- `run.sh` 抽象：`MODEL_ROOT`（默认 `$MODEL_DIR`）、`TARGET_DIR`（默认 `$MODEL_DIR/target`），支持
+  stage2 的**平铺**模型目录；`prepared.json` 校验改为**声明式**——仅当 baseline 带
+  `prepared_observation` 时才校验（derived source 无 prepared pipeline）；目标 quant 仍要求
+  `modelopt_mixed`（stage2 满足）。
+- 生成 baseline：`modelopt_mixed` + NEXTN MTP + `fp32` state，`model_dir` 指向 stage2 dir、
+  `target_revision` = jpezzulli revision、去 `prepared_observation`；`DRAFT_DIR` 仍指 RadixArk draft；
+  `CACHE_DIR` 独立。
+
+验证：`nix eval`/`nix build`/`nix copy` + 临时 `modelSource = uncensored-stage2` 起服，
+**managed unit smoke 通过**（served `qwen3.8-flash-next-thor`、`exact-short-output` 2/2、加载
+`modelopt_mixed`）。unit store path：`/nix/store/m1x0i9fd4z02fhzkxgjkqsv19fn1jwi4-unit-thor-flash-next.service`
+（opt-in profile，可像 G1/M1M 一样 link 启动）。临时启用已 `git checkout` 撤销。
+
+**下一步**：更长 soak → 本仓 `prod` 分支把关晋升。
 - 证据：`state-drift-20261006/stage1.5-jpezzulli.log`；`mtp-20261005/run8-ab-uncensored-mtp/`、
   `run9-ab-uncensored-mtp/`、`spec-metrics*.py`。

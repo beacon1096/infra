@@ -35,6 +35,8 @@ esac
 : "${W8A8_SHAPE_LOG:=}"
 : "${GDN_STATE_DUMP:=}"
 : "${GDN_STATE_DUMP_LAYERS:=}"
+: "${MODEL_ROOT:=$MODEL_DIR}"
+: "${TARGET_DIR:=$MODEL_DIR/target}"
 
 test -d "$RUNTIME_DIR"
 test ! -e "$RUNTIME_DIR/memory-stop"
@@ -44,20 +46,22 @@ jq -e --arg image "$IMAGE" --arg model "$MODEL_DIR" '
 ' "$BASELINE_FILE" >/dev/null
 docker image inspect "$IMAGE" --format '{{json .}}' |
     jq -e '.Architecture == "arm64" and .Os == "linux"' >/dev/null
-jq -e --slurpfile baseline "$BASELINE_FILE" '
-    .phase == "verified" and
-    .verified_files == $baseline[0].prepared_observation.files and
-    .total_files == $baseline[0].prepared_observation.files and
-    .total_bytes == $baseline[0].prepared_observation.bytes and
-    .copied_bytes == $baseline[0].prepared_observation.bytes and
-    .pins.target.revision == $baseline[0].target_revision and
-    .pins.configuration_draft_optimization.revision == $baseline[0].configuration_revision
-' "$MODEL_DIR/prepared.json" >/dev/null
-jq -e '.quantization_config.quant_method == "modelopt_mixed"' "$MODEL_DIR/target/config.json" >/dev/null
-test -f "$MODEL_DIR/target/hf_quant_config.json"
-test -f "$MODEL_DIR/target/model.safetensors.index.json"
-test -d "$MODEL_DIR/draft"
-test -d "$MODEL_DIR/optimization"
+# A baseline that declares expected file/byte counts must have a matching
+# prepared.json. Derived model sources (no prepared pipeline) omit the field.
+if jq -e '.prepared_observation' "$BASELINE_FILE" >/dev/null; then
+    jq -e --slurpfile baseline "$BASELINE_FILE" '
+        .phase == "verified" and
+        .verified_files == $baseline[0].prepared_observation.files and
+        .total_files == $baseline[0].prepared_observation.files and
+        .total_bytes == $baseline[0].prepared_observation.bytes and
+        .copied_bytes == $baseline[0].prepared_observation.bytes and
+        .pins.target.revision == $baseline[0].target_revision and
+        .pins.configuration_draft_optimization.revision == $baseline[0].configuration_revision
+    ' "$MODEL_ROOT/prepared.json" >/dev/null
+fi
+jq -e '.quantization_config.quant_method == "modelopt_mixed"' "$TARGET_DIR/config.json" >/dev/null
+test -f "$TARGET_DIR/hf_quant_config.json"
+test -f "$TARGET_DIR/model.safetensors.index.json"
 test -d "$FA4_LAYER/flash_attn"
 
 if ! awk '/^MemAvailable:/ { found=1; available=$2 }
@@ -141,7 +145,7 @@ exec docker run --rm --name "$container" --pull=never \
     --env HF_HOME=/root/.cache/huggingface --env HF_HUB_OFFLINE=1 --env TRANSFORMERS_OFFLINE=1 \
     --env PYTHONPATH=/opt/owned-fa4 --env SGLANG_INKLING_FA4_USE_PIP=1 \
     --env SGLANG_QWEN4_PLE_FILE_RSS_BUDGET_GB=4 \
-    --mount "type=bind,src=$MODEL_DIR/target,dst=/models/target,readonly" \
+    --mount "type=bind,src=$TARGET_DIR,dst=/models/target,readonly" \
     --mount "type=bind,src=$CACHE_DIR/ple,dst=/ple" \
     --mount "type=bind,src=$CACHE_DIR/kernel-cache,dst=/root/.cache" \
     --mount "type=bind,src=$FA4_LAYER,dst=/opt/owned-fa4,readonly" \
