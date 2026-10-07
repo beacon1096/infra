@@ -18,7 +18,7 @@
         "messages": [{"role": "user", "content": "Implement a Python function `memo_fib(n: int) -> int` that returns the n-th Fibonacci number (memo_fib(0)=0, memo_fib(1)=1) using memoization, and is iterative or recursion-with-cache. Add type hints and at least four assert examples that cover n=0, n=1, a small n and a larger n. Output only Python code."}],
         "max_tokens": 2048, "temperature": 0, "chat_template_kwargs": {"enable_thinking": false}
       },
-      "check": {"kind": "python_ast", "function": "memo_fib", "minimum_asserts": 4}
+      "check": {"kind": "python_exec", "function": "memo_fib", "minimum_asserts": 4, "tests": [{"call": "memo_fib(0)", "expected": 0}, {"call": "memo_fib(1)", "expected": 1}, {"call": "memo_fib(2)", "expected": 1}, {"call": "memo_fib(10)", "expected": 55}, {"call": "memo_fib(30)", "expected": 832040}]}
     },
     {
       "id": "strict-json-nested", "category": "structured-output", "mode": "quality",

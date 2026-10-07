@@ -363,8 +363,12 @@ sweep 一致：prefill 提速来自 **chunk 512→4096/2048**，而非 dense FP8
 **Targeted python A/B**（`python-interval-repair-ast`，`isolated-prefix`，seed 42，×15）：
 **Stage1 15/15、Stage2 15/15** → run16 的 2/3 是噪声，**无 FP8 dense/head 退化证据**。
 
-**遗留**：该 Python gate 仅查 AST；建议后续补一个真正**执行**生成代码的 semantic gate（不影响本轮
-结论）。
+**语义 gate（已补）**：新增 `python_exec` gate——在**沙箱**里真正运行生成的 Python（隔离解释器
+`-I`、空 env、临时 cwd、`RLIMIT_CPU/AS/FSIZE/NOFILE` + 15 s 墙钟超时），喂**隐藏测试向量**，全部通过
+才判 pass；并把两条代码 case（`python-interval-repair-ast`、`python-fill-memo-fib`）切到 `python_exec`
+（仍要求函数存在 + 最少 assert 数）。现在代码 case 的“通过”= **实际运行且语义正确**，而非“像正确的
+代码”。边界：这是针对自生成代码的 best-effort 沙箱，**不是**对抗性代码的硬安全边界。（历史 §2 的
+30/30 仍是旧的 AST gate 结果。）
 
 **结论**：ChatGPT 的两个存疑（prefill confound、python gate flake）均已用 clean 实验解决；
 dense/head 侧 **converter byte-identical to production**（§14）；行为侧（capability 30/30 基线、

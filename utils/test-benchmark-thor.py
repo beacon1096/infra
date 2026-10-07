@@ -752,24 +752,38 @@ class BenchmarkChecks(unittest.TestCase):
             with self.subTest(content=content, calls=calls):
                 self.assertEqual(CLIENT.correctness(gate, response(content, "tool_calls", calls), "quality")["status"], "failed")
 
-    def test_correctness_ast_only_never_executes_generated_code(self):
+    def test_correctness_python_exec_runs_in_sandbox(self):
         gate = self.cases["python-interval-repair-ast"]["check"]
-        with tempfile.TemporaryDirectory() as directory:
-            marker = pathlib.Path(directory, "must-not-exist")
-            code = (f"from pathlib import Path\nPath({str(marker)!r}).write_text('executed')\n"
-                    "raise RuntimeError('must not execute')\n"
-                    "def merge_intervals(intervals):\n    return intervals\n" + "assert False\n" * 5)
-            with mock.patch("builtins.exec", side_effect=AssertionError("generated code executed")):
-                self.assertEqual(CLIENT.correctness(gate, response(code), "quality"),
-                                 {"status": "passed", "scope": "syntax_only"})
-            self.assertFalse(marker.exists())
+        correct_impl = (
+            "def merge_intervals(intervals: list) -> list:\n"
+            "    if not intervals:\n        return []\n"
+            "    intervals = [list(i) for i in sorted(intervals)]\n"
+            "    out = [intervals[0]]\n"
+            "    for start, end in intervals[1:]:\n"
+            "        if start <= out[-1][1]:\n"
+            "            out[-1][1] = max(out[-1][1], end)\n"
+            "        else:\n            out.append([start, end])\n"
+            "    return out\n")
+        correct = correct_impl + "assert True\n" * 5
+        # our own process must never execute generated code; it runs out-of-process.
+        with mock.patch("builtins.exec", side_effect=AssertionError("in-process exec")):
+            result = CLIENT.correctness(gate, response(correct), "quality")
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["scope"], "python_exec")
+        self.assertEqual(result["tests_passed"], result["tests_total"])
+        # a function that parses but is semantically wrong fails the hidden tests
+        wrong = "def merge_intervals(intervals):\n    return intervals\n" + "assert True\n" * 5
+        self.assertEqual(CLIENT.correctness(gate, response(wrong), "quality")["status"], "failed")
+        # best-effort sandbox bounds runaway code (fast timeout for the test)
+        with mock.patch.object(CLIENT, "PYEXEC_TIMEOUT", 1):
+            self.assertIsNone(CLIENT.run_python_tests("while True:\n    pass\n",
+                                                      [{"call": "True", "expected": True}]))
         for code in ("def merge_intervals(:", "def other():\n    pass\n" + "assert True\n" * 5,
                      "def merge_intervals(x):\n    return x\n" + "assert True\n" * 4):
             with self.subTest(code=code):
                 self.assertEqual(CLIENT.correctness(gate, response(code), "quality")["status"], "failed")
-        fenced = "```python\ndef merge_intervals(x):\n    return x\n" + "assert True\n" * 5 + "```"
-        self.assertEqual(CLIENT.correctness(gate, response(fenced), "quality"),
-                         {"status": "passed", "scope": "syntax_only"})
+        fenced = "```python\n" + correct_impl + "assert True\n" * 5 + "```"
+        self.assertEqual(CLIENT.correctness(gate, response(fenced), "quality")["status"], "passed")
         self.assertEqual(CLIENT.correctness(gate, response("```\nno function\n```"), "quality")["status"], "failed")
 
     def test_correctness_manual_needs_review(self):
@@ -805,6 +819,25 @@ class BenchmarkChecks(unittest.TestCase):
                         {"kind": "natural_prose", "min_chars": "10"},
                         {"kind": "natural_prose", "min_chars": 10, "extra": 1},
                         {"kind": "natural_prose", "min_chars": 10, "required_suffix": ""}):
+            with self.subTest(gate=invalid):
+                with self.assertRaises(ValueError):
+                    CLIENT.check_gate(invalid)
+
+    def test_python_exec_gate_validation(self):
+        CLIENT.check_gate({"kind": "python_exec", "function": "f",
+                           "tests": [{"call": "f(1)", "expected": 1}]})
+        CLIENT.check_gate({"kind": "python_exec", "function": "f", "minimum_asserts": 0,
+                           "tests": [{"call": "f()", "expected": []}]})
+        for invalid in (
+                {"kind": "python_exec", "function": "f"},
+                {"kind": "python_exec", "function": "f", "tests": []},
+                {"kind": "python_exec", "function": "", "tests": [{"call": "f()", "expected": 1}]},
+                {"kind": "python_exec", "function": "f", "tests": [{"call": 1, "expected": 1}]},
+                {"kind": "python_exec", "function": "f", "tests": [{"call": "f()"}]},
+                {"kind": "python_exec", "function": "f", "tests": [{"call": "f()", "expected": 1, "extra": 1}]},
+                {"kind": "python_exec", "function": "f", "minimum_asserts": -1,
+                 "tests": [{"call": "f()", "expected": 1}]},
+                {"kind": "python_exec", "function": "f", "tests": [{"call": "f()", "expected": 1}], "extra": 1}):
             with self.subTest(gate=invalid):
                 with self.assertRaises(ValueError):
                     CLIENT.check_gate(invalid)

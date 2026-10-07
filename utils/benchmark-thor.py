@@ -98,6 +98,17 @@ def check_gate(gate):
         count = gate.get("minimum_asserts")
         if type(count) is int and count >= 0:
             return
+    if kind == "python_exec":
+        allowed = {"kind", "function", "minimum_asserts", "tests"}
+        if (set(gate) <= allowed
+                and isinstance(gate.get("function"), str) and gate["function"]
+                and isinstance(gate.get("tests"), list) and gate["tests"]
+                and all(isinstance(t, dict) and set(t) == {"call", "expected"}
+                        and isinstance(t["call"], str) and t["call"]
+                        for t in gate["tests"])
+                and ("minimum_asserts" not in gate
+                     or (type(gate["minimum_asserts"]) is int and gate["minimum_asserts"] >= 0))):
+            return
     if kind == "manual" and gate.get("criteria") and all(isinstance(x, str) for x in gate["criteria"]):
         return
     if kind == "natural_prose" and set(gate) <= {"kind", "min_chars", "required_suffix"} and "min_chars" in gate:
@@ -388,6 +399,63 @@ def collect_stream(events, start, clock=time.monotonic):
     }
 
 
+PYEXEC_TIMEOUT = 15
+
+
+def extract_python_source(text):
+    """Return the code from the first fenced block, or the whole text if unfenced."""
+    fence = re.search(r"```[a-zA-Z0-9_+-]*\s*\n(.*?)```", text, re.S)
+    return fence.group(1) if fence else text
+
+
+def run_python_tests(code, tests):
+    """Execute ``code`` in a best-effort sandbox and return the per-test booleans.
+
+    Sandbox = isolated interpreter (``-I``), empty env, temp cwd, CPU/AS/FSIZE/
+    NOFILE rlimits and a wall-clock timeout. This bounds runaway loops/OOM from
+    our own model's generations; it is not a hard security boundary against
+    adversarial code. Returns ``None`` if the code failed to run.
+    """
+    import resource
+    import subprocess
+    import sys
+    import tempfile
+
+    harness = (
+        "import json as _j\n"
+        + code
+        + "\n\n_tests = _j.loads(r'''" + json.dumps(tests) + "''')\n"
+        + "_out = []\n"
+        + "for _t in _tests:\n"
+        + "    try:\n"
+        + "        _got = eval(_t['call'], globals())\n"
+        + "        _out.append(bool(_got == _t['expected']))\n"
+        + "    except Exception:\n"
+        + "        _out.append(False)\n"
+        + "print('__PYEXEC__' + _j.dumps(_out))\n"
+    )
+
+    def limits():
+        resource.setrlimit(resource.RLIMIT_CPU, (5, 5))
+        resource.setrlimit(resource.RLIMIT_AS, (2 << 30, 2 << 30))
+        resource.setrlimit(resource.RLIMIT_FSIZE, (1 << 20, 1 << 20))
+        resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
+
+    with tempfile.TemporaryDirectory() as workdir:
+        try:
+            proc = subprocess.run([sys.executable, "-I", "-"], input=harness.encode(),
+                                  capture_output=True, timeout=PYEXEC_TIMEOUT, cwd=workdir,
+                                  env={"LANG": "C.UTF-8"}, preexec_fn=limits)
+        except subprocess.TimeoutExpired:
+            return None
+    if proc.returncode != 0:
+        return None
+    for line in proc.stdout.decode(errors="replace").splitlines():
+        if line.startswith("__PYEXEC__"):
+            return json.loads(line[len("__PYEXEC__"):])
+    return None
+
+
 def correctness(gate, response, mode):
     kind, text = gate["kind"], response["content"]
     if kind in {"ledger", "sequence"}:
@@ -455,6 +523,7 @@ def correctness(gate, response, mode):
     if kind == "manual":
         return {"status": "needs_review", "scope": "manual", "criteria": gate["criteria"]}
     passed = False
+    detail = {}
     try:
         if kind == "exact":
             passed = text == gate["expected"] and not response["tool_calls"]
@@ -465,15 +534,24 @@ def correctness(gate, response, mode):
             passed = (len(calls) == 1 and not text.strip()
                       and calls[0]["function"]["name"] == gate["name"]
                       and digest(json.loads(calls[0]["function"]["arguments"], object_pairs_hook=unique_object)) == digest(gate["arguments"]))
-        elif kind == "python_ast":
-            fence = re.search(r"```[a-zA-Z0-9_+-]*\s*\n(.*?)```", text, re.S)
-            tree = ast.parse(fence.group(1) if fence else text)
-            passed = (not response["tool_calls"]
+        elif kind in {"python_ast", "python_exec"}:
+            code = extract_python_source(text)
+            tree = ast.parse(code)
+            ast_ok = (not response["tool_calls"]
                       and any(isinstance(node, ast.FunctionDef) and node.name == gate["function"] for node in tree.body)
-                      and sum(isinstance(node, ast.Assert) for node in ast.walk(tree)) >= gate["minimum_asserts"])
+                      and sum(isinstance(node, ast.Assert) for node in ast.walk(tree)) >= gate.get("minimum_asserts", 0))
+            if kind == "python_ast":
+                passed = ast_ok
+            else:
+                results = run_python_tests(code, gate["tests"]) if ast_ok else None
+                detail = {"tests_passed": sum(results) if results else 0, "tests_total": len(gate["tests"])}
+                passed = bool(ast_ok and results is not None and all(results))
     except (ValueError, SyntaxError, TypeError):
         passed = False
-    return {"status": "passed" if passed else "failed", "scope": "syntax_only" if kind == "python_ast" else kind}
+    result = {"status": "passed" if passed else "failed", "scope": "syntax_only" if kind == "python_ast" else kind}
+    if kind == "python_exec":
+        result.update(detail)
+    return result
 
 
 def build_request(case, model, isolation=None, seed=None):
