@@ -319,11 +319,21 @@ gate flake 率）中确认；② provenance 是**从 jpezzulli 派生**（其 `b
    base = `OrcaRouter/Qwen3.8-Flash-Next-Uncensored`（card 未 pin source revision）。因此
    **上游 lineage 不完整**，但 `jpezzulli@rev + build-stage2@rev → stage2 artifact` **本身完全可
    复现**——无需下载 335 GiB BF16 源。
-3. **转换器逐位验证（进行中）**：下载公开 `RadixArk@7b719225` 的 4 个 `model-bf16-*`（~16 GB），用
-   `build-flash-next-stage2.py` 的算法量化 3–5 个代表 shape（`linear_attn.out_proj`、
-   `shared_expert.down_proj`、full-attn QKV、GDN in_proj、`lm_head`），与现有 production 的对应
-   FP8 `weight + weight_scale_inv` 做 **byte-level 对比**。若逐位一致 → 证明路径 B 的机械转换重现了
-   production converter（比“amax/448 看起来对”强得多）。
+3. **转换器逐位验证（已完成，通过）**：下载公开 `RadixArk@7b719225` 的 4 个 `model-bf16-*`
+   （15 GB），用 `build-flash-next-stage2.py` 的算法量化 5 个代表 shape，与现有 production 的对应
+   FP8 `weight + weight_scale_inv` 做 **byte-level 对比**——**全部逐字节一致、scale max diff = 0**：
+
+   | 张量 | weight byte-identical | scale byte-identical |
+   | --- | --- | --- |
+   | `linear_attn.out_proj` [2560,6144] | ✅ | ✅ |
+   | `shared_expert.down_proj` [2560,640] | ✅ | ✅ |
+   | `self_attn.q_proj` [12288,2560] | ✅ | ✅ |
+   | `linear_attn.in_proj_qkv` [10240,2560] | ✅ | ✅ |
+   | `lm_head` [248320,2560] | ✅ | ✅ |
+
+   → **证明路径 B 的机械转换精确重现了 production 的 FP8_PB_WO converter**（比“amax/448 看起来对”
+   强得多）。因此可以把 Stage2 的 dense/head 侧称为 **converter byte-identical to production**（注意
+   仅 dense/head 侧；experts 沿用 jpezzulli、PLE 沿用 FP8，这两者本就不是 production 的血统）。
 4. **29/30 严格化**：Stage2 这次失败是 `python-interval-repair-ast` 2/3、`finish=stop` 的**内容级**
    gate miss，与之前 `finish=length` 的 no-EOS transient **不是同一失败模式**；且 Stage1 3/3 →
    Stage2 2/3，唯一变量正是 dense/head FP8。**不能直接归为已知 flake**。计划：该 case 做
@@ -334,5 +344,31 @@ gate flake 率）中确认；② provenance 是**从 jpezzulli 派生**（其 `b
    （pending 第 3 点逐位验证）。
 
 **下一步（这三点过后，不再做研究性实验）**：managed Nix unit → production soak → 晋升。
+
+## 15. 复核后的 clean 重测（2026-10-07）
+
+**Clean prefill**（每次请求前 `flush_cache`，`cached_tokens=0`；两臂均 `chunked-prefill-size=512`
++ stock MTP）：
+
+| 长度 | Stage1（BF16 dense） | Stage2（FP8 dense） |
+| ---: | ---: | ---: |
+| 8K | 994 tok/s | 963 |
+| 32K | 1166 | 1118 |
+| 65K | 1117 | 1070 |
+
+→ **chunk=512 下 FP8 dense 的 prefill 没有增益（反而略慢 ~3–4%）**。§13 的“65K 1.75×”确认为**前缀
+缓存测量伪影**（65000 复用了前一请求的 32768 前缀），已撤销。这与之前 RadixArk production 的 chunk
+sweep 一致：prefill 提速来自 **chunk 512→4096/2048**，而非 dense FP8。
+
+**Targeted python A/B**（`python-interval-repair-ast`，`isolated-prefix`，seed 42，×15）：
+**Stage1 15/15、Stage2 15/15** → run16 的 2/3 是噪声，**无 FP8 dense/head 退化证据**。
+
+**遗留**：该 Python gate 仅查 AST；建议后续补一个真正**执行**生成代码的 semantic gate（不影响本轮
+结论）。
+
+**结论**：ChatGPT 的两个存疑（prefill confound、python gate flake）均已用 clean 实验解决；
+dense/head 侧 **converter byte-identical to production**（§14）；行为侧（capability 30/30 基线、
+over-refusal 0/12、python 15/15）无 FP8 退化。Stage 2 具备进入 **managed Nix unit → soak → 晋升**
+流程的条件。
 - 证据：`state-drift-20261006/stage1.5-jpezzulli.log`；`mtp-20261005/run8-ab-uncensored-mtp/`、
   `run9-ab-uncensored-mtp/`、`spec-metrics*.py`。
