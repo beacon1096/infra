@@ -370,5 +370,28 @@ sweep 一致：prefill 提速来自 **chunk 512→4096/2048**，而非 dense FP8
 dense/head 侧 **converter byte-identical to production**（§14）；行为侧（capability 30/30 基线、
 over-refusal 0/12、python 15/15）无 FP8 退化。Stage 2 具备进入 **managed Nix unit → soak → 晋升**
 流程的条件。
+
+## 16. Stage-2 soak（2026-10-07）
+
+配置：Stage 2 `mixed` + stock MTP + FP32 state，`--max-total-tokens 8192`（同 production `M1M`），
+`shared-prefix`。
+
+| 项目 | 结果 |
+| --- | --- |
+| capability 10 case × 10 = 100 请求 | **100/100 通过**；finish = stop×90 + tool_calls×10，**无 `length`/no-EOS** |
+| over-refusal 12 × 10 = 120 请求 | **0/120 拒绝** |
+
+合计 **220 请求：0 gate failure、0 no-EOS、0 拒绝**。早前 `run16` 的 2/3 与 `run8` 的 no-EOS 均**未
+复现**，支持“罕见一次性”而非系统性问题。证据：`mtp-20261005/soak-ab/`、`soak-overrefusal/`。
+
+**下一步（production 化，需人工拍板）**：
+1. managed Nix unit——把 Stage 2 model source + `conversion-manifest.json` 变成声明式选项、加
+   prepared/manifest 校验、`nix build`+部署；
+2. 更长 soak（多小时/数百请求，盯 no-EOS 与 gate flake 率）；
+3. 可选：给 Python gate 加**执行语义**校验（现仅 AST）；
+4. 晋升（本仓 `prod` 分支把关）。
+
+Stage 2 candidate：`/var/lib/thor-inference/flash-next/jpezzulli-stage2-mixed`（123 G，硬链接自
+jpezzulli）；手动 harness 脚本在私有 obs（`run-stage2.sh`）。
 - 证据：`state-drift-20261006/stage1.5-jpezzulli.log`；`mtp-20261005/run8-ab-uncensored-mtp/`、
   `run9-ab-uncensored-mtp/`、`spec-metrics*.py`。
