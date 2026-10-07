@@ -774,6 +774,19 @@ class BenchmarkChecks(unittest.TestCase):
         # a function that parses but is semantically wrong fails the hidden tests
         wrong = "def merge_intervals(intervals):\n    return intervals\n" + "assert True\n" * 5
         self.assertEqual(CLIENT.correctness(gate, response(wrong), "quality")["status"], "failed")
+        # list/tuple container choice must not matter (results are JSON-normalized)
+        tuple_correct = (
+            "def merge_intervals(intervals):\n"
+            "    if not intervals:\n        return []\n"
+            "    iv = sorted(tuple(i) for i in intervals)\n"
+            "    out = []\n"
+            "    for s, e in iv:\n"
+            "        if out and s <= out[-1][1]:\n"
+            "            ps, pe = out[-1]\n"
+            "            out[-1] = (ps, max(pe, e))\n"
+            "        else:\n            out.append((s, e))\n"
+            "    return out\n" + "assert True\n" * 5)
+        self.assertEqual(CLIENT.correctness(gate, response(tuple_correct), "quality")["status"], "passed")
         # best-effort sandbox bounds runaway code (fast timeout for the test)
         with mock.patch.object(CLIENT, "PYEXEC_TIMEOUT", 1):
             self.assertIsNone(CLIENT.run_python_tests("while True:\n    pass\n",

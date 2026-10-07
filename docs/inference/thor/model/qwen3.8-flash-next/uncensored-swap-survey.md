@@ -370,6 +370,12 @@ sweep 一致：prefill 提速来自 **chunk 512→4096/2048**，而非 dense FP8
 代码”。边界：这是针对自生成代码的 best-effort 沙箱，**不是**对抗性代码的硬安全边界。（历史 §2 的
 30/30 仍是旧的 AST gate 结果。）
 
+实测（Stage-2 managed unit，exec gate）：`python-fill-memo-fib` **10/10**、
+`python-interval-repair-ast` **9/10**——唯一失败是模型留了一条“先写错后自我更正”的 assert（错误
+assert 让文件根本不可运行），**正是 AST gate 会误判通过、而 exec gate 抓到的类型**。期间还修掉一个
+**过严假阴性**：返回 **tuple**（`(1,6)`，语义正确）的实现最初被判失败，因为 expected 是 JSON list；
+现按 **JSON 归一化**比较（tuple ≡ list），container 类型不再影响判定。
+
 **结论**：ChatGPT 的两个存疑（prefill confound、python gate flake）均已用 clean 实验解决；
 dense/head 侧 **converter byte-identical to production**（§14）；行为侧（capability 30/30 基线、
 over-refusal 0/12、python 15/15）无 FP8 退化。Stage 2 具备进入 **managed Nix unit → soak → 晋升**

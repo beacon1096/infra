@@ -411,6 +411,8 @@ def extract_python_source(text):
 def run_python_tests(code, tests):
     """Execute ``code`` in a best-effort sandbox and return the per-test booleans.
 
+    Results are JSON-normalized before comparison, so a tuple result compares
+    equal to a JSON-list ``expected`` (container type is not part of the task).
     Sandbox = isolated interpreter (``-I``), empty env, temp cwd, CPU/AS/FSIZE/
     NOFILE rlimits and a wall-clock timeout. This bounds runaway loops/OOM from
     our own model's generations; it is not a hard security boundary against
@@ -429,7 +431,7 @@ def run_python_tests(code, tests):
         + "for _t in _tests:\n"
         + "    try:\n"
         + "        _got = eval(_t['call'], globals())\n"
-        + "        _out.append(bool(_got == _t['expected']))\n"
+        + "        _out.append(bool(_j.loads(_j.dumps(_got, default=str)) == _t['expected']))\n"
         + "    except Exception:\n"
         + "        _out.append(False)\n"
         + "print('__PYEXEC__' + _j.dumps(_out))\n"
