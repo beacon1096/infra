@@ -138,3 +138,29 @@ config / index），未上 GPU。**
 - 证据（私有）：`/var/lib/thor-flash-next/observations/state-drift-20261006/stage1-jpezzulli{,-64k}.log`；
   `mtp-20261005/run7-ab-uncensored/`；`mtp-20261005/overrefusal-uncensored/`。
   下载件：`/var/lib/thor-inference/flash-next/jpezzulli-orcarouter-uncensored-nvfp4`（126 GiB）。
+
+## 9. Stage 1.5：接 stock（对齐血统）MTP draft
+
+2026-10-07。在 Stage 1 的 uncensored target 上挂 production 的 **stock draft**
+（`radixark-7b719225-sglang-b8c4002b/draft`，`Qwen4ExpForCausalLMMTP`，`modelopt_mixed`，3.7 GB；
+NEXTN steps=3 / topk=1 / draft=4；QSA MTP index sharing 开启），测 spec acceptance 与
+draft-mismatch 假设。
+
+- 加载：target 1042 s + draft 5.6 s，avail ≈ 30.5 GB；健康。
+- **加速**：decode tok/s 约 **1.5–2.5×**（target-only ~12–21 → MTP ~27–50）；server 端 253 个
+  decode batch 的 `accept rate` **均值 0.77、min 0.03、max 0.97**，accept len 高时 ~3.9/4。
+- **能力**：同一 harness 两次——`run8` = **23/30**、`run9` = **30/30**。run8 的失败**全部**是
+  `finish_reason=length` 的 no-EOS/跑飞（`exact-short-output` 0/3、`thinking-ledger32-low` 1/3、
+  `tool-get-weather` 2/3），**不是错答**；随后 `exact-short-output` 直接请求 5/5、harness 单独
+  3/3 均通过。→ 属**运行间不稳定/非确定**（与第 4 节 decode 非确定一致），不是 stock draft 的
+  确定性回归。
+- **draft mismatch**：server accept rate 跨 prompt/批次波动很大（0.03–0.97），说明存在接受率差的
+  区域；但 `meta_info` 的 `spec_accept_*` 是每请求的确定计数（无法逐 prompt 归因），本轮**未能
+  干净区分 neutral vs boundary**。即“对齐 draft + uncensored target”导致的 acceptance 崩塌
+  **未被证实，也未被排除**。
+- **结论**：stock draft **不是零成本可复用**——能带来 ~1.5–2.5× 解码加速且可跑到 30/30，但存在
+  run-to-run 抖动（一次 23/30，表现为 no-EOS/跑飞），且 accept rate 波动大。要上生产需要更大重复
+  验证，或做一个与 uncensored target 同血统的 MTP draft。这也与第 6 节 ChatGPT 的 draft-mismatch
+  提醒一致。
+- 证据：`state-drift-20261006/stage1.5-jpezzulli.log`；`mtp-20261005/run8-ab-uncensored-mtp/`、
+  `run9-ab-uncensored-mtp/`、`spec-metrics*.py`。
