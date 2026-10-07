@@ -235,8 +235,9 @@ FP8_PB_WO block128` + `PLE FP8 E4M3` + `state FP32` + **保留现有 stock draft
 
 关键事实（读 pinned SGLang `modelopt_quant.py`）：`FP8_PB_WO` 映射到
 `Fp8Config(is_checkpoint_fp8_serialized=True, activation_scheme="dynamic",
-weight_block_size=[128,128])`，即**权重 FP8 block[128,128] + 动态激活**——**权重-only，无需激活
-校准**。
+weight_block_size=[128,128])`。更准确的说法是 **serialized block-FP8 weight**：**checkpoint 侧只存
+FP8 weight + block scale、不存 activation scale，因此无需离线 activation calibration**；但**运行时
+激活仍会动态 FP8 量化**（不是纯“weight-only”）。
 
 - **路径 A（ChatGPT 建议：从 OrcaRouter BF16 源重建）**：`orcarouter/Qwen3.8-Flash-Next-Uncensored`
   BF16 = **335 GiB**，主机当前仅 **312G** 可用 → **放不下**（需先大幅清盘或外部存储；且仓库
@@ -266,7 +267,8 @@ weight_block_size=[128,128])`，即**权重 FP8 block[128,128] + 动态激活**�
 397 `quantized_layers`（96 NVFP4 g16 + 301 FP8_PB_WO g128）。脚本 `build-stage2.py` 产出
 `conversion-manifest.json`。
 
-**静态核验**（与 production 对齐）：`modelopt_mixed/MIXED_PRECISION`；index **296,776** 张量、
+**静态核验**（**checkpoint format / tensor inventory / quant layout 与 production 对齐**，尚**未**证明
+与 production 转换器逐位等价）：`modelopt_mixed/MIXED_PRECISION`；index **296,776** 张量、
 **301** 个 `weight_scale_inv`；`linear_attn.out_proj` → F8_E4M3 [2560,6144] + scale [20,48]；
 `lm_head` → F8_E4M3 [248320,2560] + scale [1940,20]；experts 仍 `U8`+`weight_scale`；`ple_
 embedding_dtype=float8_e4m3fn`。
@@ -280,12 +282,11 @@ embedding_dtype=float8_e4m3fn`。
 | over-refusal（12） | 0/12 | **0/12** |
 | decode tok/s（thinking） | ~21（target-only）/ ~50（MTP） | **~57–60**（回到 M1M 区间） |
 | acceptance neutral/code/refusal | ~0.57/0.78/0.54 | 0.641/0.747/0.527（与 aligned 0.600/0.721/0.505 同量级） |
-| prefill 8K/32K/65K tok/s | 986/1598/1178 | **887/1451/2059**（长 prefill 约 1.75×） |
+| prefill 8K/32K/65K tok/s | 986/1598/1178 | **887/1451/2059**（**该 65K 数字受前缀缓存污染，见 §14；不可作 FP8 增益结论**） |
 
 **结论**：把已验证行为的 uncensored target 恢复成 production 的 dense/head/PLE 配方后，
-**FP8 dense/head 未观察到对已验证行为的损伤**（over-refusal 0/12 保持；能力唯一一次 29/30 是
-已知的罕见抖动），且**性能回到接近 production（M1M）水平、长 prefill 更快**。Stage 2 artifact
-是可行的 production candidate。
+**未观察到对已验证行为的损伤**（over-refusal 0/12 保持；能力唯一一次 29/30 见 §14 复核），且
+**decode 回到接近 production（M1M）水平**。Stage 2 artifact 是可行的 production candidate。
 
 **边界/待办**：① 29/30 的 1 次是内容级抖动，需要在 soak（多小时/数百请求，盯 no-EOS 与
 gate flake 率）中确认；② provenance 是**从 jpezzulli 派生**（其 `base_model` =
@@ -293,5 +294,45 @@ gate flake 率）中确认；② provenance 是**从 jpezzulli 派生**（其 `b
 直接重建；若要严格可复现，需补 pin 源 revision 或改走路径 A；③ 目标 artifact 在
 `/var/lib/thor-inference/flash-next/jpezzulli-stage2-mixed`（123G，硬链接自 jpezzulli）。
 证据：`mtp-20261005/run16-ab-stage2/`、`overrefusal-stage2/`、`state-drift-20261006/stage2-*.log`。
+
+## 14. ChatGPT 复核后的修正与收尾（2026-10-07）
+
+按复核意见修正/补充：
+
+1. **prefill A/B 的 confound 已定位**：两个 run 的 `chunked_prefill_size` **都是 512**（不是 chunk
+   混淆）。真正原因是**测量循环里没有在长度之间 flush**——65000 那次复用了前一个 32768 的前缀缓存，
+   于是 `prompt_tokens/wall` 被抬高。服务端**每 batch** 输入吞吐：Stage1 ~1054–1087 tok/s、
+   Stage2 ~922–987 → **chunk=512 下 FP8 dense 的 prefill 并没有更快（甚至略慢）**。§13 的“1.75×
+   long-prefill”结论**撤销**；待做 clean same-chunk、**每次 flush** 的重测（Stage1 BF16 vs
+   Stage2 FP8，各 2–3 次）。
+2. **reproducibility 落 repo**：新增
+   - `utils/build-flash-next-stage2.py`（转换脚本）
+   - `utils/verify-flash-next-stage2.py`（静态核验，`--expect-targets 301`）
+   pin：
+   - 输入 = `jpezzulli/OrcaRouter-Qwen3.8-Flash-Next-Uncensored-ModelOpt-NVFP4@f24d2b68ff2814f24455ae86717be276619b5664`
+   - 输入 `model.safetensors.index.json` sha256 `63ff08d02f3c4d262c567ecaa42d01f504a08d048d51614c24ee258426ae9159`；
+     `config.json` sha256 `a39bdf4478c9805b3c294a28df6bd7ae43b8a63f81b6a345e6e6c934b097fbaf`
+   - 命令：先 `cp -al <jpezzulli> <out>`，再
+     `python3 build-flash-next-stage2.py <jpezzulli> <out> <prod/config.json> --no-link`
+   - 产物核验：301 targets / index 296776 / 301 `weight_scale_inv` / `ple_embedding_dtype=float8_e4m3fn`
+   **lineage 说明**：Stage2 的实际输入是 jpezzulli artifact，不是 OrcaRouter BF16；jpezzulli 的
+   base = `OrcaRouter/Qwen3.8-Flash-Next-Uncensored`（card 未 pin source revision）。因此
+   **上游 lineage 不完整**，但 `jpezzulli@rev + build-stage2@rev → stage2 artifact` **本身完全可
+   复现**——无需下载 335 GiB BF16 源。
+3. **转换器逐位验证（进行中）**：下载公开 `RadixArk@7b719225` 的 4 个 `model-bf16-*`（~16 GB），用
+   `build-flash-next-stage2.py` 的算法量化 3–5 个代表 shape（`linear_attn.out_proj`、
+   `shared_expert.down_proj`、full-attn QKV、GDN in_proj、`lm_head`），与现有 production 的对应
+   FP8 `weight + weight_scale_inv` 做 **byte-level 对比**。若逐位一致 → 证明路径 B 的机械转换重现了
+   production converter（比“amax/448 看起来对”强得多）。
+4. **29/30 严格化**：Stage2 这次失败是 `python-interval-repair-ast` 2/3、`finish=stop` 的**内容级**
+   gate miss，与之前 `finish=length` 的 no-EOS transient **不是同一失败模式**；且 Stage1 3/3 →
+   Stage2 2/3，唯一变量正是 dense/head FP8。**不能直接归为已知 flake**。计划：该 case 做
+   **Stage1 vs Stage2 各 10–20 次 targeted A/B**（同 seed/config/cache policy）；并给该 Python
+   case 加一个真正**执行**生成代码的 semantic gate（现 gate 只查 AST，20/20 也只证明“像正确程序”）。
+5. **措辞**：`FP8_PB_WO` = **serialized block-FP8 weight**（checkpoint 无 activation scale、无需离线
+   校准，但运行时激活仍动态 FP8 量化）；“recipe-identical” 降级为 **format/inventory/layout 对齐**
+   （pending 第 3 点逐位验证）。
+
+**下一步（这三点过后，不再做研究性实验）**：managed Nix unit → production soak → 晋升。
 - 证据：`state-drift-20261006/stage1.5-jpezzulli.log`；`mtp-20261005/run8-ab-uncensored-mtp/`、
   `run9-ab-uncensored-mtp/`、`spec-metrics*.py`。
