@@ -52,7 +52,8 @@ def main(argv):
                        "--profile", profile, "--model", model, "--base-url", base_url,
                        "--runtime-record", runtime_record, "--fixtures", str(fixtures_dir / fixture),
                        "--case", case_id, "--warmups", "0", "--repeats", "1", "--seed", "42",
-                       "--cache-policy", "shared-prefix", "--include-response", "--deadline", "360"]
+                       "--cache-policy", os.environ.get("THOR_CACHE_POLICY", "shared-prefix"),
+                       "--include-response", "--deadline", "360"]
             with path.open("x") as stdout, path.with_suffix(".stderr").open("x") as stderr:
                 completed = subprocess.run(command, stdout=stdout, stderr=stderr, timeout=420)
             records = request_records(path)

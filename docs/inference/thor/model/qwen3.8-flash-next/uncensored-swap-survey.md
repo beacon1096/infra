@@ -158,9 +158,69 @@ draft-mismatch 假设。
   区域；但 `meta_info` 的 `spec_accept_*` 是每请求的确定计数（无法逐 prompt 归因），本轮**未能
   干净区分 neutral vs boundary**。即“对齐 draft + uncensored target”导致的 acceptance 崩塌
   **未被证实，也未被排除**。
-- **结论**：stock draft **不是零成本可复用**——能带来 ~1.5–2.5× 解码加速且可跑到 30/30，但存在
-  run-to-run 抖动（一次 23/30，表现为 no-EOS/跑飞），且 accept rate 波动大。要上生产需要更大重复
-  验证，或做一个与 uncensored target 同血统的 MTP draft。这也与第 6 节 ChatGPT 的 draft-mismatch
-  提醒一致。
+- **结论（按 ChatGPT 复核收敛口径）**：stock draft **能带来明显加速**（~1.5–2.5×、mean accept 0.77
+  说明对齐 draft 与 uncensored target **总体并未严重失配**）；一次完整 suite 出现 no-EOS 抖动
+  （run8 23/30），但第二次（run9）未复现，isolated 重跑通过。**当前尚不能把 run8 归因于
+  MTP/draft mismatch**——target-only decode 本身已知非确定（第 4 节），且失败可能来自
+  shared-prefix/cache/request-order 交互。因此：**先不做同血统 draft、也暂不进 Stage 2**，先做
+  Stage 1.5b（下节）。
+
+## 10. Stage 1.5b 计划（低成本、先做；由 ChatGPT 复核提出）
+
+两个 confounder 一次解决，直接回答「stock draft 能否直接复用」和「是否需要同血统 draft」：
+
+1. **per-request acceptance 进 harness**：把 pinned SGLang 的
+   `spec_accept_rate / spec_accept_length / spec_num_correct_drafts / spec_num_proposed_drafts /
+   spec_verify_ct` 接进 A/B 输出（不改 SGLang）；若这些字段在 `/generate` 的 `meta_info` 里实际是
+   累计值，则改从服务端 decode-batch 日志按 prefill 边界分段归因。
+2. **draft-mismatch differential**：同一组 neutral + refusal-boundary prompts，
+   **aligned target + stock draft vs uncensored target + stock draft**，各 3 次；看低接受率是否
+   **系统性集中在 refusal-boundary 类**（若是，证明 alignment mismatch；若各类接近、只是偶发低
+   batch，则同血统 draft 无必要）。
+3. **stability matrix**：`uncensored target-only` vs `uncensored+MTP`，各跑完整 suite 数次，
+   分别用 `shared-prefix` 与 `isolated-prefix`（= per-case 隔离/冷启动）；记录 case order、
+   finish reason、prefix/cache 命中、per-request acceptance。
+   - 若 23/30 只在 `MTP + shared-prefix` 出现 → 查 speculative recurrent/cache；
+   - 若 target-only 也偶发 → 已有 decode 非确定；
+   - 若 MTP 在 cold/isolated 稳定、只在长生命周期 shared cache 出问题 → 基本锁定 cache/state
+     restore 路径。
+
+拿到这两个答案后再决定是否值得做同血统 draft 或 Stage 2 matched quant。
+
+## 11. Stage 1.5b 结果（2026-10-07）
+
+**(a) per-request acceptance 可用。** `qwen3.8` pinned SGLang 的 `/generate` `meta_info`
+`spec_accept_rate/spec_accept_length/spec_num_correct_drafts/spec_num_proposed_drafts/spec_verify_ct`
+是**逐请求**的（随 `max_new_tokens` 缩放：40/120/400 → prop 63/162/459），可直接用于 differential，
+无需改 SGLang。
+
+**(b) stability matrix**（`run-thor-ab.py`，`THOR_CACHE_POLICY` 切 `shared-prefix`/`isolated-prefix`）：
+
+| 配置 | 结果 |
+| --- | --- |
+| uncensored + MTP | run8 **23/30**（唯一一次）；run9 / run10-sp / run11-sp / run12-iso / run13-iso 均 **30/30** |
+| uncensored target-only | run7 / run14-sp / run15-iso 均 **30/30** |
+
+失败全部是 `finish_reason=length` 的 no-EOS。**run8 的 23/30 在随后 5 个完整 suite 中未复现，
+且与 `shared-prefix` vs `isolated-prefix`、以及 MTP 与否都无明显关联** → 是**罕见瞬时抖动**
+（与第 4 节已知 decode 非确定一致），**不是** MTP/cache/order 的系统性问题，也**不是** stock draft
+的确定性回归。§9 里“不是零成本可复用 / run-to-run instability”的措辞据此收敛。
+
+**(c) draft-mismatch differential**（stock draft，逐请求 `spec_accept_rate`，`max_new_tokens=256`）：
+
+| 类别 | aligned target `M1M` + stock draft | uncensored target + stock draft |
+| --- | ---: | ---: |
+| neutral | 0.600 | 0.567 |
+| code | 0.721 | 0.782 |
+| refusal_boundary | 0.505 | **0.537** |
+
+aligned→uncensored 各类差异 **≤0.06**，且 **refusal-boundary 反而略高**（ChatGPT 设想的
+`0.78→0.31` 崩塌**未出现**）。**结论：这个 aligned stock draft 与 uncensored target 没有系统性
+错配；同血统 draft 很可能没有必要。** stock draft 可继续复用（给速、稳定；仅存在与 draft 无关的
+罕见 no-EOS 抖动）。
+
+**Plan 调整**：不插“同血统 draft”，Stage 1.5b 到此；下一步由 Stage 1 的质量/行为结论 + 本节的
+draft 结论共同决定是否进 Stage 2（production-matched `modelopt_mixed` 重建）。
+证据：`mtp-20261005/run8..run15-*`、`state-drift-20261006/spec-differential.py|spec-scaling.py`。
 - 证据：`state-drift-20261006/stage1.5-jpezzulli.log`；`mtp-20261005/run8-ab-uncensored-mtp/`、
   `run9-ab-uncensored-mtp/`、`spec-metrics*.py`。
