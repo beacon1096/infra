@@ -122,4 +122,10 @@ in
   time.timeZone = "Asia/Shanghai";
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
   system.stateVersion = "26.05";
+
+  services.thorFlashNext.decodeGraph = true;
+  services.thorFlashNext.mtp = true;
+  services.thorFlashNext.modelSource = "uncensored-stage2";
+  services.thorFlashNext.uncensoredStage2Dir = "/var/lib/thor-inference/flash-next/jpezzulli-stage2-mixed";
+  services.thorFlashNext.uncensoredStage2Revision = "f24d2b68ff2814f24455ae86717be276619b5664";
 }

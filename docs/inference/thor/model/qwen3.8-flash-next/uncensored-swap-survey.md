@@ -424,5 +424,34 @@ jpezzulli）；手动 harness 脚本在私有 obs（`run-stage2.sh`）。
 （opt-in profile，可像 G1/M1M 一样 link 启动）。临时启用已 `git checkout` 撤销。
 
 **下一步**：更长 soak → 本仓 `prod` 分支把关晋升。
+
+## 19. 修正 decode graph 配置 + 确认 soak 与收尾（2026-10-07）
+
+**发现并修正一个配置缺陷**：早先的 managed stage2 单元启用时只设了 `mtp=true`、漏了
+`decodeGraph=true`，导致 baseline 仍是 `--cuda-graph-backend-decode disabled` → decode 时
+`cuda graph: False`、仅 ~17 tok/s。修法：启用配置**同时**设 `decodeGraph=true`（与 production
+`M1M` 一致），重建单元（`/nix/store/ran1r90r7djva9d9fi0fynrhsc3lmppd-unit-thor-flash-next.service`）
+部署后确认 `cuda graph: True`、prose decode ≈36 tok/s。
+
+**确认 soak（graph on）**：capability ×5 = **50/50**（finish 全 stop/tool_calls）、over-refusal ×5 =
+**0/60**。
+
+**Stage-2 汇总（exec gate + 修正单元）**：
+
+| 维度 | 结果 |
+| --- | --- |
+| 能力（capability×15，soak2） | **147/150**；唯一失败 = `python-interval-repair-ast` 12/15（真实语义/执行失败，非 no-EOS） |
+| 能力（capability×5，soak3） | **50/50** |
+| exec-python（×10） | `memo_fib` 10/10、`merge_intervals` 9/10 → 19/20 |
+| over-refusal | 累计 **0 拒绝**（soak2 132 + soak3 60 + 之前 120+100…） |
+| finish | 无 `length`/no-EOS |
+| 显存 | 78 GB；decode token/s 回到 production 区间 |
+
+**结论**：Stage-2 candidate（uncensored + `modelopt_mixed` + FP8 head + FP32 state + stock draft +
+decode graph）在 managed unit 上**稳定可用**。
+
+**部署状态**：unit `ran1r90r…` 已 active 且常开（`stay.conf` 的 `RuntimeMaxSec=infinity`）；host
+`configuration.nix` 声明 `modelSource = "uncensored-stage2"` + `decodeGraph` + `mtp`（= 该设备的服务
+默认）。若要跨重启持久，`nixos-rebuild switch` 即可；生产发布仍由本仓 `prod` 分支把关。
 - 证据：`state-drift-20261006/stage1.5-jpezzulli.log`；`mtp-20261005/run8-ab-uncensored-mtp/`、
   `run9-ab-uncensored-mtp/`、`spec-metrics*.py`。
