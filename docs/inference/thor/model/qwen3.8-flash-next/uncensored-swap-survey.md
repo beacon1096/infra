@@ -206,13 +206,18 @@ draft-mismatch 假设。
 （与第 4 节已知 decode 非确定一致），**不是** MTP/cache/order 的系统性问题，也**不是** stock draft
 的确定性回归。§9 里“不是零成本可复用 / run-to-run instability”的措辞据此收敛。
 
-**(c) draft-mismatch differential**（stock draft，逐请求 `spec_accept_rate`，`max_new_tokens=256`）：
+**(c) draft-mismatch differential**（stock draft，逐请求 `spec_accept_rate`，`max_new_tokens=256`，
+每类为**单次**在该类 prompt 上的**均值**；`n` 列出）：
 
-| 类别 | aligned target `M1M` + stock draft | uncensored target + stock draft |
-| --- | ---: | ---: |
-| neutral | 0.600 | 0.567 |
-| code | 0.721 | 0.782 |
-| refusal_boundary | 0.505 | **0.537** |
+| 类别 | n | aligned target `M1M` + stock draft | uncensored target + stock draft |
+| --- | ---: | ---: | ---: |
+| neutral | 5 | 0.600 | 0.567 |
+| code | 4 | 0.721 | 0.782 |
+| refusal_boundary | 8 | 0.505 | **0.537** |
+
+（方法学说明：这是各类 prompt 的**单次均值**，不是“各 3 次”的统计；因此不要把 `0.505→0.537`
+这 +0.032 当作“uncensored 反而更匹配”的显著差异。**有意义的结论只是“没有数量级下降”**，即未出现
+alignment mismatch 导致的 acceptance 崩塌。）
 
 aligned→uncensored 各类差异 **≤0.06**，且 **refusal-boundary 反而略高**（ChatGPT 设想的
 `0.78→0.31` 崩塌**未出现**）。**结论：这个 aligned stock draft 与 uncensored target 没有系统性
@@ -222,5 +227,34 @@ aligned→uncensored 各类差异 **≤0.06**，且 **refusal-boundary 反而略
 **Plan 调整**：不插“同血统 draft”，Stage 1.5b 到此；下一步由 Stage 1 的质量/行为结论 + 本节的
 draft 结论共同决定是否进 Stage 2（production-matched `modelopt_mixed` 重建）。
 证据：`mtp-20261005/run8..run15-*`、`state-drift-20261006/spec-differential.py|spec-scaling.py`。
+
+## 12. Stage 2 路径与当前阻塞（2026-10-07 侦察）
+
+目标 recipe：uncensored source + `routed experts NVFP4 g16` + `dense/attn/shared/head
+FP8_PB_WO block128` + `PLE FP8 E4M3` + `state FP32` + **保留现有 stock draft**。
+
+关键事实（读 pinned SGLang `modelopt_quant.py`）：`FP8_PB_WO` 映射到
+`Fp8Config(is_checkpoint_fp8_serialized=True, activation_scheme="dynamic",
+weight_block_size=[128,128])`，即**权重 FP8 block[128,128] + 动态激活**——**权重-only，无需激活
+校准**。
+
+- **路径 A（ChatGPT 建议：从 OrcaRouter BF16 源重建）**：`orcarouter/Qwen3.8-Flash-Next-Uncensored`
+  BF16 = **335 GiB**，主机当前仅 **312G** 可用 → **放不下**（需先大幅清盘或外部存储；且仓库
+  config/index 返回 401，疑似 gated）。jpezzulli 的 `base_model = OrcaRouter/Qwen3.8-Flash-Next-
+  Uncensored`，但 card 未 pin revision。
+- **路径 B（从已通过 Stage 1 验证的 jpezzulli 派生；当前推荐）**：保留其 NVFP4 experts、FP8 PLE、
+  FP32 state，把它 **BF16 的 dense/attn/shared/head 机械量化**成 FP8_PB_WO block128：每个
+  `[N,K]` 权重按 `[128,128]` 块取 amax，写 `weight`(F8_E4M3) + `weight_scale_inv`(F32
+  `[ceil(N/128),ceil(K/128)]`, = amax/448)，并把 quant config 改成 `MIXED_PRECISION` 的
+  `FP8_PB_WO` 列表（对齐 production 的 301 项）。**同血统、无需校准、唯一新变量是 FP8 dense/head、
+  磁盘够**（126 GiB in + ~126 GiB out < 312G）。
+- 无论 A/B，都应按 §6/§10 pin：source repo+revision、ModelOpt 0.46.0 + snapshot、NVFP4/FP8
+  include-exclude、block 128、PLE conversion、转换脚本 hash、tensor inventory 期望计数，并落一份
+  `conversion manifest`。
+- Stage 2 后的验证复用现有资产：静态 tensor inventory；10×3 能力（目标 30/30）；12 over-refusal
+  （目标 0/12）；target-only vs stock MTP acceptance；decode 回到接近 current `M1M` 区间；32K/64K
+  prefill；**关键新 A/B：Stage1 BF16-dense uncensored vs Stage2 mixed uncensored**（FP8 dense/head
+  是否损伤已验证行为）。
+- **待确认**：走路径 A（需先清盘/外部存储）还是路径 B（推荐）。
 - 证据：`state-drift-20261006/stage1.5-jpezzulli.log`；`mtp-20261005/run8-ab-uncensored-mtp/`、
   `run9-ab-uncensored-mtp/`、`spec-metrics*.py`。
