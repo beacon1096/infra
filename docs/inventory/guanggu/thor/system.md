@@ -14,6 +14,39 @@
 
 以上文件描述公开的声明式配置。下列固件信息是带日期的只读快照，不表示各项数值均为 NixOS 所需设置。
 
+## 磁盘布局与角色规划（2026-10-07）
+
+Thor 目前只有一块 NVMe（`nvme0n1`，2 TB），根文件系统 ext4 挂在整盘（`nvme0n1p2`），`/boot`
+为 `nvme0n1p1`（vfat）。原装 1 TB（PCIe5×4）已拔下。保留一份整盘备份
+`thor-factory-backup/thor-nvme1n1-20260916.img.zst`（265 GB，zstd）。
+
+### 推理角色占用
+
+| 角色 | 组成 | 占用 |
+| --- | --- | ---: |
+| qwen3.8-27b | 模型 target 20G + draft 1.5G + 镜像 `thor-sglang:dflash2` 45.6G + 补丁/缓存/head ≈0.15G | **≈67 GB** |
+| qwen3.8-flash-next（单变体） | 模型 `flash-next/radixark-7b719225-sglang-b8c4002b` 125 GB + 镜像 `lmsysorg/sglang` 49.1 GB | **≈174 GB**（+ 每次启动重建的 PLE 表 48 GB/实例，纯缓存） |
+| NixOS 基础系统 | `/nix`（当前 24 GB，含 528 个 system generation；`gc` 后约 10–15 GB） | 预留 **30–50 GB** |
+| 用户数据 | `/home/beacon` | 47 GB |
+| 原装系统整盘备份 | `thor-factory-backup/…img.zst` | 265 GB |
+
+### 现状与可回收
+
+2 TB 盘：1.79 TiB 总量，**1.50 TiB 已用，≈204 GiB 可用**。磁盘大头：
+`thor-inference` 640G、`docker` 363G（未用镜像可回收 ~148G）、`thor-factory-backup` 265G、
+`thor-flash-next` PLE 缓存 196G（可重建）、`exl3` 实验 184G、`/home` 47G、`/nix` 24G。
+
+### 规划分配
+
+- **Thor = 仅 qwen3.8-27b**，系统盘换回原装 **1 TB（PCIe5×4）**：27B(67) + 基础(30–50) +
+  home(47) + 原装备份(265) ≈ **410–430 GB**；1 TB 可用约 930G，**剩 ≈500 GB**。
+- **2 TB 盘移到 nuc11**，承担 qwen3.8-flash-next（Strata 引擎）与 offload/scratch。
+- 另有 M.2 **2230 两块（500 GB / 1000 GB）**（主板无 2030 孔位，用转接板临时固定）作为**实验临时盘**，
+  不占主机盘；1000G 一块可容纳一套 Flash-Next（模型 ~125G + PLE 48G + 工作区 ~100G）。
+
+依据：Flash-Next 在 Thor 上的解码速度主要依赖 MoE 分层/offload，难以超过高显存带宽的消费级
+GPU；Thor 更适合高吞吐的 27B，快速本地交互模型（Flash-Next）交给 nuc11 + Titan RTX / A2000。
+
 ## 固件快照
 
 2026-09-11，在初次安装 NixOS 并修复显示交接后进行了只读检查。固件报告 `39.2.0-gcid-45755727`；已安装的 JetPack NixOS 配置使用 L4T 39.2.1 和 Linux 6.8.12。
