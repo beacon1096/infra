@@ -81,6 +81,7 @@ let
         target_repository = "jpezzulli/OrcaRouter-Qwen3.8-Flash-Next-Uncensored-ModelOpt-NVFP4";
         target_revision = config.services.thorFlashNext.uncensoredStage2Revision;
         configuration_revision = "thor-stage2-mixed-converter";
+        conversion_manifest_sha256 = config.services.thorFlashNext.uncensoredStage2ManifestSha256;
       }) [ "prepared_observation" ]
     else base;
   activeBaselineWithOverlay = activeBaseline // {
@@ -242,14 +243,20 @@ in
     default = null;
     description = "Upstream revision pinned in the Stage-2 baseline (jpezzulli HF revision); recorded in the generated baseline.";
   };
+  options.services.thorFlashNext.uncensoredStage2ManifestSha256 = lib.mkOption {
+    type = lib.types.nullOr lib.types.str;
+    default = null;
+    description = "Expected sha256 of the Stage-2 artifact's conversion-manifest.json; verified by run.sh at startup.";
+  };
 
   config = {
     assertions = [{
       assertion = !config.services.thorFlashNext.tokenMap || config.services.thorFlashNext.mtp;
       message = "services.thorFlashNext.tokenMap requires services.thorFlashNext.mtp";
     } {
-      assertion = !stage2 || config.services.thorFlashNext.uncensoredStage2Dir != null;
-      message = "services.thorFlashNext.modelSource = uncensored-stage2 requires uncensoredStage2Dir";
+      assertion = !stage2 || (config.services.thorFlashNext.uncensoredStage2Dir != null
+        && config.services.thorFlashNext.uncensoredStage2ManifestSha256 != null);
+      message = "services.thorFlashNext.modelSource = uncensored-stage2 requires uncensoredStage2Dir and uncensoredStage2ManifestSha256";
     }];
     systemd.services.thor-flash-next = {
       description = "Thor Flash Next mixed-target-only baseline (short-input experiment)";

@@ -128,4 +128,5 @@ in
   services.thorFlashNext.modelSource = "uncensored-stage2";
   services.thorFlashNext.uncensoredStage2Dir = "/var/lib/thor-inference/flash-next/jpezzulli-stage2-mixed";
   services.thorFlashNext.uncensoredStage2Revision = "f24d2b68ff2814f24455ae86717be276619b5664";
+  services.thorFlashNext.uncensoredStage2ManifestSha256 = "4b95f8838a7a43be1d3697a46d9ce2b4dfc6cd5a510f7dfbc3ca617bf87e3547";
 }

@@ -453,5 +453,29 @@ decode graph）在 managed unit 上**稳定可用**。
 **部署状态**：unit `ran1r90r…` 已 active 且常开（`stay.conf` 的 `RuntimeMaxSec=infinity`）；host
 `configuration.nix` 声明 `modelSource = "uncensored-stage2"` + `decodeGraph` + `mtp`（= 该设备的服务
 默认）。若要跨重启持久，`nixos-rebuild switch` 即可；生产发布仍由本仓 `prod` 分支把关。
+
+## 20. 同门禁对齐（exec gate）与 provenance 校验（2026-10-07）
+
+**补上缺失的“同门禁生产基线”**：在**同一 `python_exec` gate**下重跑对齐 production `M1M`
+（RadixArk mixed）：
+
+| 项目 | aligned production `M1M` | uncensored Stage-2 |
+| --- | --- | --- |
+| capability 10×3 | **30/30** | soak2 147/150 |
+| `python-interval-repair-ast` | **15/15**（+首轮 3/3 = 18/18） | ≈**21/25**（run18 9/10 + soak2 12/15） |
+| `python-fill-memo-fib` | 15/15 | 25/25 |
+
+→ 这是**首个在真实 gate 下的行为差异**：在代码修复 case 上，uncensored 候选有约 **16% 的真实执行
+失败率**（失败多为模型自己写了“先错后改”的 assert 使文件不可运行），而 aligned production 为 **0**
+（18/18）。之前 AST gate 完全掩盖了这一差异。**样本仍有限**（stage2 merge 25 次、M1M 18 次）。
+
+**provenance 校验（补上）**：managed 单元现在会在启动时校验本地产物完整性——`run.sh` 在 baseline
+带 `conversion_manifest_sha256` 时，比对 `$MODEL_ROOT/conversion-manifest.json` 的 sha256，不符即
+**拒绝启动**；该 hash 由声明式选项 `services.thorFlashNext.uncensoredStage2ManifestSha256`
+（`4b95f883…`）提供，且 stage2 assertion 要求它非空。重建单元 `2wn0qfq…` 部署后启动成功 = 校验通过。
+
+**结论**：Stage-2 作为“可用”成立；但同门禁对照显示 **uncensored 在代码修复 case 上弱于 aligned
+production（≈16% vs 0% 的执行失败，样本小）**。是否接受取决于用途——若要求严格，建议在 `prod` 之前
+扩大该 case 的重复次数（或换更稳的代码 case）。
 - 证据：`state-drift-20261006/stage1.5-jpezzulli.log`；`mtp-20261005/run8-ab-uncensored-mtp/`、
   `run9-ab-uncensored-mtp/`、`spec-metrics*.py`。

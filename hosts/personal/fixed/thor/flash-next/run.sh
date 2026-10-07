@@ -59,6 +59,15 @@ if jq -e '.prepared_observation' "$BASELINE_FILE" >/dev/null; then
         .pins.configuration_draft_optimization.revision == $baseline[0].configuration_revision
     ' "$MODEL_ROOT/prepared.json" >/dev/null
 fi
+# Derived model sources pin their provenance via a conversion manifest hash.
+if jq -e '.conversion_manifest_sha256' "$BASELINE_FILE" >/dev/null; then
+    expected=$(jq -r '.conversion_manifest_sha256' "$BASELINE_FILE")
+    actual=$(sha256sum "$MODEL_ROOT/conversion-manifest.json" | cut -d' ' -f1)
+    if [[ "$actual" != "$expected" ]]; then
+        printf 'conversion manifest sha256 mismatch for %s\n' "$MODEL_ROOT" >&2
+        exit 1
+    fi
+fi
 jq -e '.quantization_config.quant_method == "modelopt_mixed"' "$TARGET_DIR/config.json" >/dev/null
 test -f "$TARGET_DIR/hf_quant_config.json"
 test -f "$TARGET_DIR/model.safetensors.index.json"
