@@ -12,6 +12,7 @@ in
     ./fan-control.nix
     ./hardware-configuration.nix
     ./inference.nix
+    ./flash-next.nix
     ../../../../modules/nixos/hyprland.nix
   ];
 

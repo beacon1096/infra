@@ -1,0 +1,58 @@
+--- gdn_backend.py
++++ gdn_backend.py
+@@ -1,3 +1,4 @@
++import os
+ from typing import Optional, Tuple, Union
+ 
+ import msgspec
+@@ -50,6 +51,23 @@
+     envs.SGLANG_GDN_DECODE_FUSION_VERIFY_REAL_TENSORS.get()
+ )
+ 
++# Optional diagnostics: dump the per-layer SSM state written by the extend
++# (prefill) kernel into SGLANG_GDN_STATE_DUMP/<layer>_seq<len>.npy, so state
++# dtype drift can be compared directly instead of only through logits. No-op
++# unless SGLANG_GDN_STATE_DUMP is set; layers filter via
++# SGLANG_GDN_STATE_DUMP_LAYERS (comma list, or "all"/unset for every layer).
++_gdn_state_dump_dir = os.environ.get("SGLANG_GDN_STATE_DUMP")
++_gdn_state_dump_layers = os.environ.get("SGLANG_GDN_STATE_DUMP_LAYERS", "all")
++
++
++def _gdn_state_dump_selected(layer_id: int) -> bool:
++    if not _gdn_state_dump_dir:
++        return False
++    raw = _gdn_state_dump_layers.strip()
++    if raw.lower() in ("", "all"):
++        return True
++    return str(layer_id) in {item.strip() for item in raw.split(",")}
++
+ 
+ class GDNMISMetadata(msgspec.Struct, frozen=True):
+     query_token_indices: torch.Tensor
+@@ -1054,6 +1072,26 @@
+                     forward_batch, h, ssm_states, forward_metadata
+                 )
+ 
++        if (
++            _gdn_state_dump_dir
++            and not is_target_verify
++            and _gdn_state_dump_selected(layer.layer_id)
++        ):
++            import numpy as _np
++
++            _seq_len = -1
++            _seq_lens_cpu = getattr(forward_batch, "seq_lens_cpu", None)
++            if _seq_lens_cpu is not None and len(_seq_lens_cpu) > 0:
++                _seq_len = int(_seq_lens_cpu[0])
++            os.makedirs(_gdn_state_dump_dir, exist_ok=True)
++            _np.save(
++                os.path.join(
++                    _gdn_state_dump_dir,
++                    f"layer{layer.layer_id:03d}_seq{_seq_len:06d}.npy",
++                ),
++                ssm_states[cache_indices].detach().to(torch.float32).cpu().numpy(),
++            )
++
+         return core_attn_out
+ 
+     def _forward_extend_mis(

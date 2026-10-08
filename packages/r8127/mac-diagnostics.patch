@@ -1,0 +1,169 @@
+--- a/src/r8127.h
++++ b/src/r8127.h
+@@ -621 +621 @@
+-#define RTL8127_VERSION "11.015.00" NAPI_SUFFIX DASH_SUFFIX REALWOW_SUFFIX PTP_SUFFIX RSS_SUFFIX
++#define RTL8127_VERSION "11.015.00" NAPI_SUFFIX DASH_SUFFIX REALWOW_SUFFIX PTP_SUFFIX RSS_SUFFIX "-MAC-DIAG"
+--- a/src/r8127_n.c
++++ b/src/r8127_n.c
+@@ -4254,11 +4254,41 @@
+ }
+ 
+ static void
++rtl8127_mac_diag(struct net_device *dev, const char *stage)
++{
++        struct rtl8127_private *tp = netdev_priv(dev);
++        u8 mac[MAC_ADDR_LEN];
++        u8 backup[MAC_ADDR_LEN];
++        u32 low;
++        u16 high;
++        int i;
++
++        if (dev->reg_state != NETREG_UNINITIALIZED)
++                return;
++
++        low = RTL_R32(tp, BACKUP_ADDR0_8125);
++        high = RTL_R16(tp, BACKUP_ADDR1_8125);
++        for (i = 0; i < MAC_ADDR_LEN; i++)
++                mac[i] = RTL_R8(tp, MAC0 + i);
++        for (i = 0; i < 4; i++)
++                backup[i] = low >> (i * 8);
++        backup[4] = high;
++        backup[5] = high >> 8;
++
++        dev_info(&tp->pci_dev->dev,
++                 "r8127-mac-diag: stage=%s mac0=%pM backup=%pM rxconfig=%08x chipcmd=%02x d2=%02x mcfg=%u eeprom_type=%u random_mac=%u\n",
++                 stage, mac, backup, (u32)RTL_R32(tp, RxConfig),
++                 RTL_R8(tp, ChipCmd), RTL_R8(tp, 0xD2),
++                 tp->mcfg, tp->eeprom_type, tp->random_mac);
++}
++
++static void
+ rtl8127_nic_reset(struct net_device *dev)
+ {
+         struct rtl8127_private *tp = netdev_priv(dev);
+         int i;
+ 
++        rtl8127_mac_diag(dev, "nic-reset-entry");
+         rtl8127_disable_rx_packet_filter(tp);
+ 
+         rtl8127_enable_rxdvgate(dev);
+@@ -4270,6 +4300,7 @@
+         rtl8127_clear_stop_all_request(dev);
+ 
+         /* Soft reset the chip. */
++        rtl8127_mac_diag(dev, "before-cmd-reset");
+         RTL_W8(tp, ChipCmd, CmdReset);
+ 
+         /* Check that the chip has finished the reset. */
+@@ -4279,8 +4310,15 @@
+                         break;
+         }
+ 
++        rtl8127_mac_diag(dev, "after-cmd-reset");
++        if (dev->reg_state == NETREG_UNINITIALIZED)
++                dev_info(&tp->pci_dev->dev,
++                         "r8127-mac-diag: reset_poll_remaining=%d timeout=%u\n",
++                         i, i == 0);
++
+         /* reset rcr */
+         RTL_W32(tp, RxConfig, (RX_DMA_BURST_512 << RxCfgDMAShift));
++        rtl8127_mac_diag(dev, "after-rxconfig-reset");
+ }
+ 
+ static void
+@@ -12567,6 +12605,10 @@
+ #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,13)
+         memcpy(dev->perm_addr, dev->dev_addr, MAC_ADDR_LEN);
+ #endif
++        rtl8127_mac_diag(dev, "after-mac-selection");
++        dev_info(&tp->pci_dev->dev,
++                 "r8127-mac-diag: selected=%pM permanent=%pM original=%pM\n",
++                 dev->dev_addr, dev->perm_addr, tp->org_mac_addr);
+         return 0;
+ }
+ 
+@@ -13580,9 +13622,11 @@
+         }
+ 
+         tp->mmio_addr = ioaddr;
++        rtl8127_mac_diag(dev, "bar-mapped");
+ 
+         /* Identify chip attached to board */
+         rtl8127_get_mac_version(tp);
++        rtl8127_mac_diag(dev, "chip-identified");
+ 
+         rtl8127_print_mac_version(tp);
+ 
+@@ -14449,13 +14493,18 @@
+         if (rc < 0)
+                 goto err_out;
+ 
++        rtl8127_mac_diag(dev, "before-exit-oob");
+         rtl8127_exit_oob(dev);
++        rtl8127_mac_diag(dev, "after-exit-oob");
+ 
+         rtl8127_powerup_pll(dev);
++        rtl8127_mac_diag(dev, "after-powerup-pll");
+ 
+         rtl8127_hw_init(dev);
++        rtl8127_mac_diag(dev, "after-hw-init");
+ 
+         rtl8127_hw_reset(dev);
++        rtl8127_mac_diag(dev, "after-hw-reset");
+ 
+         /* Get production from EEPROM */
+         rtl8127_eeprom_type(tp);
+@@ -14463,6 +14512,7 @@
+         if (tp->eeprom_type == EEPROM_TYPE_93C46 || tp->eeprom_type == EEPROM_TYPE_93C56)
+                 rtl8127_set_eeprom_sel_low(tp);
+ 
++        rtl8127_mac_diag(dev, "before-mac-selection");
+         rtl8127_get_mac_address(dev);
+ 
+         tp->fw_name = rtl_chip_fw_infos[tp->mcfg].fw_name;
+--- a/src/rtl_eeprom.c
++++ b/src/rtl_eeprom.c
+@@ -35,6 +35,7 @@
+ #include <linux/init.h>
+ #include <linux/module.h>
++#include <linux/pci.h>
+ #include <linux/version.h>
+ #include <linux/ethtool.h>
+ #include <linux/netdevice.h>
+ #include <linux/delay.h>
+@@ -55,10 +56,15 @@
+ {
+         u16 magic = 0;
+ 
+-        if (tp->mcfg == CFG_METHOD_DEFAULT)
++        if (tp->mcfg == CFG_METHOD_DEFAULT) {
++                dev_info(&tp->pci_dev->dev,
++                         "r8127-mac-diag: eeprom_probe=unsupported-chip\n");
+                 goto out_no_eeprom;
++        }
+ 
+         if(RTL_R8(tp, 0xD2)&0x04) {
++                dev_info(&tp->pci_dev->dev,
++                         "r8127-mac-diag: eeprom_probe=unsupported-d2\n");
+                 //not support
+                 //tp->eeprom_type = EEPROM_TWSI;
+                 //tp->eeprom_len = 256;
+@@ -72,12 +78,18 @@
+         }
+ 
+         magic = rtl8127_eeprom_read_sc(tp, 0);
++        dev_info(&tp->pci_dev->dev,
++                 "r8127-mac-diag: eeprom_probe=serial type=%u magic=%04x\n",
++                 tp->eeprom_type, magic);
+ 
+ out_no_eeprom:
+         if ((magic != 0x8129) && (magic != 0x8128)) {
+                 tp->eeprom_type = EEPROM_TYPE_NONE;
+                 tp->eeprom_len = 0;
+         }
++        dev_info(&tp->pci_dev->dev,
++                 "r8127-mac-diag: eeprom_result type=%u length=%u\n",
++                 tp->eeprom_type, tp->eeprom_len);
+ }
+ 
+ void rtl8127_eeprom_cleanup(struct rtl8127_private *tp)

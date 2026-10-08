@@ -1,6 +1,6 @@
 # MiniMax H3：Lazycat 部署与基准测试
 
-[Thor 概览](../../README.md)
+[Thor 概览](../../../../inference/thor/README.md)
 
 检查与试验日期：2026-09-18。本文只读记录了在一台 Thor T5000 上安装的官方 Lazycat 软件包；
 它不是上游 MiniMax H3 在其推荐服务栈上的基准测试。
@@ -152,11 +152,15 @@ Triton 3.6.0 和 FlashAttention 2.8.4。容器镜像继承了面向 vLLM 的基�
 上表采用的是运行时自身测得的 CUDA 峰值分配量。
 
 640 x 384、约五秒输出配置的耗时中位数，约为厂商产品页所列 38 秒的 2.03 倍；
-该数据记录于 [Thor 概览](../../README.md#厂商公布的性能快照)。
+该数据记录于 [Thor 概览](../../../../inference/thor/README.md#厂商公布的性能快照)。
 832 x 480 配置的中位数约为其两分钟数据的 1.04 倍。本地服务提供的是 640 x 384、
 10.125 秒输出配置，而非产品页所列的 15 秒配置，因此不比较两者耗时。
 厂商使用的准确提示词、镜像构建版本、缓存状态、计时边界和输出验证方式仍未知；
 这些比值是观察结果，并非受控回归测试结果。
+2026-10-03 复核发现厂商页面已将上述参考值整体下调（38 s → 32 s、2 分钟 →
+102 s 等，见 Thor 概览快照表）；本节比值基于旧页面数值，对应本地
+LPK 0.1.9/运行时 0.1.1 时代的测量，且 0.4.9 已更换权重与运行时体系，
+比值不再具备外推意义。
 
 ## 测量现状与后续工作
 
@@ -167,6 +171,34 @@ Triton 3.6.0 和 FlashAttention 2.8.4。容器镜像继承了面向 vLLM 的基�
 2. 为另外两种配置各增加一次或多次形状编译后的重复测量，再判断其分布是否稳定。
 3. 在记录 GPU 遥测的同时采集整板功率和风扇 RPM。
 4. 修复自定义提示词条件编码器后，用有记录的提示词集合测试，再对质量下结论。
+
+## 0.4.9 静态核对（2026-10-03，未部署）
+
+微服本体现装 LPK `0.4.9`（基线记录为 `0.1.9`）。控制面二进制
+（`minimax-h3-lpk`，Go）内嵌 `minimax-h3.upstream-models.v1` 与
+`minimax-h3.runtime-image-parts.v1` 两类清单常量，静态提取结果：
+
+- **运行时大版本更替**：`minimax-h3-thor-0.4.6-runtime.tar` 与
+  `minimax-h3-thor-0.4.6-warm-cache.tar`（基线为
+  `runtime-160-0.1.1`）。0.4.6 运行时自带 CUDA 13.0 sbsa 栈
+  （jetson-ai-lab apt 源、cu130/cudnn 9.13 本地仓库 URL 内嵌），
+  并出现 ComfyUI 源码提交引用（`ComfyUI/.h3-source-commit`）——
+  运行时疑似已从 Diffusers 自组管线转向 ComfyUI 体系。
+- **权重改用 Comfy-Org 打包**：`Comfy-Org/MiniMax-H3`（HF @ `4cc1d817…`
+  / MS @ `160418ce…`），文件含
+  `text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`
+  ——文本编码器升级为 **Qwen3-VL-32B 的 NVFP4-AWQ 量化**，另带
+  `prompts/example_*.pt` 工作流样例。
+- **OpenVDN/`vdn-minimax-h3` 仍在清单中**（三个修订：`18be6bcc…`、
+  `3674e3a5…`、`b8cb28fb…`），基线使用的 VDN 权重路线未删除。
+- 运行时归档 URL 由环境变量 `MINIMAX_H3_RUNTIME_IMAGE_URL` /
+  `MINIMAX_H3_RUNTIME_CACHE_URL` 驱动；部署模式常量含
+  `singleStreamOnly`、`video-generation`。
+- 服务参数（并发/上下文/调度）需部署后从容器观测，本次未部署。
+
+结论：0.1.9 → 0.4.9 是架构级更新（Comfy-Org 权重 + ComfyUI 运行时 +
+CUDA 13 自包含栈 + 32B 文本编码器量化），基线文档的 Diffusers 栈描述
+仅适用于 0.1.9；文内基准数据不可外推到 0.4.9。
 
 ## 参考资料
 

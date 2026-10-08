@@ -1,10 +1,21 @@
 # Qwen3.8 Flash Next：NVFP4、CUDA Graph 与 MTP
 
 [Thor 概览](../../README.md) ·
-[Lazycat 官方应用部署](lazycat.md)
+[Lazycat 官方应用部署](../../../../../inventory/guanggu/lcmd/thor-apps/qwen3.8-flash-next.md)
 
 源码审查：部署修订版 `d03809008834124e80223c3482f2ddb59577a48f`。
 本地启动与性能实验：2026-09-13。
+
+> **2026-10-05 状态与建议。** 本页同时收录早期的 vLLM 路径实验与 2026-10 自建 SGLang
+> 路径。自建 SGLang 结论摘要：`G1`（target-only + C1 full decode graph）为 owned 基线，
+> 生成安全验收（自然长文本、客户端取消与恢复）通过；原生 `NEXTN` 全词表 MTP 在结构化
+> 任务约 1.8–2.1×、自然文本 +17%–35%，短上下文 gate 未见质量回归；`32768` 词表 map
+> 对开放文本有害、未采用；dense 侧本就是 FP8（`F3/F4` 等价）；FP8 KV 是可选省内存项
+> （短上下文下略慢）；长上下文在 FP8 KV 下已验证到约 261K token。**能力 A/B（3 重复 + held-out）
+> 中 Flash-Next gate 30/30 vs 27B 27/30。BF16 SSM state 虽省约 0.9 GiB，但 teacher-forced
+> prefill 对照显示它会从第一个 state 边界起系统性改变 logits（chunk=64 时 0–2047 内 top-1
+> 翻转 18.3%），故保持 FP32 state 默认、BF16 仅作实验选项。**默认不晋升生产**，仍以实验
+> 方式按需启动，27B 保持停止。细节见下文各节。
 
 ## 检查点与内存布局
 
@@ -575,3 +586,1483 @@ Lazycat 厂商技术负责人的博客给出了其自身硬件、模型和 workl
 
 - [所审查修订版的 Qwen3.8 Flash Next Spark 部署](https://github.com/MiaAI-Lab/Qwen3.8-Flash-Next-Single-DGX-Spark/tree/d03809008834124e80223c3482f2ddb59577a48f)
 - [Lazycat 技术负责人的模型适配报告](https://manateelazycat.github.io/2026/08/29/model-adaptation-record/) — 外部结果，并非本地测量。
+
+## SG2026-10-04：自有 SGLang S0 基础验收
+
+本节记录 2026-10-04 已完成的自有 NixOS/SGLang 实验，与上文 vLLM 实验分开。
+S0 是 C1 单请求、target-only、无 MTP、禁用 CUDA Graph 的短输入基线，已正常 ready
+并通过定向功能验收；不是全 BF16 dense-side 的 F0，也不使用 Lazycat 运行时。
+每项实验完成后将结果写回本页；G1 在本节初始记录中仅为待测配置，后续结果见
+[C1 Graph 配对实测](#sg2026-10-04-c1-graph-配对实测)。
+
+### 来源与权重保全
+
+公开 ARM64 SGLang `v0.5.20`，engine 固定为
+`94602c9c2b7cbdb8efd5c52802dac6a1c180089e`，镜像固定为
+`lmsysorg/sglang@sha256:b0d8718a4424bb22e448e04407ab3ce5f7399a4c5fc702d6fbe36c3772ec8862`。
+target 为 `RadixArk/Qwen3.8-Flash-Next-NVFP4` 修订版
+`7b719225242aacd3dbd3f9407468c2ee9a9d2594`；metadata/conversions 来自
+`manateelazycat/Qwen3.8-Flash-Next-SGLang-Thor` 修订版
+`b8c4002b44544436bfc16b1ff7fe6ebb3ced07a6`。复用其检查点配置不等于使用厂商运行时。
+
+实际检查点为 `modelopt_mixed`，包含 FP8 side；完整词表 head 为 FP8
+`[248320,2560]`，block scale 为 FP32 `[1940,20]`。CLI `--dtype bfloat16`
+不会恢复已经量化的权重，不能据此称为 BF16 head 或全 BF16 dense 基线。
+从原应用缓存复制的 235 个文件共 133,414,193,791 bytes，已核对源 SHA-256 并回读副本。
+原系统盘以只读、`norecovery` 挂载，完成后卸载；源保持不变，没有重新下载。
+
+实现入口为 [flash-next.nix](../../../../../hosts/personal/fixed/thor/flash-next.nix)，
+参数见 [baseline.json](../../../../../hosts/personal/fixed/thor/flash-next/baseline.json)。
+同目录的 [run.sh](../../../../../hosts/personal/fixed/thor/flash-next/run.sh)、
+[prepare.sh](../../../../../hosts/personal/fixed/thor/flash-next/prepare.sh) 和
+[memwatch.sh](../../../../../hosts/personal/fixed/thor/flash-next/memwatch.sh)
+负责启动、源码 overlay 和内存 guard；补丁来源及前后 SHA-256 见
+[manifest.json](../../../../../hosts/personal/fixed/thor/flash-next/manifest.json)。
+定向探测见 [head-probe.py](../../../../../hosts/personal/fixed/thor/flash-next/head-probe.py)、
+[head-gemm-probe.py](../../../../../hosts/personal/fixed/thor/flash-next/head-gemm-probe.py) 和
+[probe.py](../../../../../hosts/personal/fixed/thor/flash-next/probe.py)。
+
+### S0 配置与生命周期
+
+| 项目 | 已验收的 S0 设置或观测 |
+| --- | --- |
+| 执行模式 | C1，最多一个请求，target-only；MTP、decode/prefill Graph 均禁用 |
+| 容量边界 | token pool 8192；原生 context 配置 262144，不代表 262K 可用容量或长上下文已验证 |
+| Cache | BF16 KV、FP32 SSM；SSM cache 8，page size 64 |
+| Prefill / 内存 | chunk 512，prefill/decode interval 1，static fraction 0.8 |
+| PLE | file offload，文件 RSS budget 4 GB |
+| 算子 | FA4 `4.0.0b31`；GDN Triton；MoE/FP4 FlashInfer CUTLASS；FP8 Triton |
+| 隔离与保护 | host 仅发布 loopback `8890`；容器限额 `108g`，主机 memory guard + StopLock；1 小时自动停，无自动重启 |
+| 清理 | 仅清理本实验持有 CID 的容器，不清理其他容器 |
+| 启动观测 | 本 epoch 18:11 启动、18:18 ready，约 7 分钟；仅单次观察，不是时限保证 |
+| 内存观测 | running 时 `MemAvailable` 采样约 36 GiB，不是峰值测量 |
+
+仅在 sandbox builder 构建两项 systemd unit 与运行闭包，完成 copy、runtime link 和
+health 检查，没有完整 system activation。运行时一小时自动停止且不自动恢复原 27B
+服务；用户已允许该服务继续停用。不声称完整系统部署或 cold reboot 已通过。
+
+### 两项兼容性修复
+
+FA4 b31 与 overlay TVM FFI `0.1.14` 曾使 TileLang `0.1.12` 因 `__ffi_repr__`
+重复注册而 SIGABRT。改为仅 overlay FA4，保留镜像 FFI `0.1.11`；b31 声明
+`>=0.1.12` 的元数据例外依据是 [FA4 PR #2948](https://github.com/Dao-AILab/flash-attention/pull/2948)
+已放宽至 `0.1.11`。native imports 及 SM110 上 FA4 dense/varlen 探测通过：
+Q=257、K=1025、query heads=24、KV heads=2、head dimension=256，对独立 FP32
+参考的最大绝对误差为 0.0011687875。这不推广为所有 GPU 或所有 FA4 版本均兼容。
+
+原 vocab loader 把 block scale 的 1940 行误当成 248320 个词表行，导致 assertion。
+补丁严格限于 TP1、non-presharded、无 added vocabulary 的 `BlockQuantScaleParameter`
+分支，只修正 scale 加载坐标，保留数值，不改变数学计算；源码 hash 由 manifest 固定。
+CPU 13 项检查通过，覆盖精确 `[1940,20]` markers、完整真实 scale 和 FP8 bit sample；
+raw head payload 在修复前后不变。
+
+小规模真实 Triton W8A8 kernel 对照独立 FP64 参考，通过 FP32 accumulation 与 BF16
+rounding 误差界检查；activation quantization 另行 bitwise 匹配：
+
+| `(M,N,K)` | W8A8 最大绝对误差 | W8A8 对 BF16 激活 weight-only 的 RMSE |
+| --- | ---: | ---: |
+| `(1,256,128)` | 0.008739 | 0.046205 |
+| `(17,257,256)` | 0.062279 | 0.128116 |
+| `(3,385,256)` | 0.061995 | 0.177644 |
+
+因此 `FP8_PB_WO` 标签不保证 stock SGLang 计算与 weight-only 数值等价。这些检查不是
+完整 head 或完整模型 parity，也不是长生成质量证明。
+
+### 功能与有限计时
+
+| Case | 重复次数 | 结果与边界 |
+| --- | --- | --- |
+| `exact-short-output` | 1 warm + 3 measured | 4/4 pass，精确输出 `372` |
+| `strict-json-schema` | 1 warm + 3 measured | 4/4 pass，`answer=42`、`label=thor` |
+| `tool-get-weather` | 1 warm + 3 measured | 4/4 pass，恰好调用 `get_weather(city=Beijing)` |
+| `historical-water-cycle-128` | 1 warm + 1 measured | 中文生成正常，但被 token budget 截断；`check=not_checked`，不计为完整质量 pass |
+
+前三项共 12 次全部通过，未观察到 reasoning 文本。中文 case 的单次 measured 首内容
+延迟为 0.32513 s、wall time 为 12.93975 s、content decode estimate 为
+10.06768 tokens/s；记录带 isolation label。这只是短时单次观察，不是严格跨模型 A/B、
+正式宽负载基准或速度上限。
+
+已完成的静态测试共 98 项（14 unit + 72 benchmark + 12 patch）通过；两项 Nix unit
+及运行闭包的 sandbox builder build/copy/link/health 检查通过。上述 CPU/GPU 探测
+计数各自独立，不与静态测试计数混合。raw/evidence 保存在远端
+`/var/lib/thor-flash-next/observations/initial-S0/`，不复制原始响应、模型文件、私有地址
+或凭据到公开仓。
+
+### G1 待测边界（初始记录）
+
+以下保留初始验收时的待测条款；后续已完成的 Graph 测量见
+[C1 Graph 配对实测](#sg2026-10-04-c1-graph-配对实测)，不替换历史证据。
+
+G1 为单变量 C1 decodeGraph 对照，由 `services.thorFlashNext.decodeGraph = true`
+从 S0 参数生成：仅启用 full decode Graph 并限制最大 batch size 为 1；prefill Graph
+仍禁用，其他 pins/非 Graph 设置不变且无 MTP。配置定义见上述模块；本节不声称已通过
+capture/replay、正确性或吞吐量测量，结果待主 agent 实测后追加。
+
+自有 SGLang 运行时尚无正式宽负载、长上下文、cancel/stress、MTP 或 Graph 测量。
+上文 vLLM 的 Graph/MTP 结果不能移作本运行时的验收证据。
+
+## SG2026-10-04 C1 Graph 配对实测
+
+本轮在上述 S0 基础验收后完成 C1、无 MTP 的 S0/G1 配对测量。G1 是所测短输入、
+固定输出长度场景的强候选，中文/代码 decode estimate 分别约为 S0 的 **2.97/3.04 倍**；
+不是生产 ready 判定，也不能与上文 vLLM 数字直接作受控比较。
+
+### 配置与协议
+
+| 项目 | 本轮控制与边界 |
+| --- | --- |
+| S0 / G1 | S0 禁用 Graph；G1 full decode Graph、最大 batch size 1；两者 prefill Graph 禁用、无 MTP |
+| G1 来源 | 上述 `flash-next.nix` 的 `services.thorFlashNext.decodeGraph = true` 生成配置，不另写实验参数集 |
+| 相同设置 | SGLang `v0.5.20`、engine `94602c9c2b7cbdb8efd5c52802dac6a1c180089e`、同一 `b0d8718a…` 镜像；实际 mixed FP8 payload、FP32 SSM、BF16 KV、token pool 8192/C1；其余 pins/flags 均同 S0 |
+| Throughput case | 沿用历史水循环中文 128-token、interval 合并代码 256-token 的原 prompt；每配置、每 case 为 1 warm + 3 measured |
+| 请求控制 | `temperature=0`、`seed=42`、`enable_thinking=false`；吞吐请求 `ignore_eos=true` 固定输出长度，质量 smoke 不忽略 EOS |
+| Prefix 协议 | shared-prefix，固定原 prompt，无 isolation nonce；不主动 flush 共享服务，允许 prefix reuse，但不强制 cold，也不保证命中 |
+| 执行顺序 | 先全部 S0，后 G1，仅一次配置切换；不是交叉或 counterbalanced 实验 |
+
+中文/代码各自的所有 wire request hash 在两配置间核对一致。实际日志中部分请求的
+cached token 为 0，因此不宣称实际 90% cache hits，也不把 TTFC 当成冷 prefill 延迟。
+配置为单变量，但生成轨迹并未固定；这不是固定 generated-token 的 kernel benchmark。
+
+### 配对计时与输出
+
+下表为每 case 三次 measured 的中位数，不包含 warmup；decode estimate 沿用本页
+`(completion_tokens - 1) / (stream_end - first_content)` 的定义，TTFC 为首内容延迟。
+
+| Case | 配置 | Decode estimate（tokens/s） | TTFC（s） | Wall（s） | G1/S0 decode |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 中文 128 | S0 | 10.010 | 0.301 | 12.978 | n/a |
+| 中文 128 | G1 | 29.778 | 0.199 | 4.462 | 2.975x |
+| 代码 256 | S0 | 10.022 | 0.298 | 25.741 | n/a |
+| 代码 256 | G1 | 30.466 | 0.199 | 8.568 | 3.040x |
+
+每 case 的三次 measured completion 长度在 S0/G1 下均为指定的 128/256 token。
+三次 measured 的不同 response hash 数：中文 S0/G1 为 3/3，代码为 3/1。
+`temperature=0` 和 `seed=42` 不保证 bitwise 确定性；本轮不认定轨迹差异的单一原因，
+也不将固定长度中文/代码计时当作完整生成质量 pass。
+
+### 功能与 Graph 证据
+
+| 检查 | 本轮结果 |
+| --- | --- |
+| 自动质量 smoke | 每配置的 exact output、strict schema、tool 三项各 1 warm + 3 measured；S0、G1 分别 12/12 通过 |
+| G1 capture/replay | 捕获成功，多个实际请求的 replay 日志记录 `decode cuda_graph=True` |
+| Capture 开销 | elapsed 1.29 s，报告额外 0.01 GB；当时 GPU available 38.44 GB |
+| Prefill | 日志 `graph=False`，与两配置的 prefill Graph 禁用一致 |
+| Nix/运行验证 | 本轮默认 false 与 `extendModules` true 两配置的两项 unit/pinned closure 构建，以及实际 capture/replay 通过；不是 full-system activation 或 cold boot 验证 |
+
+本轮复跑 99 项静态测试（14 unit + 73 benchmark + 12 patch）通过。ignore-EOS
+fixture 仅给这两个固定长度吞吐 case 增加 flag，不改变质量请求或 CLI 默认值。
+
+### 资源与启动观测
+
+| Throughput 采样 | 样本数 | 最低 MemAvailable（GiB） | 最高温度（°C） | 最高 GPU reported power（W） |
+| --- | ---: | ---: | ---: | ---: |
+| S0 | 151 | 36.4852 | 47 | 25.34 |
+| G1 | 51 | 36.3872 | 51 | 39.95 |
+
+这些 min/max 是离散采样，不是精确瞬时 peak。`smi` 时钟为 NA，不能证明同频运行，
+也不能将性能变化归因于 thermal；功耗是 GPU reported rail，不是整机功耗。
+
+| 启动 epoch | Start → ready | 观测 |
+| --- | --- | --- |
+| 本轮 S0 | 20:01 → 20:19，约 18 分钟 | 重新加载模型及写入 PLE |
+| 本轮 G1 | 20:37 → 20:55，约 18 分钟 | engine `load_weight=1008.35 s`、`scheduler=1025.58 s`、`tokenizer=1034.2 s` |
+
+本轮启动主要耗时为重新加载/写入 47.7 GiB PLE，在 4 GiB RSS cap 下，每个 5.2 GB
+分片约 82 s。Graph capture 仅 1.29 s，不能把整体加载延迟归因于 Graph；这些 startup
+字段也不应相加为 wall time。初始 S0 的 18:11 → 18:18、约 7 分钟仍是保留的单次
+观测，不是后续启动时限保证。
+
+### 状态与后续边界
+
+- 用户保持原 27B 服务关闭；没有 production route 切换或 full-system activation。
+  G1 继续作为临时 loopback `8890` 服务，保持 1 小时限时、无自动重启，不自动复活 27B。
+- 默认 module option 仍为 `false`；本轮不在未经 review 的情况下修改默认值。
+  后续先验证 G1 稳定性与实际 thinking，再评估 MTP。
+- 本轮没有长上下文、并发、长输出、实际 reasoning、MTP 或普遍稳定性的验收证据。
+  自动 smoke 与短时吞吐结果不推广为通用质量或生产可用性。
+- raw/evidence 保留在私有目录
+  `/var/lib/thor-flash-next/observations/decode-graph-20261004/{S0,G1}/`；不贴原始模型回复、
+  host IP、user ID 或其他私有运行数据。
+- 初始源码准备已由 `89df3e5` 在独立分支 `feat/thor-flash-next-owned` 提交并推送；
+  本轮文档及 ignore-EOS fixture 作为后续独立提交，每轮实验结果写回本页。
+
+## SG2026-10-05 G1 thinking / continuous 有限实验
+
+本轮继承 [G1 配对实测](#sg2026-10-04-c1-graph-配对实测) 的运行配置，验证实际
+thinking 控制与有限连续生成。三道合成题各两次重复中，off/low/medium 分别通过
+0/6、5/6、4/6；连续账本通过，重复序列从第一行即违反格式。以下是任务级观测，
+不是通用 benchmark accuracy、长期数值稳定性或生产 ready 判定。
+
+### 继承配置与行政窗口
+
+| 项目 | 本轮控制与边界 |
+| --- | --- |
+| 不变的 G1 | 公开 SGLang `v0.5.20`、同一 `94602c9c…` engine / `b0d8718a…` 镜像；完整 pins 见 S0 来源节，不另换任何 inference flag |
+| 实际权重与执行 | 同一 mixed FP8 payload / block-scaled FP8 完整词表 head、TP1 scale-loader 补丁；FP32 SSM、BF16 KV、pool 8192、C1 full decode Graph BS1，prefill Graph 禁用、无 MTP |
+| 行政时限 | 新增 `services.thorFlashNext.runtimeMaxSec`，类型为正整数、默认 3600；仅本轮 override 为 5400 秒（90 分钟） |
+| 应用方式 | 编译 unit 后 runtime link，不 restart；实验过程中 InvocationID 保持不变，host guard / CID cleanup 不变；不是 full-system activation |
+| 单个启动 epoch | CST 2026-10-05 00:11 启动、约 00:30 ready，约 18 分钟；仅一次启动观测 |
+| 作业时间 | CST 约 00:50 至 01:13；完成时间为 UTC `2026-10-04T17:13:02Z`，即 CST 2026-10-05 01:13:02 |
+| 生命周期 | 90 分钟从 00:11 启动计时，自动停止边界约 01:41；无自动重启，不代表无限运行或持久服务 |
+| 路由 | 原 27B 服务保持停止，没有 production route 切换，也不自动恢复 27B |
+
+延长时限只为容纳本轮已规划请求，是行政窗口，不是新的 inference variable。
+上述时间不构成启动或完成时限保证。作业完成后另于 CST 01:43 核验：服务已按
+90 分钟上限结束，`Result=timeout` 是预定时限触发，日志显示正常 shutdown；容器、
+CID marker 与 guard 均已回收，没有 memory-stop 锁，`MemAvailable` 恢复约 119 GiB。
+原 27B 及健康检查仍停止；这不是任务期间的传输或模型故障。
+
+### 公开资产与检查口径
+
+新增 [thinking-stability.json](../../benchmark/thinking-stability.json) 共 13 个 case：
+三道题各 off/low/medium 九项、两个 continuous ledger 和两个 continuous sequence。
+[thinking-probe.py](../../../../../hosts/personal/fixed/thor/flash-next/thinking-probe.py)
+只加载本地 tokenizer/Jinja；[test-thor-thinking.py](../../../../../utils/test-thor-thinking.py)
+独立核对 oracle、配对输入和严格 checker。它们是新合成实验资产，不是历史结果。
+
+本轮 [benchmark client](../../../../../utils/benchmark-thor.py) 兼容 SGLang 的根级
+`usage.reasoning_tokens`，仅接受严格非负整数，不接受 bool、浮点或字符串。根级与
+`completion_tokens_details.reasoning_tokens` 冲突时，reasoning / non-reasoning 拆分
+均为 null，`reasoning_tokens_source=conflict`；缺少有效 completion 总数时也不强行拆分。
+即便没有 completion 总数，根级正 reasoning count 仍使 thinking-off 检查失败。
+不以 SSE chunk 数或事件间隔估算 token 数，本轮采用 API 报告的根级 reasoning count。
+
+| 检查 | 规则或已完成验证 |
+| --- | --- |
+| Thinking JSON | 严格字段、整数类型与正确值；必须自然 `stop`，错误答案或 `length` 均失败 |
+| Continuous ledger | 必须自然 `stop`、完整行数；逐行严格核对 `seq`、transaction ID、整数类型、顺序与累计 balance，不执行生成代码 |
+| Continuous sequence | 精确行格式、编号、词序及句点；`length` 时只允许完整合法前缀及下一行合法 partial，记录 `full_task_completed=false`；提前自然停止不足 500 行则失败 |
+| 静态测试 | 已完成 130 项全部通过：82 benchmark + 21 thinking + 15 unit + 12 patch；不与 API 请求或 CPU render 次数相加 |
+| 空选择防护 | 新 fixture 没有默认 `smoke` case；省略匹配 suite/case 时在 preflight 失败，避免零请求被记录成 successful run |
+
+### Thinking 控制证据
+
+实际本地 `chat_template.jinja` SHA-256 为
+`c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041`。
+该文件不是拿 SGLang-Thor metadata/conversions 路径中的模板代替 target 模板；其来源为
+前述固定 `RadixArk` target 修订版 `7b719225…`。HF token rendering 显式使用
+`return_dict=False` 并检查 flat integer token IDs。
+
+| 控制层 | 本轮证据与限制 |
+| --- | --- |
+| 本地 Jinja | low、medium、xhigh rendering 三者不同；省略 effort 默认 xhigh；`high` 抛出 `TemplateError` |
+| Thinking 开关 | off 渲染关闭的 think block；low/medium 渲染打开的 think block |
+| 同题配对 | off/low/medium 原始 messages 相同，仅 `chat_template_kwargs` 不同；不是三个不同题面 |
+| CPU render | 13 个 case 的输入为 62 至 852 token，最大 852 |
+| 实际 API | 26 个 task trial 的 `usage.prompt_tokens` 全部与各自本地 render 长度吻合；实际观察到 reasoning flow 和报告 count |
+| 后端支持 | 固定 engine 的源码 forwarding，加上 render、API 长度及实际 reasoning 证据，支持软提示已生效；仅长度一致不证明后端 prompt bytes 逐字相同 |
+
+`effort_kwarg=None` 不能证明 low 不受支持。low 是要求 brief thinking 的软提示，不保证
+短或正确；medium 没有额外 instruction，不是硬预算。本轮没有 `thinking_budget`。
+Thinking-on 流中实际观察到首 reasoning 与首 content 的分离，分别记录
+`first_reasoning_seconds` / `first_content_seconds`，不能把首 reasoning 当成首正文。
+
+### 请求协议与恢复检查
+
+| 项目 | 本轮协议 |
+| --- | --- |
+| 请求控制 | `temperature=0`、`seed=42`；shared-prefix、无 isolation nonce，不主动 flush，也不保证 cold 或 cache 命中 |
+| 输出预算 | thinking、ledger 与长 sequence 均为 4096；辅助短 sequence 为 1536；预算是上限，不强制输出长度 |
+| 容量 | 预检限制 `P <= 2048`、`O <= 4096`，在 pool 8192 内留有余量；未测试真正 8K/16K 输出 |
+| 停止条件 | 不使用 `ignore_eos`，无 grammar 保送；ledger/思考题要求自然结束，sequence 允许受预算截断的合法前缀 |
+| 顺序与重复 | 13 个 case 两轮 round-robin；每个 trial 独立执行 `--repeats 1`，共 26 个 task trial |
+| 任务失败 | wrong final / length failure 确实返回 1 并记录；随后按预定计划执行下一独立 trial，不绕过或修改 failed status |
+| 中止条件 | 任何 transport、model、control failure 或短 recovery 失败均中止整个作业 |
+| Recovery | 1 次初始 warm + 每个 task trial 后 1 次精确 `372` 检查，共 27/27 pass；transport failure 为 0，服务保持同一 InvocationID |
+
+### 思考任务结果
+
+Oracle 在公开测试中独立核对：digit 穷举得到唯一答案 294；two workers 的总工时
+24 给出双 worker 下界 12，测试含满足依赖和不重叠约束的 makespan 12 witness；
+signed ledger 32 从初始 37 逐笔计算，期望 final 4、minimum -68、negative steps 18。
+下表每行均为两次 trial；token 对按轮次排列，total 指 API completion 总数
+（包含 reasoning），不是仅正文。
+
+| 任务 | 档位 | 严格通过 | Reasoning tokens（两次） | Total tokens（两次） | Wall 中位数（s） |
+| --- | --- | ---: | --- | --- | ---: |
+| Digit | off | 0/2 | 0 / 0 | 9 / 9 | 1.368 |
+| Digit | low | 2/2 | 571 / 537 | 581 / 547 | 19.326 |
+| Digit | medium | 2/2 | 609 / 586 | 619 / 596 | 20.403 |
+| Two workers | off | 0/2 | 0 / 0 | 9 / 9 | 0.576 |
+| Two workers | low | 1/2 | 4096 / 3896 | 4096 / 3906 | 137.451 |
+| Two workers | medium | 0/2 | 4072 / 4096 | 4082 / 4096 | 140.450 |
+| Signed ledger 32 | off | 0/2 | 0 / 0 | 32 / 32 | 1.397 |
+| Signed ledger 32 | low | 2/2 | 1021 / 1108 | 1041 / 1128 | 36.801 |
+| Signed ledger 32 | medium | 2/2 | 1336 / 1248 | 1356 / 1268 | 44.267 |
+
+Two workers 的 low 第一次耗尽 4096-token 预算，`length` 且无 final；第二次自然
+`stop` 并给出最优值 12。medium 第一次自然 `stop` 但答案非最优，第二次 `length`
+且无 final。off 的三题均给出错误值。wall 中位数包含这些错误/截断 trial，不是成功
+请求平均耗时；low 也能把全部预算用于 reasoning 而没有正文。
+
+汇总 off 0/6、low 5/6、medium 4/6 只覆盖三道合成题、每档两次重复，不能推广成模型
+benchmark accuracy 或 low 普遍优于 medium。此前约 30 tokens/s 的短 decode 观测
+也不意味着 thinking 节省 wall time。
+
+### 连续生成与严格失败
+
+以下四个 case 都关闭 thinking，各重复两次。checksum 是逐行 balance 之和，
+不是 final balance；每个账本行都与独立 oracle 核对。
+
+| Case | 严格检查通过 | 输出 token（两次） | Wall 中位数（s） | 停止与核对结果 |
+| --- | ---: | --- | ---: | --- |
+| Ledger 8 | 2/2 | 142 / 142 | 5.026 | 自然 `stop`，完整 8 行，balance checksum 78 |
+| Ledger 96 | 2/2 | 1799 / 1799 | 62.255 | 自然 `stop`，完整 96 行，balance checksum -910 |
+| Sequence 1536 | 0/2 | 1536 / 1536 | 51.825 | 两次 `length`，第一行即缺少要求的终止句点 |
+| Sequence 4096 | 0/2 | 4096 / 4096 | 139.024 | 两次 `length`，同样从第一行违反格式 |
+
+账本在自然 EOS 前完成，未强制 length；最长成功账本仅输出 1799 token，因此不证明
+正确账本覆盖了 4096-token 压力边界。sequence 的失败从第一行就发生，是格式不遵守，
+不能据此当作长程漂移证据，strict gate 不放宽。
+
+只作事后辅助诊断，忽略这一已知 missing-dot 差异后，1536 两次均有 137 条编号/词序
+完整的行；4096 两次均有 350 条及合法 partial 351。该有限合成样本未发现额外跳号或
+循环，但这不是原 strict checker pass，不改变四个 trial 的 failed status，也不声称
+500 行任务全部完成。
+
+### 资源、证据与后续
+
+| 本轮资源采样 | 观测值 |
+| --- | ---: |
+| 最低 MemAvailable | 37.3106 GiB |
+| 最高温度 | 60 °C |
+| 最高 GPU reported power | 41.15 W |
+| 时钟 | NA |
+
+这些 min/max 来自离散采样，不是瞬时真实 peak；功耗不代表整机功耗，NA 时钟也不支持
+同频假设。memory guard 未触发，全部短 recovery 通过，但不足以证明通用质量、长时
+运行或长期数值稳定性。任务失败本身不能证明 precision/SSM 漂移；要归因数值漂移，
+需要 teacher-forced、logit/reference 对照，而不是以错误答案或格式失败替代。
+
+下一轮先扩大 thinking 任务、测试较长的自然 prose，并补充 cancel / 混合负载检查。
+MTP 仍未启用，本轮不存在 speculative 接受率；不据此晋升生产配置。
+raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/thinking-stability-20261005/`，不公开 raw chain、
+原始回复、host IP 或运行 UUID。遵循每轮 record + push 的要求，本轮代码和本页记录
+由主 agent 负责后续新 revision 的提交/推送；此处不预填尚未产生的 commit ID。
+
+## 生成安全验收：自然长文本与客户端取消
+
+2026-10-05，在图 `G1`（target-only，C1 full decode graph，max batch 1，BF16 KV、
+FP32 SSM，无 MTP）上补做生成安全验收，不改变任何 inference flags；5400 秒仍只是
+行政窗口。新增 `docs/inference/thor/benchmark/generation-safety.json` 与一个
+`natural_prose` strict gate，并由 `record-flash-next-runtime.py` 的 `G1` 分支核验 runtime
+记录；观测到的 `speculative_algorithm` 为 `disabled`，`cuda_graph_backend_decode` 为
+`full`，`cuda_graph_max_bs_decode` 为 1。
+
+**自然长文本**
+
+提示要求约 700 字、结构完整并自然结束的中文说明文；budget 为 2048（off）和 4096
+（low），temperature 0，每档重复两次。gate 要求 `finish_reason == stop`、无 tool call、
+内容达到 `min_chars`。
+
+| Case | 严格通过 | 输出字符 | completion / reasoning token | Wall（s） | 停止 |
+| --- | ---: | ---: | --- | ---: | --- |
+| natural-prose-off | 2/2 | 837 / 844 | 467 / 483（reasoning 0） | 16.55 / 16.58 | 自然 `stop` |
+| natural-prose-low | 2/2 | 873 / 784 | 687 / 633（reasoning 172 / 176） | 23.68 / 21.53 | 自然 `stop` |
+
+thinking low 在首次内容前先输出 reasoning，`first_content` 约 6.05–6.09 s；off 约
+0.19–0.43 s。
+长度检查只证明在预算内自然终止，不评估事实正确性、连贯性或文风。
+
+**客户端取消与恢复**
+
+对 `cancel-long-generation`（`ignore_eos`，budget 4096）流式生成约 20 秒后由客户端
+主动断开连接，随后立即发送一个短 JSON 请求。
+
+| 轮次 | 断开前 content 事件 | 耗时（s） | 断开后服务存活 | 恢复 JSON |
+| --- | ---: | ---: | --- | --- |
+| 1 | 602 | 20.02 | 是 | 通过 |
+| 2 | 607 | 20.02 | 是 | 通过（0.44–0.48 s） |
+
+两轮断开前都在持续产出 token，说明取消发生在生成中途。取消计数由
+`utils/run-flash-next-safety.py` 从被中断的流中统计并写入 `summary.json`，未保留
+原始 partial stream。此检查证明客户端中断后服务未崩溃且可继续服务，但不证明服务端
+已立即停止 GPU 计算、释放 KV/state 或回收显存；本轮没有测量取消路径的服务端耗时。
+
+**资源与边界**
+
+| 采样 | 观测值 |
+| --- | ---: |
+| 最低 MemAvailable | 37.2333 GiB |
+| 最高温度 | 52 °C |
+| 最高 GPU reported power | 38.76 W |
+
+四次 prose 与两次 recovery 均为 `completed`，无传输失败。样本小，只覆盖 greedy、
+单请求、短上下文；不能证明通用质量、长时稳定性或并发安全。验收结束后服务正常停止，
+容器与 guard 清理；停止后即时采样 MemAvailable 约 119.5–120 GiB，该值未写入证据目录。
+
+本轮不启用 MTP，不存在 speculative 接受率。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/safety-20261005/`，不公开原始回复或运行 UUID。
+代码、fixture 与本页记录由主 agent 负责新 revision 的提交/推送，此处不预填 commit ID。
+
+只读源码核查确认：固定镜像 `lmsysorg/sglang:v0.5.20`
+（`94602c9c`）已内置 `NEXTN`（作为 `EAGLE` 别名）、`qwen4_exp` MTP draft 类以及
+`--speculative-token-map`，draft 目录可按独立模型加载；`optimization/` 中的
+`draft-head-32768-corpus-fp8.safetensors` 在该镜像内没有 loader，`32768` 词表优化
+需要另行实现。
+
+## 原生 MTP：NEXTN 全词表加载与冒烟
+
+2026-10-05，在同一个 SGLang 镜像（`94602c9c`）上启用原生 `NEXTN`（SGLang 解析为
+`EAGLE`），使用独立的全词表 draft（`/models/draft`，3 步 / topk 1 / 4 draft token），
+保留 C1 full decode graph、BF16 KV、FP32 state，不启用 `32768` token map。为
+`benchmark-thor.py` 新增 declared profile `M1`；其 runtime 记录由
+`record-flash-next-runtime.py` 核验 `speculative_algorithm = EAGLE`、
+`speculative_num_steps = 3`、`speculative_eagle_topk = 1`、
+`speculative_num_draft_tokens = 4`、`speculative_draft_model_path = /models/draft` 与
+`speculative_draft_model_quantization = modelopt_mixed`。实机 `/get_server_info` 另观测
+`speculative_token_map = null`（全词表），`cuda_graph_backend_decode = full`、
+`cuda_graph_max_bs_decode = 1`、`kv_cache_dtype = bfloat16`、`mamba_ssm_dtype = float32`。
+
+加载与 graph：draft 以 `Qwen4ExpForCausalLMMTP`、`modelopt_mixed` 加载，报告 3.89 GB、
+16.49 s；服务捕获了 target verify（num_tokens_per_req 4）、draft decode（1）和
+draft extend（4）的 full graph，bs 均为 1。没有出现 draft/GDN 的缺失 kernel 故障。
+权重加载约 1042 s。
+
+冒烟（greedy、单请求、short context、shared-prefix）：
+
+| Case | 结果 | 输出 | Wall（s） | 端到端 tok/s |
+| --- | --- | --- | ---: | ---: |
+| exact-short-output | exact 通过 | 4 token | 0.539 | 7.42（过短，不代表吞吐） |
+| natural-prose-off | natural_prose 通过 | 733 字符 / 416 token | 12.834 | 32.41 |
+| recovery-short-json | json 通过 | 8 token | 0.406 | 19.69 |
+
+对照 `G1` 的同一 `natural-prose-off`：`G1` 两次为 837 / 844 字符、467 / 483 token、
+16.55 / 16.58 s（约 28.2 / 29.1 tok/s）。本案例下 MTP 约快 11–15%，但输出长度与文本
+不同于 target-only，因此不能据此声称无损等价，也不是严格同输出的吞吐对照。
+
+生成期间解码日志报告 `accept len` 1.88–2.27、`accept rate` 0.29–0.42，说明该 draft
+确实在被接受（与 Lazycat 部署记录的零接受不同）；这些是逐 decode 步日志，不是正式
+计数器或端到端统计，`/metrics` 在本配置下未启用（返回 404）。
+
+边界：只测了一个 greedy、单请求、短上下文样本；未测正式 accept 计数、长上下文、
+并发、质量等价或 token map 优化；draft 额外常驻约 3.89 GB；`32768` 词表优化仍无
+镜像内 loader。验收后服务正常停止，容器清理，MemAvailable 约 119.99 GiB，并恢复原
+`G1` 运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/`，不公开原始回复或运行 UUID。
+
+下一轮：先补齐 MTP 的正式 accept 计数（启用 metrics）与更大的代码/thinking 负载、
+长上下文检查，再单独实现并评估 `32768` 词表优化；不改变 BF16 state、FP8 KV 或
+上下文长度。
+
+### MTP 正式 accept 计数与代码/thinking 负载
+
+2026-10-05，为 `flash-next.nix` 增加 opt-in `services.thorFlashNext.metrics`
+（追加 `--enable-metrics`），并新增 declared profile `M1M`（= `M1` + `enable_metrics: true`）。
+推理设置与 `M1` 完全一致：NEXTN/EAGLE、3 步 / topk 1 / 4 draft token、全词表、C1
+full decode graph、BF16 KV、FP32 state。runner 每秒抓取 `/metrics` 的
+`spec_accept_length`、`spec_accept_rate`、`spec_verify_calls_total`、
+`generation_tokens_total`，并对每个 case 记录前后增量。
+
+单次 greedy、单请求结果：
+
+| Case | 严格结果 | completion / reasoning | Wall（s） | tok/s | accept_len | accept_rate |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| natural-prose-off | 通过 | 448 / 0 | 12.68 | 35.33 | 2.55 | 0.517 |
+| natural-prose-low | 通过 | 718 / 173 | 18.68 | 38.44 | 2.15 | 0.383 |
+| python-interval-repair-ast | **失败** | 516 / 0 | 9.27 | 55.68 | 3.35 | 0.783 |
+| thinking-digit-low | 通过 | 630 / 620 | 10.87 | 57.93 | 3.83 | 0.942 |
+| thinking-workers-low | **失败（length）** | 4096 / 4097 | 78.25 | 52.35 | 3.25 | 0.750 |
+| thinking-ledger32-low | 通过 | 1146 / 1126 | 19.10 | 60.00 | 3.98 | 0.992 |
+
+窗口内 144 个采样：`accept_len` 中位 3.35（min 1.775，max 4.0），`accept_rate`
+中位 0.783（min 0.258，max 1.0）。结构与重复性强的任务接受率高（0.75–0.99），
+自然文本较低（0.38–0.52）。
+
+与同任务 `G1` 记录的配对对照（G1 每档两次）：
+
+| Case | G1 结果 | G1 tok/s | MTP 结果 | MTP tok/s |
+| --- | --- | ---: | --- | ---: |
+| natural-prose-off | 通过 | 28.23 / 29.13 | 通过 | 35.33 |
+| thinking-digit-low | 通过 / 通过 | 28.62 / 29.81 | 通过 | 57.93 |
+| thinking-workers-low | length 失败 / 通过 | 29.09 / 29.13 | length 失败 | 52.35 |
+| thinking-ledger32-low | 通过 / 通过 | 29.30 / 29.62 | 通过 | 60.00 |
+
+结构化思考任务约提速 1.8–2.0 倍，自然文本约 +22%。`thinking-workers-low` 在两套
+配置下都可能耗尽 4096 预算，属于任务行为而非 MTP 特有。`python-interval-repair-ast`
+在 MTP 下单次 AST 检查失败，`G1` 未跑同一 case，因此这是单样本质量观察，不能据此
+断言 MTP 降低代码质量。
+
+边界：每 case 仅一次 greedy 样本；`accept_len`/`accept_rate` 是指标 gauge 的
+1 秒采样与计数器增量，不是逐 token 精确统计；未做更广质量评估、并发、长上下文
+（`max_total_tokens` 仍为 8192，长 prompt 会被拒）或 `32768` 词表优化；draft 常驻
+约 3.89 GB。验收后服务停止，容器清理，MemAvailable 约 119.99 GiB，并恢复原 `G1`
+运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run3/`。
+
+下一轮：实现并单独评估 `32768` 词表优化（镜像是缺少优化 head 的 loader），并在
+不改 BF16 state / FP8 KV 的前提下尝试提高 `max_total_tokens` 以覆盖长 prompt，
+同时扩大代码与 thinking 样本量。
+
+### 32768 词表优化：stock 镜像下启动阻塞
+
+2026-10-05，为 `flash-next.nix` 增加 opt-in `services.thorFlashNext.tokenMap`
+（要求 `mtp = true`），在 `M1M` 基础上追加 `--speculative-token-map
+/vocab-maps/vocab-32768-corpus.pt`，并把 `optimization/` 只读挂载到 `/vocab-maps`；
+新增 declared profile `M2`。`optimization/draft-head-32768-corpus-fp8.safetensors`
+在本镜像内没有 loader，因此未使用。
+
+结果：服务在模型加载后的 draft CUDA graph capture 阶段退出，未提供健康 API。
+日志定位到 `eagle_draft_cuda_graph_runner.py:277` 捕获失败：
+
+```
+NotImplementedError: "addmm_cuda" not implemented for 'Float8_e4m3fn'
+  at sglang/srt/layers/logits_processor.py:936 _compute_lm_head -> torch.matmul
+```
+
+即 token-map 路径会把 FP8 target `lm_head` 切片后直接在 draft 图捕获里做 `matmul/addmm`，
+而 stock 镜像不支持对 `Float8_e4m3fn` 执行该算子。这与只读核查结论一致：该镜像的
+`--speculative-token-map` 只支持按行滑切共享 head，`32768` 优化需要另一个 head
+loader（vendor 镜像包含 `draft-head-32768-corpus-fp8.safetensors`，本镜像没有）。
+
+这是启动阻塞，不是精度或速度结论；本轮没有产生 accept 数据，也未改变 BF16 state /
+FP8 KV / 上下文长度。服务以子进程 SIGQUIT 结束，容器清理，MemAvailable 约 119.5 GiB，
+并恢复原 `G1` 运行时 unit 链接。
+
+下一轮若要继续 `32768` 优化，需要先实现该 head 的 loader 或把 head 转成受支持
+dtype，并单独记录转换工件哈希；在此之前不对 `M2` 作性能或质量声明。
+
+### 32768 词表优化：反量化补丁与 M2 对照
+
+2026-10-05，为在 stock 镜像上运行 token map，新增第二个固定 overlay 补丁
+`eagle_worker_v2.py.patch`：在 `init_lm_head` 的 token-map 分支里，当目标 `lm_head`
+是 block-FP8 时，先用其 `weight_scale_inv` 经 `dequantize_fp8` 反量化，再按
+`hot_token_id` 切片（draft head 未量化，需要 bf16）。目标 head 本身保持 FP8，只有
+draft 使用的副本被反量化。`prepare.sh` 改为按 `manifest.json` 列表逐个校验/打补丁，
+`run.sh` 仅在 token map 启用时挂载该补丁文件；head 补丁测试与 harness 同步更新。
+原始/打补丁后的 SHA-256 与 patch SHA-256 均固定在校验清单中。
+
+结果：`M2` 正常加载并提供健康 API；runtime 记录 `speculative_token_map =
+/vocab-maps/vocab-32768-corpus.pt`、`EAGLE`、3 步 / topk 1 / 4 draft token、
+`enable_metrics = true`，draft CUDA graph capture 不再报 `addmm_cuda` 错误。
+`optimization/draft-head-32768-corpus-fp8.safetensors` 仍未使用（按行切片共享 head
+与之等价）。
+
+同一 6 个 greedy 单次样本下，`M2`（32768 词表）对 `M1M`（全词表）：
+
+| Case | M1M tok/s（len / rate） | M2 tok/s（len / rate） | 严格结果 |
+| --- | --- | --- | --- |
+| natural-prose-off | 35.33（2.55 / 0.52） | 22.20（1.38 / 0.13） | 两版均通过 |
+| natural-prose-low | 38.44（2.15 / 0.38） | 23.28（1.15 / 0.05） | 两版均通过 |
+| python-interval-repair-ast | 55.68（3.35 / 0.78） | 53.66（3.00 / 0.67） | 两版均失败 |
+| thinking-digit-low | 57.93（3.83 / 0.94） | 57.94（3.73 / 0.91） | 两版均通过 |
+| thinking-workers-low | 52.35（3.25 / 0.75） | 56.71（3.33 / 0.78） | 两版均 length 失败 |
+| thinking-ledger32-low | 60.00（3.98 / 0.99） | 64.80（3.83 / 0.94） | 两版均通过 |
+
+窗口 150 个采样：`M2` 的 `accept_len` 中位 3.175（min 1.125、max 4.0）、`accept_rate`
+中位 0.725（min 0.042、max 1.0）。限制到前 32768 个 token 后，结构化任务的接受率
+基本不变（0.67–0.94），吞吐与 `M1M` 相当或略好；自然文本的接受率骤降到 0.05–0.13，
+吞吐从 35–38 降到 22–23 tok/s。可见该优化并非普遍收益，更偏向可预测的
+结构化/重复文本；本对照不足以否定词表优化本身，但足以说明它对开放式长文本不利。
+
+边界：每 case 仅一次 greedy 样本；接受率来自 1 秒 gauge 采样与计数器增量；未评估
+质量等价、长上下文或更广样本；反量化只是在加载时把 draft 副本转为 bf16（与 FP8
+切片数值一致），prose 差异来自词表限制而非 head 精度；draft 额外常驻不变。验收后
+服务停止，容器清理，MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。
+raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run4/`。
+
+下一轮：以更有代表性的样本量区分「结构化负载用 token map、开放文本用全词表」，
+并评估质量等价；不改变 BF16 state / FP8 KV / 上下文长度。
+
+### 增大样本：M1M 与 M2 分场景确认
+
+2026-10-05，用当前树重新构建 `M1M`（全词表）与 `M2`（32768 词表）两个 unit，同一
+runner、每 case 3 次重复、同一组 prompt（共享前缀、每次 seed 不同），对 6 个 case
+做配对。两轮均无传输失败（`M1M` 241、`M2` 298 个 `/metrics` 采样）。
+
+中位数（pass / tok/s / accept_len / accept_rate）：
+
+| Case | M1M | M2 |
+| --- | --- | --- |
+| natural-prose-off | 3/3 · 35.2 · 2.10 · 0.37 | 3/3 · 22.6 · 1.27 · 0.09 |
+| natural-prose-low | 3/3 · 39.5 · 2.27 · 0.42 | 3/3 · 24.3 · 1.30 · 0.10 |
+| natural-prose-narrative-off | 3/3 · 34.1 · 2.17 · 0.39 | 3/3 · 21.8 · 1.23 · 0.07 |
+| python-interval-repair-ast | 0/3 · 54.8 · 3.42 · 0.81 | 0/3 · 55.4 · 3.12 · 0.71 |
+| thinking-digit-low | 3/3 · 58.1 · 3.65 · 0.88 | 3/3 · 61.3 · 3.45 · 0.82 |
+| thinking-ledger32-low | 3/3 · 62.4 · 3.98 · 0.99 | 3/3 · 66.4 · 3.95 · 0.98 |
+
+三组不同题材的 prose（说明文、带 thinking、记叙文）一致显示：限制到前 32768 个 token
+后接受率从 0.37–0.42 降到 0.07–0.10，吞吐从 34–40 降到 22–24 tok/s（约 −35% 到 −40%）。
+结构化任务基本不受影响甚至略好（`M2` 高 0.6–4 tok/s，接受率仍 0.71–0.98），严格结果
+两版相同（python AST 在两个词表下都 0/3 失败，digit/ledger 都通过）。
+
+结论：在该镜像与这批 greedy 短上下文样本下，`32768` token map 不是普遍收益，而是
+「结构化/可预测负载可用、开放文本有害」。`python-interval-repair-ast` 的稳定失败是
+模型/任务行为，与 token map 无关，也未与 `G1` 对照过。
+
+边界：greedy、短上下文、每 case 3 次，prompt 家族仍有限；接受率来自 gauge 采样；
+未评估质量等价、更长上下文或并发。验收后服务停止，容器清理，MemAvailable 约
+120.0 GiB，并恢复原 `G1` 运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/{run5,run6}/`。
+
+下一轮：若要采用分场景策略，需要可切换的 token-map 路由与真实任务 A/B；否则保持
+`M1M` 全词表，并把 token map 作为结构化服务的前景项记录，不改变 BF16 state /
+FP8 KV / 上下文长度。
+
+### MTP 质量对照：G1 与 M1M
+
+2026-10-05，用当前树重建 `G1`（target-only，C1 full decode graph，无 MTP），对与
+`run5`（`M1M`）完全相同的 6 个 case、3 次重复、同 runner 与参数做质量对照；两轮均
+0 传输失败。`G1` 未启用 `/metrics`，因此不接受率采样。
+
+| Case | G1 pass / tok/s | M1M pass / tok/s |
+| --- | --- | --- |
+| natural-prose-off | 3/3 · 29.1 | 3/3 · 35.2 |
+| natural-prose-low | 3/3 · 29.3 | 3/3 · 39.5 |
+| natural-prose-narrative-off | 3/3 · 28.8 | 3/3 · 34.1 |
+| python-interval-repair-ast | 0/3 · 29.5 | 0/3 · 54.8 |
+| thinking-digit-low | 3/3 · 29.3 | 3/3 · 58.1 |
+| thinking-ledger32-low | 3/3 · 29.5 | 3/3 · 62.4 |
+
+严格结果两版逐 case 完全一致：prose 与 thinking 全部 3/3 通过，`python-interval-repair-ast`
+在两版下都是 0/3。即在这批 gate 下 **MTP 没有可检测的质量回归**，同时结构化任务约
+1.98–2.12 倍、开放文本约 +17% 到 +35%。`python-interval-repair-ast` 的稳定失败在
+target-only 下同样出现，因此是模型/任务行为，与 MTP 无关。
+
+边界：gate 较粗（Python 仅语法/assert 存在性、thinking 为精确 JSON、prose 仅自然结束
+与长度），greedy、短上下文、每 case 3 次；这不是完整质量等价或人工评分。对照结束后
+服务停止，容器清理，MemAvailable 约 120.0 GiB，并保持原 `G1` 运行时 unit 链接。
+raw/evidence 保留在私有 `/var/lib/thor-flash-next/observations/mtp-20261005/run7/`。
+
+结论：现有证据支持在结构化负载上使用原生 MTP，且未见质量回归；默认仍保持实验性，
+不晋升生产配置。下一步转向长上下文能力验证。
+
+### 长上下文：KV 预算提升到 32768
+
+2026-10-05，新增 opt-in `services.thorFlashNext.maxTotalTokens`（非空时替换
+`--max-total-tokens`），并新增 declared profile `L32`（= `M1M`，KV 预算 32768）。
+服务以该配置正常加载，runtime 记录核验 `max_total_tokens = 32768`，MTP / draft /
+decode graph / BF16 KV / FP32 state 均与 `M1M` 相同。
+
+needle-in-haystack：在一个固定填充句的重复中、约一半深度处插入唯一口令
+「the vault code is six one eight three」，末尾要求只回四位数字：
+
+| 目标 / 实际 prompt token | 检索结果 | Wall（s） |
+| --- | --- | --- |
+| 约 9000 / 9041 | 正确返回 `6183` | 6.99 |
+| 约 24000 / 24041 | 正确返回 `6183` | 18.47 |
+| 约 34000 / 34031 | 拒绝：HTTP 400，`exceeds 32762 tokens` | 0.34 |
+
+因此把 KV 预算提到 32768 后，9k 与 24k prompt 均可正常处理且正确检索；实机报错信息
+显示有效输入上限约为 32762，略低于 `max_total_tokens`（原因未进一步确认）。资源：
+最低 MemAvailable 34.95 GiB，最高温度 50 °C。
+
+边界：只测了一个 KV 档位（32768）；vendor 声称的 262144 未验证；needle 只在约一半
+深度放一次、输出仅 5 token、单 prompt 家族、greedy 且启用 MTP；这不是完整 NIAH 扫描
+或长上下文质量评估。对照结束后服务停止，容器清理，MemAvailable 约 120.0 GiB，并
+恢复原 `G1` 运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run9/`。
+
+下一轮：可按同样方式测试 65536/131072 档位与多深度 NIAH，确认容量与检索随长度是否
+保持；不改变 BF16 state / FP8 KV / context-length。
+
+### 精度轴：BF16 SSM state（M1B 与 M1M）
+
+用户放开「暂不改精度」后，先选无需转换工件的 state 轴：新增 opt-in
+`services.thorFlashNext.mambaStateDtype`（非空时替换 `--mamba-ssm-dtype`），并新增
+declared profile `M1B`（= `M1M`，但 SSM state 为 bfloat16）。服务正常加载，runtime
+记录核验 `mamba_ssm_dtype = bfloat16`；其余（MTP、draft、C1 graph、BF16 KV）与 `M1M`
+相同。
+
+加载时 Mamba cache 分配（`max_mamba_cache_size: 8`）从 FP32 的
+`ssm_state 0.95 GB / intermediate_ssm_state_cache 0.84 GB` 降到 BF16 的
+`ssm_state 0.47 GB / intermediate_ssm_state_cache 0.42 GB`，即 state 常驻约减少
+0.9 GB（其余 conv/window 不变）。
+
+中位数对照（`M1M` FP32 vs `M1B` BF16，每 case 3 次）：
+
+| Case | M1M FP32 pass / tok/s / len / rate | M1B BF16 pass / tok/s / len / rate |
+| --- | --- | --- |
+| natural-prose-off | 3/3 · 35.2 · 2.10 · 0.37 | 3/3 · 36.8 · 2.12 · 0.38 |
+| natural-prose-low | 3/3 · 39.5 · 2.27 · 0.42 | 3/3 · 37.8 · 2.17 · 0.39 |
+| natural-prose-narrative-off | 3/3 · 34.1 · 2.17 · 0.39 | 3/3 · 33.8 · 2.02 · 0.34 |
+| python-interval-repair-ast | 0/3 · 54.8 · 3.42 · 0.81 | 1/3 · 58.5 · 3.50 · 0.83 |
+| thinking-digit-low | 3/3 · 58.1 · 3.65 · 0.88 | 3/3 · 59.1 · 3.50 · 0.83 |
+| thinking-ledger32-low | 3/3 · 62.4 · 3.98 · 0.99 | 3/3 · 64.8 · 3.98 · 0.99 |
+
+在此样本下未检测到质量回归（`python-interval-repair-ast` 在 BF16 state 下还偶然通过
+一次），吞吐与接受率基本持平。因此 BF16 SSM state 可作为省内存候选项（约省 0.9 GB），
+但需要更大样本与更长上下文确认数值稳定性。
+
+边界：只改了 state dtype；FP8 dense（F3/F4）与 FP8 KV 仍未做，FP8 dense 需要转换工件；
+gate 仍较粗（语法/精确 JSON/长度），greedy、短上下文、每 case 3 次。对照结束后服务
+停止，容器清理，MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。
+raw/evidence 保留在私有 `/var/lib/thor-flash-next/observations/mtp-20261005/run10/`。
+
+下一轮：若要继续精度轴，优先评估 FP8 KV（有现成参数）或为 FP8 dense 准备转换工件；
+否则把 BF16 state 作为省内存选项记录，默认仍保持 FP32 state。
+
+### KV 精度轴：FP8 KV（M1K 与 M1M）
+
+新增 opt-in `services.thorFlashNext.kvCacheDtype`（非空时替换 `--kv-cache-dtype`），并新增
+declared profile `M1K`（= `M1M`，KV 为 fp8_e4m3）。服务正常加载，runtime 记录核验
+`kv_cache_dtype = fp8_e4m3`，其余与 `M1M` 相同。
+
+8192 token 预算下的 KV 分配：BF16 为 `K 0.09 / V 0.09 GB`，FP8 为 `K 0.05 / V 0.05 GB`
+（约减半，但绝对值仅约 0.18 → 0.10 GB）。
+
+中位数对照（`M1M` BF16 KV vs `M1K` FP8 KV，每 case 3 次）：
+
+| Case | M1M BF16 KV pass / tok/s / len / rate | M1K FP8 KV pass / tok/s / len / rate |
+| --- | --- | --- |
+| natural-prose-off | 3/3 · 35.2 · 2.10 · 0.37 | 3/3 · 31.5 · 1.96 · 0.32 |
+| natural-prose-low | 3/3 · 39.5 · 2.27 · 0.42 | 3/3 · 36.2 · 2.12 · 0.38 |
+| natural-prose-narrative-off | 3/3 · 34.1 · 2.17 · 0.39 | 3/3 · 32.7 · 2.05 · 0.35 |
+| python-interval-repair-ast | 0/3 · 54.8 · 3.42 · 0.81 | 0/3 · 54.7 · 3.40 · 0.80 |
+| thinking-digit-low | 3/3 · 58.1 · 3.65 · 0.88 | 3/3 · 54.0 · 3.38 · 0.79 |
+| thinking-ledger32-low | 3/3 · 62.4 · 3.98 · 0.99 | 3/3 · 61.0 · 3.90 · 0.97 |
+
+严格结果两版一致（prose/thinking 全通过，python 都 0/3）；FP8 KV 略慢（prose 约
+−4% 到 −10%，digit −7%），接受率略低。在 8192 预算下 KV 绝对值很小，省下的约
+0.08 GB 不足以补偿速度损失，因此短上下文下 FP8 KV 并不划算；只有在 KV 占主导的
+超长上下文才可能值得。
+
+边界：短上下文、粗 gate、每 case 3 次；未做 FP8 KV 的长上下文质量评估（此前 vLLM
+路径曾提到 FP8 KV 的长推理质量回归），因此不能据此判断长上下文下的正确性。对照
+结束后服务停止，容器清理，MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit
+链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run11/`。
+
+下一轮：可把 FP8 KV 与长上下文组合（例如 L32 + fp8 KV），确认省下的 KV 是否能支撑
+更大预算以及质量是否保持；否则保留 BF16 KV，并把 FP8 KV 记为长上下文候选项。
+
+### dense 精度确认：当前基线即 FP8 dense
+
+2026-10-05 只读核查固定 `RadixArk` target，以确认声明中「dense 精度轴」（F0–F4）的
+起点。结论：**当前 owned 基线本身就是 FP8 dense**，没有可切换的「dense 精度」参数。
+
+`target/config.json` 的 `quantization_config.quantized_layers` 共 397 项 =
+96 `NVFP4` + 301 `FP8_PB_WO`；其中 48 个 NVFP4 是 `model.layers.N.mlp.experts` 形式的
+别名，`weight_map` 中只有 `model.language_model.*` 张量，去重后为 48 `NVFP4` +
+301 `FP8_PB_WO` = 349 个模块。按 `model.language_model.layers` 前缀归类：
+
+| 模块 | 数量 | quant_algo |
+| --- | ---: | --- |
+| `mlp.experts` | 48 | NVFP4 |
+| `linear_attn.in_proj_qkv` / `in_proj_z` / `out_proj` | 36 / 36 / 36 | FP8_PB_WO |
+| `mlp.shared_expert.down_proj` / `gate_proj` / `up_proj` | 48 / 48 / 48 | FP8_PB_WO |
+| `self_attn.q/k/v/o_proj`（每 4 层一个 full attention） | 12 each（共 48） | FP8_PB_WO |
+| `lm_head` | 1 | FP8_PB_WO |
+
+safetensors 实测 dtype 与之一致，例如
+`...linear_attn.in_proj_qkv.weight` 为 `F8_E4M3 [10240,2560]` + `F32` block scale，
+`...mlp.shared_expert.gate_proj.weight` 为 `F8_E4M3 [640,2560]` + `F32`，专家为打包
+`U8`（NVFP4）。
+
+因此 `M1M`（及 `G1` 等 owned 图）在 dense 轴上等价于声明中的 **F3/F4（FP8 dense）**，
+只不过使用 owned 的 `RadixArk` target 配置与全词表 MTP，而非 vendor 覆盖配置。
+
+「dense = 大矩阵乘」为 FP8，但仍为 BF16 的并非只有 norm：还包括 `embed_tokens`(PLE)、
+`hyper_connection_mixer.*`、各 norm（`q_norm`/`k_norm`/`hc_norm` 等）、`linear_attn` 的
+卷积/门控参数（`A_log`、`conv1d`、`dt_bias`、`in_proj_a`、`in_proj_b`）、router
+（`mlp.gate`、`shared_expert_gate`）、`self_attn.indexer.*`、全部 `mtp.*` 张量，以及
+整个 `model.visual.*` 视觉塔。
+
+声明的反向轴（F0–F2 的 BF16 dense）需要把 301 个 `FP8_PB_WO` 张量反量化成 BF16 并
+生成转换工件，本仓未做；本页不声称做过该对照，也不据此改变任何服务默认。若要继续
+dense 轴，优先考虑把仍为 BF16 的 `embed_tokens`/`hyper_connection_mixer` 转成 FP8
+以进一步省内存，或按 F0–F2 生成 BF16-dense 工件做反向对照。
+
+### 长上下文 × FP8 KV：L64K（65536 预算）
+
+新增 declared profile `L64K`（= `M1M`，KV 预算 65536，KV 为 fp8_e4m3，使总 KV 与
+`L32` 的 BF16 相近）。服务正常加载，runtime 记录核验 `max_total_tokens = 65536`、
+`kv_cache_dtype = fp8_e4m3`，其余同 `M1M`。
+
+同一 needle-in-haystack（唯一口令置于约一半深度）：
+
+| 实际 prompt token | 检索结果 | Wall（s） |
+| --- | --- | --- |
+| 9041 | 正确返回 `6183` | 7.82 |
+| 48041 | 正确返回 `6183` | 38.83 |
+| 62021 | 正确返回 `6183` | 51.69 |
+| 68021 | 拒绝：HTTP 400，`exceeds 65530 tokens` | 0.45 |
+
+即 FP8 KV 让 65536 预算可用：在约 62k token 处仍能正确检索，有效输入上限约 65530，
+是 `L32`（BF16 KV，32768）的两倍，而内存占用相近（本轮最低 MemAvailable 34.69 GiB、
+最高 53 °C，对比 `L32` 的 34.95 GiB / 50 °C）。9k 深度耗时 7.82 s，略慢于 `L32` 的
+6.99 s，与 FP8 KV 短上下文约 −10% 的观察一致。
+
+边界：只做单 needle（约一半深度）、短输出、greedy、单 prompt 家族；这不是长上下文
+质量评估，也没有隔离「预算翻倍」与「FP8 KV」各自的贡献；此前 vLLM 路径提到的 FP8 KV
+长推理质量回归仍未验证；vendor 的 262144 未测。对照结束后服务停止，容器清理，
+MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run12/`。
+
+下一轮：可继续 131072 档（FP8 KV 下 KV 约再翻倍）并做多深度 NIAH，或用真实长文档任务
+评估 FP8 KV 的质量；不改变 BF16 state / context-length。
+
+### 长上下文 × FP8 KV：L128K（131072）多深度 NIAH
+
+新增 declared profile `L128K`（= `M1M`，KV 预算 131072，KV 为 fp8_e4m3）。服务正常
+加载，runtime 记录核验 `max_total_tokens = 131072`、`kv_cache_dtype = fp8_e4m3`。
+
+多深度 needle-in-haystack（唯一口令置于约一半深度）：
+
+| 实际 prompt token | 检索结果 | Wall（s） |
+| --- | --- | --- |
+| 9041 | 正确 `6183` | 7.38 |
+| 32021 | 正确 `6183` | 25.66 |
+| 64031 | 正确 `6183` | 53.00 |
+| 96041 | 正确 `6183` | 81.24 |
+| 124031 | 正确 `6183` | 107.21 |
+| 134021 | 拒绝：HTTP 400，`exceeds 131066 tokens` | 0.81 |
+
+即在 131072 预算下，直到约 124k token 的中间位置注入都能正确检索；有效输入上限约
+131066，是 `L64K`（约 65530）的两倍、`L32`（约 32762）的四倍。资源：最低 MemAvailable
+32.65 GiB、最高温度 57 °C（随长度缓慢上升）。Wall 随长度增长，每千 token 约
+0.8–0.9 s（短端略低、长端略高，并非严格线性）。
+
+边界：仍是单 needle、约一半深度、短输出、greedy、单 prompt 家族；不是长上下文质量
+评估，也未验证 FP8 KV 在超长推理下的质量回归；vendor 声称的 262144 仍未测。对照
+结束后服务停止，容器清理，MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit
+链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run13/`。
+
+下一轮：可试 262144（claims 上限，FP8 KV 下 KV 约 3 GB）看能否加载并检索，或对同一
+组长 prompt 做质量/一致性评估；不改变 BF16 state / context-length。
+
+### 长上下文 × FP8 KV：L256K（262144，context 上限）
+
+新增 declared profile `L256K`（= `M1M`，`max_total_tokens = 262144` 等于
+`context_length`，KV 为 fp8_e4m3）。服务正常加载：KV full-attention 池
+`K 1.50 / V 1.50 GB` + linear-attention `K 0.13 / V 0.13 GB`，
+`max_total_num_tokens = 262144`。
+
+多深度 needle-in-haystack（唯一口令置于约一半深度）：
+
+| 实际 prompt token | 检索结果 | Wall（s） |
+| --- | --- | --- |
+| 9041 | 正确 `6183` | 7.36 |
+| 64031 | 正确 `6183` | 52.74 |
+| 160031 | 正确 `6183` | 142.76 |
+| 250031 | 正确 `6183` | 239.64 |
+| 261041 | 正确 `6183` | 252.60 |
+| 270045 | 拒绝：HTTP 400，`longer than the model's context length (262144)` | 1.31 |
+
+即在声明的 context 上限下，单一中间位置口令到约 261k token 仍能正确检索；270k 被
+`context_length`（262144）而非 KV 预算拒绝。资源随长度收紧：run14 最低 MemAvailable
+21.00 GiB、最高 58 °C，261k 那次最低降到约 19.96 GiB —— 接近但未触发内存护栏。
+
+边界：仍是单 needle（约一半深度）、短输出、greedy、单 prompt 家族；不是长上下文质量
+评估，也未与其他深度/位置的命中率一起统计；接近上限时主机余量仅约 20 GiB，属于需要
+注意的风险。对照结束后服务停止，容器清理，MemAvailable 约 120.0 GiB，并恢复原 `G1`
+运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/{run14,run14b}/`。
+
+下一轮：转入长上下文质量评估（真实长 prompt 多任务），或在这条 needle 曲线上补更多
+深度/位置；不改变 BF16 state / context-length。
+
+### 长上下文质量：FP8 KV 与 BF16 KV（L64K 与 L64）
+
+为检验 FP8 KV 是否损质量，新增 declared profile `L64`（= `L64K`，仅 KV 为 bfloat16），
+并用同一长文档多事实任务对照：约 32.9k token 的文档中散布 12 组「颜色→整数代码」，
+要求只输出 JSON `{pairs, count, total}`，与 ground truth 精确比对；greedy、每档 3 次。
+
+| 档位 | 严格通过 | prompt token | Wall 中位（s） |
+| --- | --- | ---: | ---: |
+| `L64`（BF16 KV） | 3/3 | 32906 | 28.71 |
+| `L64K`（FP8 KV） | 3/3 | 32906 | 29.88 |
+
+两档都精确返回全部 12 组映射、count 与 total；FP8 KV 约慢 4%。即在这个长文档多事实
+聚合任务上 **FP8 KV 未见质量回归**，此前 vLLM 路径提到的 FP8 KV 长推理质量回归在本
+样本下没有复现。
+
+边界：单一任务家族、单一长度（约 33k）、12 个事实、greedy、每档 3 次；不是广泛质量
+评估，也不能排除其它任务/更长上下文下的差异；无 thinking。对照结束后服务停止，容器
+清理，MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。raw/evidence 保留在
+私有 `/var/lib/thor-flash-next/observations/mtp-20261005/{run15,run16}/`。
+
+下一轮：可扩大质量样本（更多任务/长度/事实数）或转运维收尾；不改变 BF16 state /
+context-length。
+
+### token map 覆盖率分析（离线）
+
+为解释 `M2`（32768 词表）的负结果，用固定镜像（无 GPU、无网络推理）离线分析：
+载入 target tokenizer 与 `optimization/vocab-32768-corpus.pt`，把全词表 `M1M`/`G1` 的
+真实输出（`run3` + `safety run1`）重新分词，统计生成 token 落在该 map 内的比例。
+map 是 248320 词表的一个 32768-子集（`min=0`、`max=248076`），**不是**前 32768 个 id。
+
+| Case | content-only coverage | full-stream coverage |
+| --- | ---: | ---: |
+| natural-prose-off | 0.232 | 0.232 |
+| natural-prose-low | 0.216 | 0.271 |
+| python-interval-repair-ast | 0.948 | 0.948 |
+| recovery-short-json | 1.000 | 1.000 |
+| thinking-digit-low | 1.000（9 tok） | 0.976（627 tok） |
+| thinking-ledger32-low | 0.842（19 tok） | 0.979（1143 tok） |
+| thinking-workers-low | — | 0.988（4096 tok） |
+| **OVERALL** | **0.340** | **0.728** |
+
+括号内是 thinking 的最终 content（很短）；`full-stream` 计入 reasoning。结论与实测完全
+对应：开放 prose 只有约 **23–27%** 的生成 token 在 32768 map 内，draft 无法命中其余
+约 3/4，所以接受率从 0.37–0.42 崩塌到 0.07–0.10、吞吐下降；结构化/代码/JSON/推理
+则 **95–100%** 在 map 内，接受率基本不变。即 token map 本质是「用 draft 词表覆盖换
+draft head 成本」，对通用 Agent 不适合。
+
+边界：覆盖率来自「反分词后重新分词」，与服务器实际 token 边界可能有差异；样本仅限
+上述 case；map 内容仅按 id 集合判定，未评估概率分布。结论是机制性解释，不替代 A/B。
+
+下一轮：如仍想评估其它 map，先离线算这份覆盖率再决定，不盲目 sweep 48K/64K。
+
+### BF16 KV 能否支撑 262K？（L256 与 L256K）
+
+针对「C1 下 262K 是否根本不需要 FP8 KV」的假设，新增 declared profile `L256`
+（= `L256K`，KV 改为 bfloat16），其余同 `M1M`。服务正常加载：BF16 KV full-attention
+`K/V 3.00/3.00 GB` + linear `0.25/0.25 GB`（约 6.5 GB，约为 FP8 的 2×），
+`available_gpu_mem = 28.93 GB`（FP8 版为 35.54 GB）。
+
+| 实际 prompt token | 结果 | Wall（s） |
+| --- | --- | --- |
+| 9041 | 正确 `6183` | 7.13 |
+| 64031 | 正确 `6183` | 51.79 |
+| 128021 | 正确 `6183` | 111.67 |
+| 160031 | 连接被断开（内存护栏停止服务） | 138.88 |
+
+第 4 档期间 `thor-flash-next-memwatch` 因 `MemAvailable` 连续 5 秒低于 12 GiB 而
+`systemctl stop`：run17 记录 `12327060 KiB`（约 11.8 GiB），run18 记录 `11078000 KiB`
+（约 10.6 GiB），`/proc/meminfo` 采样最低 7.18 GiB。对照 `L256K`（FP8 KV）在
+250031/261041 时最低仍有约 20 GiB、可正常返回。
+
+观察：在 262144 预算下，BF16 KV 到约 128k prompt 的 long prefill 仍正常，约 160k
+触发本机 12 GiB 内存护栏；FP8 KV 到 261k 仍稳定。本结果**不支持**「C1 下 262K 不需要
+FP8 KV」的推断——只按静态 GPU KV 大小（BF16 约 6.5 GB，实测仍能容下）估算会忽略
+prefill 期的主机内存压力，而该压力同时来自 PLE file-backed mmap 与页缓存，因此本实验
+**未隔离 KV dtype 与主机内存行为各自的贡献**；不过实践上，在本机当前护栏下 FP8 KV
+是 262K 长 prefill 的可行前提。
+
+边界：单 needle、单一预算档（262144）；边界落在 128k–160k 之间但未细分；失败是主机内存
+护栏主动停止服务，不是模型错误；护栏会留下 `/run/thor-flash-next/memory-stop` 闩锁，
+需显式清除后才能再次启动。对照结束后服务停止、闩锁清除、容器清理，MemAvailable 恢复到
+约 119.5 GiB，并恢复原 `G1` 运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/{run17,run18}/`。
+
+下一轮：如需精确边界，可在 128k–160k 间细分，或提高护栏/内存预算复测；否则长 prefill
+默认保留 FP8 KV。
+
+### 长 prefill 归因：target 与 MTP（G64 与 L64）
+
+针对「长 prefill 慢是否来自 MTP draft」的问题，新增 declared profile `G64`
+（= `G1`/target-only，`max_total_tokens = 65536`，无 speculation），与同配置但启用 MTP
+的 `L64` 跑同一条约 64k token 的 needle prompt：
+
+| 档位 | prompt token | 结果 | Wall（s） | 最低 MemAvailable |
+| --- | ---: | --- | ---: | ---: |
+| `G64`（target-only） | 64031 | `6183` | 51.00 | 34.91 GiB |
+| `L64`（MTP） | 64031 | `6183` | 52.15 | 32.38 GiB |
+
+即 MTP draft prefill 只增加约 **1.15 s（约 2.3%）**；约 98% 的 64k prefill 时间是
+target 前向本身。这与其它 MTP 长上下文轮的 64k 时间（51.8–53.0 s）一致。因此长 prefill
+的优化目标应是 target 计算路径（PLE / GDN / QSA / FA4 / FP8 GEMM）与 chunk 调度，
+而不是 speculative。MTP 主要影响 decode，不影响 prefill。
+
+边界：单 prompt、单长度（约 64k），wall 含 5 个输出 token；未做逐组件分解（Nsight 待做）；
+未扫 prefill chunk 大小。对照结束后服务停止，容器清理，MemAvailable 约 120.0 GiB，并
+恢复原 `G1` 运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/{run19,run20}/`。
+
+下一轮：扫 `chunked_prefill_size` 512/1024/2048（27B 用 1024），并做一次 64k 的逐组件
+prefill 分解；不改变 BF16 state / context-length。
+
+### 长 prefill：chunked_prefill_size 扫描（512/1024/2048/4096）
+
+固定 `L64` 其余设置（MTP、65536、BF16 KV、C1 graph），只改 `--chunked-prefill-size`，
+跑同一条约 64k token 的 needle prompt：
+
+| chunked_prefill_size | Wall（s） | 输入吞吐（约 tok/s） |
+| ---: | ---: | ---: |
+| 512（原基线） | 52.15 | 1228 |
+| 1024 | 40.96 | 1563 |
+| 2048 | 33.90 | 1889 |
+| 4096 | 31.14 | 2056 |
+
+即把 chunk 从 512 提到 4096，64k prefill 约 **1.67×**（52.15→31.14 s），收益在 2048
+之后开始收敛；四档均正确检索、最低 MemAvailable 32.4–34.2 GiB、温度 ≤52 °C。（本轮
+单样本下）chunk 大小是最明显的 prefill 旋钮：512→1024 已有约 −21%。
+
+边界：单长度（约 64k）、单 prompt、无重复，因此以上为单样本观察而非统计结论；未与更长
+上下文或 FP8 KV 组合；吞吐仍按含 5 个输出 token 的整请求 wall 粗算；未做逐组件分解。对照结束后服务停止，容器清理，MemAvailable
+约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。raw/evidence 保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/{run21,run22,run23}/`。
+
+下一轮：如需要，做一次 64k 的逐组件 prefill（PLE/GDN/QSA/FA4/FP8 GEMM）分解，确定
+剩余瓶颈；长 prefill 场景建议至少把 chunk 提到 2048。
+
+### 长 prefill 逐组件分解（64k，chunk=2048）
+
+在 `L64_2048` 上用 SGLang 的 `/start_profile` 与 `/stop_profile`（torch profiler，
+`with_stack`/`record_shapes` 默认开启）包住一次约 64k token 的 prefill（64031 token，
+wall 35.09 s），把 chrome trace 导出后在主机上按 GPU kernel 名聚合，并用启发式映射
+归类。kernel 总计 31.63 s，约占请求 wall 的 90%。
+
+| 类别（kernel 名启发式） | kernel 时间 | 占比 |
+| --- | ---: | ---: |
+| cutlass/cuBLAS GEMM（含 MoE cutlass） | 10.64 s | 33.6% |
+| FP8 dense GEMM（`_w8a8_block_fp8_matmul`） | 5.72 s | 18.1% |
+| 稀疏注意力（`_sparse_gqa_chunk_prefill`） | 3.27 s | 10.4% |
+| GDN（chunk gated delta rule / conv1d 等） | 2.52 s | 8.0% |
+| FP4 kernel | 2.40 s | 7.6% |
+| hyper-connection（`hc_combine`） | 1.66 s | 5.3% |
+| activation/softmax | 1.58 s | 5.0% |
+| elementwise/copy | 1.47 s | 4.6% |
+| norm | 0.71 s | 2.2% |
+| QSA indexer top-k | 0.57 s | 1.8% |
+| PLE / embedding gather | 0.29 s | 0.9% |
+| 其它 | 0.78 s | 2.5% |
+
+（`attn` 0.1% 与 `mem` 0.0% 因四舍五入未单列。）
+
+**更正**：上表是朴素的 kernel 名归类，有一处误导——名为
+`tensorrt_llm::...cutlass_kernels::expandInputRowsKernel<...__nv_fp4_e2m1...>` 的 **MoE
+row-expand / activation / routing** kernel 因名字同时含 `cutlass` 与 `fp4`，被算进了
+「CUTLASS/cuBLAS GEMM」和「FP4 kernel」桶，而它们并不是 GEMM。按模块重算见下节
+「64K prefill trace 细分」。修正后的口径：**MoE 整条路径约 33.4%**（grouped FP4 GEMM
+22.5% + 周边 pipeline 10.9%），dense FP8 17.3%，cuBLAS 约 4.6%；稀疏注意力约 10%、
+GDN 约 8%，PLE <1%。
+
+结论：64k prefill 是 **MoE + GEMM 主导**——接近 1/3 是 MoE 路径，dense FP8 约占
+17%；核心 attention（QSA）已降到约 10%，GDN 约 8%；PLE 常驻不是 prefill 瓶颈（<1%）。
+这与「prefill 是 target 计算问题、chunk 是调度层收益」一致；进一步优化落在 MoE
+pipeline 与 dense FP8 的 kernel 层面（见下节），而非 PLE/attention。
+
+边界：类别来自 kernel 名启发式映射，且如上存在误分（本页已更正）；profiler 开启
+`with_stack`/`record_shapes`，绝对值会被放大，只有相对占比有意义；单次请求、单长度，
+不是 nsys 时间线。对照结束后服务停止，容器清理，MemAvailable 约 119.5 GiB，并恢复原
+`G1` 运行时 unit 链接。trace 与 request 结果保留在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run24/`（含 178 MB trace，不入库）。
+
+下一轮：如要继续，可针对 dense FP8 与 MoE GEMM 做后端/kernel 选择实验，或把 chunk 默认
+提升到 2048 并复测长上下文端到端；不改变 BF16 state / context-length。
+
+### GEMM 后端选择实验（dense FP8 / MoE，SM110 已测取值均不可用）
+
+逐组件分解显示 prefill 的约 59% 是 GEMM，本想在 `L64_2048` 上更换 dense FP8 与 MoE
+后端看能否降低这部分。实测在本机 SM110 上，除基线所用后端外全部不可用：
+
+| 尝试 | 结果 |
+| --- | --- |
+| `--fp8-gemm-backend cutlass` | 启动即失败：该后端在本硬件已弃用 |
+| `--fp8-gemm-backend flashinfer_cutlass` | warmup 失败：`gemm_fp8_nt_groupwise does not support backend 'cutlass' with capability 110` |
+| `--fp8-gemm-backend flashinfer_trtllm` | 初始化失败：需要 SM100/SM103 |
+| `--fp8-gemm-backend deep_gemm` | warmup 失败：`deep_gemm ... Unsupported architecture` |
+| `--moe-runner-backend cutlass` | 初始化失败：NVFP4 MoE 不支持，必须用 `flashinfer_cutlass` |
+
+结论：在本机（SM110）与 `modelopt_mixed` NVFP4 检查点下，已测的 dense FP8 后端
+（cutlass / flashinfer_cutlass / flashinfer_trtllm / deep_gemm）全部不可用，只剩基线的
+`triton`；NVFP4 MoE 的 `cutlass` 也不支持，基线的 `flashinfer_cutlass` 是必须项。因此
+在本机/本检查点下，**后端选择不是可用的加速杠杆**，约 59% 的 GEMM prefill 时间是现有
+可用 kernel 下的成本；进一步收益需要 kernel 级工作或不同硬件。
+
+边界：只测了上表取值，未更换 FP4 后端，也未穷举 `auto`/`flashinfer_deepgemm`/
+`flashinfer_cutedsl`/`aiter` 等；`deep_gemm`/`flashinfer_trtllm` 面向更新的 SM；单一
+检查点。以上为启动/初始化即失败的定性结论，不含吞吐数字。对照期间服务
+未提供健康 API（均在加载/初始化阶段退出），结束后服务停止、容器清理，MemAvailable 约
+119.4 GiB，并恢复原 `G1` 运行时 unit 链接。相关 profile（`L64B_*`）在清单中标注为在
+SM110 被拒。
+
+下一轮：后端路线到此为止；如需继续，可转向 Flash-Next vs 27B 能力对照，或 BF16 state
+长自回归的 teacher-forced 对照。
+
+### 64K prefill trace 细分：MoE 与 dense FP8
+
+对同一份 `run24` trace 离线再分析（`record_shapes` 开启；kernel 事件只带 grid/block，
+不含 Input Dims，故用 launch grid 作 shape 代理），把之前的「GEMM」桶拆开：
+
+- **NVFP4 MoE**：grouped CUTLASS FP4 GEMM（`GroupProblemShape`，SM100_MMA_MXF4）单个
+  kernel 就占 **7.10 s（22.4%）**；TensorRT-LLM CUTLASS 的 MoE 辅助 kernel
+  （`expandInputRows` 1.50 s、`doActivation` 0.88 s、`finalizeMoeRouting` 0.75 s、
+  `blockExpertPrefixSum` 0.21 s、`mergeExpertPrefixSum` 0.07 s）合计约 3.43 s（10.9%）。
+  MoE 合计约 **10.53 s（33.4%）**；其中 grouped FP4 GEMM 22.5%、周边 pipeline 10.9%。
+  **注意**：这些 aux kernel 名字同时含 `cutlass_kernels` 与 `__nv_fp4_e2m1`，朴素分类会把
+  它们误算进「FP4 kernel」或「CUTLASS/cuBLAS GEMM」桶；因此旧桶的 33.6% 不能整体等同
+  MoE，只能说其中约 2/3 可明确归因于 grouped MoE GEMM（7.10 s）。
+- **dense FP8**（`_w8a8_block_fp8_matmul`）合计 5.46 s（17.3%），且高度集中：
+  grid `[4096]` 2.69 s / 1116 次、grid `[640]` 1.50 s / 2976 次、grid `[3328]`
+  0.73 s / 372 次；前三个 grid 约占 dense FP8 的 **90%**。
+- cuBLAS（`nvjet`）约 1.4 s（4.6%）；其余为 sparse QSA、GDN、norm、elementwise 等。
+
+一个很强的模式：以约 2048-token chunk 计，64031 token 约 31 个 full chunk，而三个主
+grid 的调用数正好是 `1116 = 36×31`（36 个 GDN/linear-attention 层）、
+`2976 = 96×31 = 48×2×31`（48 层 shared-expert 的 gate+up）、`372 = 12×31`（12 个
+full-attention 层），与层结构吻合。由此推测这三个 grid 分别对应上述模块族；`[640]`
+很可能就是 `shared_expert.gate_proj/up_proj`（权重 `[640,2560]`，M=2048/N=640/K=2560）。
+**但这只是 launch 计数推断**：本 trace 中 triton kernel 的 `External id` 为 null，且 dense
+FP8 不走 `aten::mm`，无法直接关联到 cpu_op 的 `Input Dims`；精确 `(M,N,K)` 与 module 名
+需要额外 hook。
+
+若 `[640]` 确为 shared-expert gate/up：当前是两次独立 FP8 GEMM，可考虑 **gate/up 融合**
+（load 时把两个 `[640,2560]` 权重并成 `[1280,2560]`，一次 GEMM 后 split + `silu(gate)*up`，
+语义不变），可能比盲调该 shape 的 Triton tile 更值得先 microbenchmark。
+
+由此回答两个后续问题：
+1. dense FP8 的确由**少数固定 shape** 主导（2–3 个 grid 吃掉约 90%），因此
+   **Thor-specific 的 Triton FP8 shape 调优**是值得做的 kernel 项目（类比 27B 的 tile
+   调优），而不是换 backend。
+2. MoE 路径约 33.4%，但其中 grouped FP4 GEMM 只占 22.5%，另外约 10.9% 是周边 pipeline
+   （row expand / activation / routing / finalize / data movement）。即使 grouped GEMM
+   已接近 SM110 上限，这部分 pipeline 仍可能有 fusion/dispatch 优化空间——属于上游
+   FlashInfer/SGLang 的 MoE pipeline 议题。
+
+边界：grid 只是 shape 的代理；且本 trace 里 triton kernel 的 `External id` 为 null、dense
+FP8 也不走 `aten::mm`，**无法**用现有字段做 op 级 correlation，精确 `(M,N,K)` 与 module
+名需要额外 hook（如给该 triton op 记录 shape）；profiler 开启 stack/shape，绝对时间偏大；
+单次请求、单长度；MoE 的 W13/W2 未再细分。本页不据此改动任何服务默认。
+
+下一轮：若要继续，可对 `_w8a8_block_fp8_matmul` 做精确 shape↔耗时关联并试 Triton
+config；MoE 侧则需要上游 FlashInfer 的 SM110 FP4 grouped GEMM 基准。
+
+### dense FP8 精确 shape inventory（w8a8 shape hook）
+
+为拿到 dense FP8 的精确 `(M,N,K)` 与当前 Triton config，新增第三个固定 overlay 补丁
+`fp8_kernel.py.patch`：在 `w8a8_block_fp8_matmul_triton` 启动 kernel 前，若设置了环境变量
+`SGLANG_W8A8_SHAPE_LOG`，就把 `M,N,K` 与最终 `config`（`BLOCK_SIZE_M/N/K`、`num_warps`、
+`num_stages`）追加到该文件。配套新增 opt-in `services.thorFlashNext.w8a8ShapeLog`（设为 true
+时挂载补丁并设置该环境变量）；未启用时不挂载、无行为变化。在 `L64_2048` + shape log 上跑
+一次 64k prefill，日志（私有 `run25/w8a8-shapes.log`）聚合如下（M=2048 为 full chunk，
+31 个）：
+
+| M | N | K | 归因 | 调用数 |
+| ---: | ---: | ---: | --- | ---: |
+| 2048 | 2560 | 6144 | `out_proj` / `o_proj`（48 层） | 1488 = 48×31 |
+| 2048 | 2560 | 640 | `shared_expert.down_proj`（48 层） | 1488 = 48×31 |
+| 2048 | 1280 | 2560 | `shared_expert` gate+up（48 层） | 1488 = 48×31 |
+| 2048 | 16384 | 2560 | GDN/linear-attn `in_proj`（36 层） | 1116 = 36×31 |
+| 2048 | 13312 | 2560 | full-attn qkv（12 层） | 372 = 12×31 |
+
+其余为 decode/draft/tail：`M=1,N=248320,K=2560`（`lm_head`，80 次）、`M=4`（draft 步）、
+`M=122/543`（tail chunk）。**所有 shape 都用同一个 Triton 默认 config
+`BM=64,BN=128,BK=128,warps=4,stages=3`**——因为该镜像没有 Thor/Blackwell 的 tuned config，
+`get_w8a8_block_fp8_configs` 全部返回 None，所以落到默认分支。
+
+这精确对上了上一节的 grid 计数：`[4096]=N16384`、`[640]=N2560`、`[3328]=N13312`、
+`[320]=N1280`。同时**纠正一个假设**：`[640]`（2976 次）不是 shared-expert gate/up，而是
+N=2560 的两个模块（`o_proj` + `down_proj`）；shared-expert 的 **gate+up 已经是融合形式**
+（权重按 N=1280 一次 GEMM），因此“gate/up 融合”这条优化点本仓已经具备，无需再做。
+
+结论：dense FP8 的优化对象是这 5 个固定 shape（在同一条默认 Triton config 下），
+shape-specific Triton 调参仍是未被利用的杠杆，优先 `N=16384,K=2560`（单通道最大，
+上一节累计 2.69 s）与 `N=2560,K=6144`。
+
+边界：日志含加载/warmup 与一次请求，`M=4/1/122/543` 属于 draft/decode/tail；该日志只有
+shape 与 config、没有耗时，耗时需与上一节按 grid 的统计配对；单请求、单长度。服务已停止，
+容器清理，MemAvailable 约 120.0 GiB，并恢复原 `G1` 运行时 unit 链接。raw 证据在私有
+`/var/lib/thor-flash-next/observations/mtp-20261005/run25/`。
+
+下一轮：可对上述 5 个 M=2048 shape 做 Triton config sweep（微基准 → service-level A/B），
+或用 op hook 再补 MoE 的 W13/W2 细分。
+
+### dense FP8 Triton config sweep（微基准）
+
+在固定镜像里做独立微基准（占 GPU、但不加载模型）：对上面 5 个 M=2048 shape，monkeypatch
+`get_w8a8_block_fp8_configs` 注入候选 config，直接计 `w8a8_block_fp8_matmul_triton`
+（fp8 输入、block 128×128、bf16 输出），并与默认输出对照 `max_abs_diff`。默认 config 为
+`BM64,BN128,BK128,G32,w4,s3`。
+
+| shape (N,K) | 默认 min（µs） | 最佳 min（µs） | 最佳 config | 相对默认 |
+| --- | ---: | ---: | --- | ---: |
+| 2560, 6144 | 934.5 | 914.1 | G8（其余同默认） | −2.2% |
+| 2560, 640 | 168.2 | 163.0 | BM128,BN64 | −3.1% |
+| 1280, 2560 | 264.8 | 238.9 | G1,G32→1,w4,s4 | −9.8% |
+| 16384, 2560 | 2522.9 | 2522.9 | **默认即最佳** | 0% |
+| 13312, 2560 | 2052.7 | 2052.7 | **默认即最佳** | 0% |
+
+结论：**两个最大 shape 默认 config 已经最优**，其余仅有 2–3%（个别 ~10%）的零碎收益；
+按上一节各 grid 的耗时加权，整体收益约 **0.2%**，不值得为它加补丁。另有几个候选
+（`BK=256`、`BM256/BN256`）输出与默认不一致（`max_abs_diff>0`），在本模型/block 下无效，
+已排除。因此 dense FP8 在本运行时同样基本到顶：backend 锁死（前节）+ 默认 Triton config
+接近最优（本节）——继续抠它需要手写/上游 kernel，而不是配置。
+
+边界：候选集只有 10 个、单一 M=2048、合成随机输入、未加载模型；时间为 min-of-30；这是
+微基准，不是 service-level A/B。GPU 已释放，无容器残留。
+
+至此性能线基本到头：**decode 已好；长 prefill 的大头靠 chunk（512→4096 约 1.67×）
+解决；剩余 prefill 是 GEMM/MoE，backend 与 Triton config 都无可用旋钮**（MoE 若要继续
+需上游 FlashInfer 的 SM110 FP4）；PLE/attention 都不是瓶颈。进一步的性能收益需要
+kernel 级/上游工作，而不是本仓配置。
+
+## 能力 A/B：Flash-Next（M1M）vs 27B（DFlash K16）首轮
+
+2026-10-06。同一套 10 个 case，用同一个 orchestrator 分别在两个服务上各跑一遍（greedy、
+seed 42、shared-prefix、每 case 1 次）：27B = `thor-inference.service`（:8888，
+`joshebbs/qwen3.8-27b-uncensored-nvfp4-modelopt` + DFlash2 K16，BF16 state），Flash-Next
+= `M1M`（:8890，原生 NEXTN MTP）。27B 的 runtime 记录由新脚本
+`record-thor-27b-runtime.py` 对齐 profile `P` 后生成。
+
+| Case | 27B 结果 | 27B wall / tok/s | Flash 结果 | Flash wall / tok/s |
+| --- | --- | --- | --- | --- |
+| exact-short-output | **失败** | 2.54s / 1.6 | 通过 | 0.51s / 7.9 |
+| strict-json-schema | 通过 | 0.72s / 20.7 | 通过 | 1.00s / 22.0 |
+| tool-get-weather | 通过 | 0.54s / 50.2 | 通过 | 0.97s / 27.7 |
+| python-interval-repair-ast | **失败** | 6.51s / 81.1 | **失败** | 11.50s / 54.5 |
+| agent-plan-thinking-low | **失败（length）** | 116.9s / 35.0 | 自然停止（需人工复核） | 82.2s / 40.3 |
+| thinking-digit-low | 通过 | 7.65s / 84.5 | 通过 | 10.34s / 57.4 |
+| thinking-workers-low | **失败（length）** | 55.1s / 74.3 | **失败** | 46.7s / 53.4 |
+| thinking-ledger32-low | 通过 | 10.71s / 127.4 | 通过 | 17.42s / 59.0 |
+| natural-prose-off | 通过 | 28.73s / 18.9 | 通过 | 14.02s / 33.4 |
+| natural-prose-low | 通过 | 46.0s / 43.3 | 通过 | 19.41s / 36.2 |
+
+严格通过：**27B 6/10，Flash 7/10**。两者都在 `python-interval-repair-ast` 与
+`thinking-workers-low` 失败——说明这两项是任务/模型难度，而非某一模型特有。差异点：
+27B 额外在 `exact-short-output` 失败、且在 `agent-plan` 用尽 4096 预算；Flash 通过 exact、
+`agent-plan` 自然收尾。吞吐上 27B 的 DFlash 在结构化 thinking 上明显更快（digit 84 / ledger
+127 tok/s），Flash 在自然 prose 上约快 1.7–2×。
+
+结论：**首轮样本下 Flash-Next 在 gate 上不输 27B（7 vs 6），prose 更快、结构化解码更慢**；
+是否替换取决于负载结构，能力不是阻断项。边界：单次、greedy、10 个 case，不是完整质量评估；
+27B 与 Flash 的 draft/采样路径不同。
+
+### 重复采样 A/B（3×10 case，含 held-out）
+
+2026-10-06。首轮是每 case 单次，且 `python-interval-repair-ast` 受 checker 的 markdown
+fence 影响。这里用新脚本 `utils/run-thor-ab.py`（每 case 3 次、greedy、seed 42、
+shared-prefix）重跑，并调整 case set：去掉首轮两个 length 失败项与 `natural-prose-low`，
+新增 3 个 held-out（`docs/inference/thor/benchmark/held-out.json`）：`exact-arith-product`
+（期望 3108）、`python-fill-memo-fib`（AST gate，函数 `memo_fib`、≥4 个 assert）、
+`strict-json-nested`（结构化 nested JSON）。python gate 已在 commit `a346218` 修掉 fence。
+下表的 wall/tok-s 为通过复次的**中位数**；`0/3` 表示三复次全部失败。
+
+| Case | 27B 通过 | 27B wall（pass 中位） | 27B tok/s | Flash 通过 | Flash wall | Flash tok/s |
+| --- | --- | --- | --- | --- | --- | --- |
+| exact-short-output | **0/3** | — | — | **3/3** | 0.37s | 10.8 |
+| strict-json-schema | 3/3 | 0.39s | 38.7 | 3/3 | 0.60s | 36.8 |
+| tool-get-weather | 3/3 | 0.51s | 53.1 | 3/3 | 0.64s | 42.0 |
+| python-interval-repair-ast | 3/3 | 5.36s | 73.5 | 3/3 | 10.18s | 56.1 |
+| thinking-digit-low | 3/3 | 7.64s | 84.6 | 3/3 | 11.52s | 57.6 |
+| thinking-ledger32-low | 3/3 | 13.31s | 124.0 | 3/3 | 15.98s | 63.3 |
+| natural-prose-off | 3/3 | 28.83s | 18.9 | 3/3 | 14.22s | 33.4 |
+| exact-arith-product | 3/3 | 0.36s | 13.9 | 3/3 | 0.34s | 14.6 |
+| python-fill-memo-fib | 3/3 | 2.52s | 97.1 | 3/3 | 3.13s | 57.3 |
+| strict-json-nested | 3/3 | 0.74s | 85.7 | 3/3 | 1.17s | 53.7 |
+| **合计** | **27/30** | 中位 0.74s | — | **30/30** | 中位 2.18s | — |
+
+严格通过：**27B 27/30，Flash 30/30**。修正 fence 后，首轮「两者都在
+`python-interval-repair-ast` 失败」消失（两臂均 3/3），说明那是 checker 问题；首轮
+`thinking-workers-low` / `agent-plan` 是任务难度，已从集合移除。唯一的正确性差异是
+`exact-short-output`：27B **稳定地 0/3**（连续三次都答 ~272 这类的错误整数，不是单次抖动），
+Flash 3/3。首轮 6/10 vs 7/10 在去掉单样本噪声后翻转为 **Flash 有明确正确性优势**。
+
+时延到正确答案：**27B（DFlash2 K16）在 8/10 个 case 更快**——结构化与 thinking 解码约快
+1.3–2×（ledger 124 vs 63 tok/s，digit 84.6 vs 57.6），短结构化 case 也略快；**Flash 仅在
+`natural-prose-off` 快约 2×**（14.2 vs 28.8s，33.4 vs 18.9 tok/s）。通过样本的中位
+wall-to-valid：27B 0.74s、Flash 2.18s（两者都被亚秒级结构化 case 拉低）；若把 27B 的 3 次
+失败计为“永不可用”，27B 的中位会升到 Flash 之上。held-out 三项两臂都通过，但 Flash 的乘积
+正确性是可复现的真实差异，而非采样偶然。
+
+结论：**能力不是 Flash-Next 的阻断项，重复采样下它的 gate 正确性甚至优于 27B**；代价是
+27B 在结构化与 thinking 解码上约 1.3–2× 更快，Flash 只在 prose 上更快。是否替换取决于负载
+结构。注意这不是同轴对照：27B 臂是 **DFlash2 K16 投机解码 + `mamba_ssm_dtype=bfloat16` +
+head bfloat16**，Flash 臂是 **target-only + NEXTN MTP + FP32 state**，延迟/吞吐同时差了
+draft 与 state dtype 两个因素。
+
+边界：10 case × 3，仍是小集、单机、greedy；`python_*` gate 只做 **AST/语法校验、不执行**
+生成代码，因此 30/30 不等于“代码语义全对”（强语义 gate 是 `exact` / `strict-json`）；未做
+采样温度下的稳定性，也未覆盖长上下文质量（见下节机制实验）。27B runtime 记录
+（`27b-20261006/run1/runtime.json`）核验：`joshebbs/qwen3.8-27b-uncensored-nvfp4-modelopt@e5ff498`
++ `maurienne-ai/Qwen3.8-27B-DFlash2-NVFP4-RTNcal@bd7a934`、`speculative_algorithm=DFLASH`、
+`speculative_num_draft_tokens=16`。
+
+## recurrent-state 漂移：BF16 vs FP32（27B 破限版，行为层）
+
+2026-10-06。针对「破限版 BF16 recurrent state 长自回归漂移」的说法，在 27B uncensored
+上做行为层对照：thinking off、限定单语、`ignore_eos`、连续生成 16384 token；BF16（默认）
+vs FP32（`inference.nix` 新增 `services.thorInference.mambaStateDtype`，用 FP32 unit 的
+`ExecStart` 经 `/run` drop-in 覆盖）。检测非目标语言脚本、重复行、符号循环。
+
+| arm | 语言 | 结果 | 非目标脚本字符 | Latin 串（合法缩写/公式） |
+| --- | --- | --- | ---: | ---: |
+| BF16 | en | 无异常 | 0 | 0 |
+| BF16 | zh | 无异常 | 0 | 11（CO₂/ENSO/PDO/AMO/pH/IPCC） |
+| FP32 | en | 无异常 | 0 | 0 |
+| FP32 | zh | 无异常 | 0 | 165（CO₂/kJ/km/GRACE/CMIP/GPM/…） |
+
+两臂的 16K 连续生成都**没有**非目标脚本字符、重复行或符号循环；启发式标出的 “foreign”
+全部是中文技术文本里合法的拉丁缩写与化学式/单位。因此在本行为层测试下 **BF16 与 FP32
+都未出现可检测的漂移**，也没有复现 Lazycat 那个 abliterated Flash-Next 的漂移（那是另一个
+模型）。边界：仅行为层、每臂单次、两臂因数值不同 greedy 轨迹会分叉；要判定数值漂移的机制，
+需要 teacher-forced 固定 token 流下的逐层 state/logits 对照（需加 state-dump hook），本页未做。
+
+同一行为层测试也补到了 **Flash-Next 本身**（RadixArk，FP8 head + MTP）：`M1M`（FP32 state）vs
+`M1B`（BF16 state），en/zh 各 16384 token：
+
+| arm | en | zh |
+| --- | --- | --- |
+| FP32（M1M） | 无非目标脚本；模板 token 行 x2 | **443× `user/assistant/<think>` 循环** |
+| BF16（M1B） | 无非目标脚本；模板 token 行 x4 | 无非目标脚本；模板 token 行 x4 |
+
+四个运行的末尾都出现了 **chat-template 角色 token 泄漏**（`user` / `assistant` / `<think>`），
+这是 `ignore_eos` 下原始补全路径的产物；zh 两臂的差异（FP32 出现 443 次循环、BF16 没有）来自
+greedy 轨迹分叉，而非 state dtype 的稳定特征。四臂都**没有**非目标脚本字符。结论：该行为层
+测试**无法区分 FP32/BF16**，且被模板 token 泄漏污染，不能用来判断数值稳定性；要回答
+「Flash-Next BF16 state 是否在长 decode 中积累误差并影响 logits ranking」，必须做
+**逐 token decode-step teacher-forced** 的机制实验（固定 token 流、同一初始 state、只改
+state dtype，采样 early/mid/late GDN 层的 state 误差与 logits 指标）。
+
+### API-only 机制实验的阻断：decode 路径本身非确定
+
+2026-10-06。先按「不加重叠补丁、只用 API」的路径尝试 teacher-forced logits 对照，发现一个
+更基础的障碍：**Flash-Next 的 decode 路径在 temp 0 / top_k=1 下 run-to-run 不可复现**，而
+prefill 可复现。测量在 target-only 的 `G1`（无 MTP、无 token map，仍 `mamba-ssm-dtype
+float32`）上完成，避免 speculative 干扰。
+
+协议：原生 `/generate`，`input_ids` = 固定 64 token 前缀，采样参数**嵌套在
+`sampling_params`**（`temperature=0, top_k=1, top_p=1`），`return_logprob=True` 取
+`input/output_token_logprobs`。注意：把 `temperature`/`max_new_tokens` 放在顶层会被忽略
+（回落到默认采样与 128 token），一度造成「非确定」的误判；正确 API 必须嵌套。
+
+| 观测量 | 10–12 次重复结果 |
+| --- | --- |
+| prefill：第 1 个 token 的 logprob / id | **唯一值** `-0.73524` / `4960`（10/10 一致） |
+| decode：greedy 32 token 输出 | **8 次中 7 种不同**序列 |
+| decode 逐 step logprob（step 3） | 3 个不同值（`-1.068 / -1.118 / -1.269`） |
+| decode 逐 step logprob（step 5） | 4 个不同值，跨度 `-0.704 … -1.655` |
+| 与 modal 序列的首个分歧位置 | 4 / 11 / 21（随运行变化） |
+
+`M1M`（NEXTN MTP）表现相同（6 次 5–6 种输出，首个分歧位置 4/11/21）。因为首个 token
+（prefill 末尾 logits）在所有运行中逐位一致，非确定性出现在**进入 decode 之后**并在数步内
+发散；来源是 decode 阶段的算子（`fa4` full-attention 与/或 Triton GDN linear-attn decode
+的归约/原子累加），与 MTP 无关。
+
+后果：(1) 本服务在 temp 0 下**不是逐位可复现**的，greedy 输出会随机分叉；(2) 用它做
+「同一 token 流、只改 state dtype」的 A/B，测到的差异会被这个 O(1) 量级的固有 logprob 噪声
+污染，无法把差异**归因**给 state 精度。因此还缺一个**确定性的单进程 replay + state/logits
+dump** 才能回答漂移问题（需要给 decode 换成确定性 kernel，或在同一前向内 teacher-force 固定
+token 并直接 dump 中间 state，而不是靠对外 sampling）。下一步按此前 scope 的补丁路线做。
+
+### 机制实验（API-only，prefill scoring）：BF16 state 改变 logits，且 >2048 不可复现
+
+2026-10-06。上面是 **decode** 路径不可复现；但 **prefill 路径可复现**，于是不需要补丁即可做
+teacher-forced 对照：把整条固定 token 流作为 `input_ids` 一次提交，`return_logprob=True`、
+`logprob_start_len=0`、`top_logprobs_num=10`，采样参数嵌套
+`sampling_params={temperature:0, top_k:1, max_new_tokens:1}`，读取
+`input_token_logprobs` / `input_top_logprobs`——这是**逐位置 teacher-forced** 的 logits，
+且由 chunked prefill 顺序累积 state（`chunked-prefill-size=512`、`page-size=64`）。两个 arm
+只有 `mamba-ssm-dtype` 不同：`G1`（float32）与 `G1-BF16`（用 `/run` drop-in 覆盖
+`BASELINE_FILE` 指向改过 dtype 的 `C1-decodeGraph` baseline，`docker inspect .Args` 核验为
+`bfloat16`）。固定流为 4096 token。
+
+| 对照 | n | mean \|Δlogprob\| | max |Δ| | top-1 改变 | top-10 overlap |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| FP32 vs FP32，0–2047（跑 3 次） | 2047 | **0.0** | 0.0 | **0/2047** | 1.0 |
+| FP32 vs FP32，2048–4095（同 dtype 噪声） | 2048 | 0.113 | — | 248/2048（12.1%） | — |
+| FP32 vs BF16，0–2047 | 2047 | 0.236 | — | 286/2047（14.0%） | — |
+| FP32 vs BF16，4096 | 4095 | 0.2429 | 6.04 | 559/4095（13.7%） | 0.77 |
+| BF16 vs BF16，2048–4095 | 2048 | 0.111 | 5.51 | ~250/2048（~12%） | — |
+
+按 512 分箱（每箱 512 token，`mean|Δ|` / top-1 改变数）：
+
+| 起始位置 | FP32 vs BF16 | BF16 vs BF16 |
+| --- | --- | --- |
+| 0 | 0.0 / 0 | 0.0 / 0 |
+| 512 | 0.315 / 93 | 0.0 / 0 |
+| 1024 | 0.328 / 106 | 0.0 / 0 |
+| 1536 | 0.303 / 87 | 0.0 / 0 |
+| 2048 | 0.269 / 66 | 0.238 / 74 |
+| 2560 | 0.195 / 53 | 0.178 / 52 |
+| 3072 | 0.299 / 78 | 0.279 / 75 |
+| 3584 | 0.233 / 76 | 0.193 / 60 |
+
+结论：
+1. **FP32 SSM state 只在 0–2047 token 逐位可复现**；**超过 2048 后 FP32 自身也不可复现**
+   （同 dtype 两次 mean \|Δlogprob\|≈0.113、top-1 12.1%）。下节的 state dump 直接证实了这一点。
+2. **换成 BF16 state 会系统性改变 logits**：**前 512 token（第一个 prefill chunk）逐位相同**，
+   从第 512 个 token（第一个 state 边界）起开始分叉——与「state 只在 chunk 边界的
+   store/restore 处被 round 到 state dtype」一致。0–2047 窗口内 mean \|Δlogprob\|≈0.236、
+   top-1 翻转 14.0%；4096 整体 mean≈0.24、top-1 13.7%、top-10 重叠 0.77。BF16 state 并非
+   「数值无害」，在 4K 上下文就明显改变 ranking。
+3. **>2048 的非确定性是 dtype-independent 的**：FP32 与 BF16 自身重复都有同量级噪声
+   （mean\|Δ\|≈0.11、top-1 ~12%），来自 state checkpoint/restore 路径，而非某种 dtype。
+
+边界与解释：这是 **prefill**（chunk=512）而非 decode（每 token 一个 state 边界）的测量。
+decode 下 state 每步都 round，**预期** dtype 影响更强，但真 decode 的 kernel/执行路径与
+chunked prefill 不同、且本身带额外非确定（见上一节），所以这只是方向性预期，不是 decode 的
+实测下界。分箱结果刻画了「state 精度只在边界生效」这一机制。就本实验：BF16 SSM state 会改变
+logits ranking，**不应**作为默认；它只适合作为省内存（约 0.9 GiB）选项并标注此风险。
+
+### chunk 粒度扫描：state 精度影响随 state 边界频率增大
+
+2026-10-06。继续用同一 prefill scoring，把 `chunked-prefill-size` 从 512 降到最小。约束：
+`chunked_prefill_size` 必须能被 `page_size`（64）整除，因此 **最小 chunk = 64**（`page_size=1`
+未尝试；改变 page 会改变 KV/attention 路径）。两臂仍只差 `mamba-ssm-dtype`。
+
+对照限制在 **token 0–2047**（该窗口内四臂自身都逐位可复现；>2048 的伪影见下）：
+
+| 配置 | 首个分叉 token | mean \|Δlogprob\|（0–2047） | top-1 改变（0–2047） |
+| --- | ---: | ---: | ---: |
+| chunk=512：FP32 vs BF16 | 512 | 0.237 | 286/2047（14.0%） |
+| chunk=64：FP32 vs BF16 | 64 | 0.315 | 375/2047（18.3%） |
+
+即 **state 边界越密、BF16 与 FP32 的分歧越早越大**（onset 从第 512 个 token 提前到第 64 个，
+top-1 翻转 14.0%→18.3%）。这支持「boundary 频率升高会增强 dtype 差异」，对逐-token decode
+构成**更强影响的预期**；但真 decode 的 kernel/执行路径与 chunked prefill 不同、且本身带额外
+非确定，是否构成实测下界尚待 deterministic replay 证实。
+
+自身可复现性（同 arm 重复捕获）：
+
+| 配置 | 0–2047 | 2048–4095 |
+| --- | --- | --- |
+| chunk=512 FP32 | 逐位一致 | **非确定**：mean\|Δ\|≈0.113、top-1 ~12% |
+| chunk=512 BF16 | 逐位一致 | 非确定：mean\|Δ\|≈0.111、top-1 ~12% |
+| chunk=64 FP32 | 逐位一致 | **非确定**：mean\|Δ\|≈0.109、top-1 ~12% |
+| chunk=64 BF16 | 逐位一致 | **非确定**：mean\|Δ\|≈0.110、top-1 ~12% |
+
+修正：四臂的 **0–2047 都逐位可复现，>2048 都不确定**，噪声量级与 dtype、chunk 都无关。此前
+以为「chunk=512 FP32 全程可复现」是错的——那是 1024-token 短测（未越过 2048）的结论；补做
+4096 后 FP32 自身也在 >2048 分叉（见上一节表格首两行）。因此 >2048 非确定来自 **state
+checkpoint/restore 机制本身**，能干净归因 state dtype 的窗口是 **token 0–2047**。
+
+结论：四臂的 prefill logits 在 0–2047 逐位可复现，BF16-vs-FP32 在此窗口的差异（14–18% top-1）
+可干净归因给 state dtype；>2048 被 dtype-independent 的 checkpoint 噪声污染。**FP32 state
+保持默认；BF16 仅作省内存选项并标注数值/可复现性风险**。逐层 state 的 rel-L2/cosine 已由下节的
+诊断补丁直接测得。logits 证据保留在私有 `/var/lib/thor-flash-next/observations/state-drift-20261006/`。
+
+### 逐层 GDN state 直接对照（诊断补丁 + state dump）
+
+2026-10-06。为摆脱「只看 logits」的间接性，给 pinned 源码加了一个**诊断补丁**：`gdn_backend.py`
+在 prefill/extend kernel 写回 state 后，把每层 SSM state 存成
+`$SGLANG_GDN_STATE_DUMP/layerNNN_seqNNNNNN.npy`（env 未设则完全 no-op；`SGLANG_GDN_STATE_DUMP_LAYERS`
+可选层）。补丁进入 `flash-next/manifest.json`（原文件 `3bc3cf81…` → `a5adc72b…`），`run.sh` 在
+设了 `GDN_STATE_DUMP` 时挂载它并把 dump 目录 bind 进容器。实验用 G1 baseline（chunk=512，FP32）
+与仅把 `mamba-ssm-dtype` 改成 bfloat16 的同一 baseline，各 dump 两次（第二次用于自噪声基线）。
+
+36 个 GDN 层（`layer000`…`layer046`）在每个 512-token 边界各一份。**自噪声**：FP32 与 BF16 在
+seq ≤ 2048 全部 **逐位为 0**（rel-L2 = 0、cos = 1）；seq > 2048 两臂都出现同量级噪声（rel-L2
+≈ 0.08–0.10），与上一节 logits 结论一致。
+
+**FP32 vs BF16 的逐层 state 分歧**（自噪声为 0，故此窗口内可纯归因 dtype）：
+
+| seq（state 边界） | 全层 mean rel-L2 | max rel-L2 | min cos |
+| ---: | ---: | ---: | ---: |
+| 512（第 1 个边界） | **1.66e-3** | 1.77e-3 | 0.999998 |
+| 1024 | 9.46e-2 | 0.388 | 0.924 |
+| 1536 | 1.01e-1 | 0.408 | 0.915 |
+| 2048 | 9.67e-2 | 0.324 | 0.947 |
+
+第 1 个边界处每层几乎一致地 ~1.6e-3 rel-L2（≈ 一次 BF16 round，2^-9），到第 2 个边界即放大到
+~0.1。逐层结构（seq=2048，`layer: rel-L2 / cos`）：
+
+| 层 | 早期 | 中期 | 晚期 |
+| --- | --- | --- | --- |
+| 代表值 | L000 0.002 / 1.000；L005 0.041 / 0.999 | L014 0.104 / 0.995；L020 0.101 / 0.995；L026 0.125 / 0.992 | L030 0.201 / 0.980；L036 0.182 / 0.984；L044 **0.324** / 0.947 |
+
+即：BF16 的 state 误差在**每个 state 边界注入一次 ~2^-9 的 round**，随后被 recurrent 动态
+**沿层深与序列长度放大**——浅层基本保持，晚期层（L030/L036/L044）在 1–2K token 就到
+rel-L2 0.2–0.39、cos 0.92–0.98。机制结论：**BF16 SSM state 是可复现的真实数值退化**（非噪声），
+量化在 state store/restore 处生效并在长序列中放大；这直接支持「保持 FP32 state 默认」。
+边界：仍是 prefill（chunk=512）；decode 每 token 一个边界，预期更频繁注入误差，但 decode 路径
+本身不可复现，无法用同一 dump 直接测，需确定性 replay。
+
+**声明式单元验收（2026-10-07）。** 默认 `gdnStateDump = null`：`nix eval` 单元的
+`GDN_STATE_DUMP = ""`，run 包装里的 gdn 挂载/env 分支以 `[[ -n "$GDN_STATE_DUMP" ]]` 门控，
+空值时完全不触发（overlay 文件会被 prepare 生成但**不挂载**，行为与改动前一致，即 no-op）。
+临时设 `services.thorFlashNext.decodeGraph = true` + `gdnStateDump = <dir>` 重建单元（走
+`nix build …systemd.units."thor-flash-next.service".unit` + `nix copy`）后，`docker inspect`
+核验容器：`SGLANG_GDN_STATE_DUMP=/gdn-state`、`/gdn-state` 为可写 bind、patched
+`gdn_backend.py`（sha256 `a5adc72b…`）只读挂到 linear-attention 路径。发一条 1024-token 请求
+（chunk=512）后 dump 目录得到 36 层 × {seq 512, 1024}（外加启动 warmup 的 seq=1），smoke 通过。
+随后停服、恢复 G1 idle 链接、撤销临时 config。`gdnStateDump` 默认关闭、**未**晋升为默认。
+
+
+

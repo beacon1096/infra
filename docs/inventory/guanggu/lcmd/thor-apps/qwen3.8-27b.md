@@ -1,10 +1,10 @@
 # Qwen3.8-27B：Lazycat 应用部署与基准测试
 
-[Thor 概览](../../README.md) ·
-[本地 SGLang 部署与调优](sglang.md) ·
-[原版 NVFP4 本地实验](original.md)
+[Thor 概览](../../../../inference/thor/README.md) ·
+[本地 SGLang 部署与调优](../../../../inference/thor/model/qwen3.8-27b/sglang.md) ·
+[原版 NVFP4 本地实验](../../../../inference/thor/model/qwen3.8-27b/original.md)
 
-检查与试验日期：2026-09-18。本文记录一台 Thor T5000 上的 Lazycat 官方应用及预构建算力舱运行时；使用 Lazycat 检查点自行组装的 SGLang 部署另见 [sglang.md](sglang.md)。
+检查与试验日期：2026-09-18。本文记录一台 Thor T5000 上的 Lazycat 官方应用及预构建算力舱运行时；使用 Lazycat 检查点自行组装的 SGLang 部署另见 [sglang.md](../../../../inference/thor/model/qwen3.8-27b/sglang.md)。
 
 测试版本：
 
@@ -16,7 +16,10 @@
 - 已部署模型版本：`0.5.1`；
 - 算力运行时：`runtime-160-0.2.2-modelopt-nvfp4-draft`。
 
-官方系统上的测试使用算力舱控制面板的性能风扇配置（`风扇-性能模式`）。重启进入 NixOS 后，适配的 Lazycat 温控守护进程以静音配置（`<Max-Q>`）重新生成运行时配置，尽管 AI Pod 后端仍保留 `<Max-P>`。因此，随后的自托管 SGLang 调优及限定时长的稳定性测试使用了静音配置。GPU 时钟维持在 1,385--1,386 MHz，未观察到因温度导致的性能下降，因此归因分析和内核相对性能比较仍然有效。后续另用机群自有的性能曲线复测，并在下文单独标明。参见[温控检查](../../../../inventory/guanggu/thor/lzc-thermal.md)。私人地址、主机名、凭据以及用户和设备标识符均已省略。
+2026-10-02 的重部署记录见[下文](#2026-10-02-重部署lpk-0179)；分发链路改为
+ModelScope 镜像分片，运行时镜像与服务参数亦有调整。
+
+官方系统上的测试使用算力舱控制面板的性能风扇配置（`风扇-性能模式`）。重启进入 NixOS 后，适配的 Lazycat 温控守护进程以静音配置（`<Max-Q>`）重新生成运行时配置，尽管 AI Pod 后端仍保留 `<Max-P>`。因此，随后的自托管 SGLang 调优及限定时长的稳定性测试使用了静音配置。GPU 时钟维持在 1,385--1,386 MHz，未观察到因温度导致的性能下降，因此归因分析和内核相对性能比较仍然有效。后续另用机群自有的性能曲线复测，并在下文单独标明。参见[温控检查](../thor/lzc-thermal.md)。私人地址、主机名、凭据以及用户和设备标识符均已省略。
 
 ## Lazycat 管理应用
 
@@ -143,7 +146,7 @@ vLLM 警告称，在 16-token 推测窗口下，4,096 个调度 token 的上限�
 
 ## 单流测量
 
-三个提示词及输出上限与[此前的本地实验](original.md#方法与结果)一致。每种负载先进行一次 32-token 预热，然后执行三次测量请求。温度设为零，禁用思考，并提供固定种子。服务没有重置前缀缓存的路由，因此每次请求使用独立的 `cache_salt`，在保持提示词完全相同的同时避免缓存复用。解码速率按 `(completion tokens - 1) / (stream end - first content)` 计算。
+三个提示词及输出上限与[此前的本地实验](../../../../inference/thor/model/qwen3.8-27b/original.md#方法与结果)一致。每种负载先进行一次 32-token 预热，然后执行三次测量请求。温度设为零，禁用思考，并提供固定种子。服务没有重置前缀缓存的路由，因此每次请求使用独立的 `cache_salt`，在保持提示词完全相同的同时避免缓存复用。解码速率按 `(completion tokens - 1) / (stream end - first content)` 计算。
 
 | 负载 | 输出上限 | 解码速率 | 中位数 | 首个内容延迟中位数 | DFlash 接受 / 提议 token |
 | --- | ---: | --- | ---: | ---: | ---: |
@@ -209,8 +212,135 @@ vLLM 警告称，在 16-token 推测窗口下，4,096 个调度 token 的上限�
 
 原始请求、计数器、遥测数据及进程清单均保留在公开仓库之外。
 
+## 2026-10-02 重部署（LPK 0.1.79）
+
+清除原部署并从应用商店重装 LPK `0.1.79` 后观察。记录基于部署期间对微服本体
+（网盘暂存区）与算力舱的 SSH 检查。
+
+### 分发链路变更
+
+- 运行时镜像由 `runtime-160-0.2.2-modelopt-nvfp4-draft` 更换为
+  `registry.lazycat.cloud/catdogai/qwen38-27b:runtime-104-0.3.1-model-split`。
+- 权重不再以单一 tar 形式下发。安装器将权重逐文件下载到用户网盘
+  `AI 模型/T5000 Qwen 3.8 27B/`（`target/` 与 `draft/` 子目录），每份文件写入
+  `.aipod-verified.json`（记录 path、size、sha256，不含来源 URL），随后从网盘
+  传输到算力舱的 `/var/lib/lzc-ai-agent/data/cloud.lazycat.aipod.qwen38-27b/models/`
+  并在容器内挂载为 `/model` 与 `/draft`。
+- 下载来源为 ModelScope 上 Lazycat 官方镜像组织 `manateelazycat`；容器环境变量
+  `QWEN_MODEL_PROVIDER=modelscope` 与哈希比对共同确认：
+  - 目标模型：`manateelazycat/Qwen3.8-27B-NVFP4-ModelOpt`，仓库内
+    `MIRROR_SOURCE.json` 声明镜像自 HF
+    `joshebbs/qwen3.8-27b-uncensored-nvfp4-modelopt` @ `e5ff4986938dcd0dd05ab4cce89da1b052be6ce3`
+    （与基线同一修订）。镜像变换把原 19,743,750,248 字节的单文件
+    `model.safetensors`（sha256 `5db0ff93…`，与基线记录一致）按张量边界重切为
+    31 片并生成 `model.safetensors.index.json`，张量数据逐字节保留。
+  - 草稿模型：`manateelazycat/Qwen3.8-27B-DFlash2-NVFP4-RTNcal`，
+    `model.safetensors` 1,550,153,248 字节、sha256 `2228b9b2…`，与基线记录
+    逐字节一致。
+- 本机落盘的 32 个分片（31 片主权重加嫁接 MTP）总量 20,593,146,456 字节，
+  与远端清单一致；MTP 嫁接文件与基线记录相差 4,216 字节，为镜像侧重生成的嫁接。
+
+### 服务参数变化
+
+引擎仍为 vLLM，且 rev 与基线相同（`0.0.0+18f658bb3185`，Torch 2.11.0、
+Transformers 5.12.1、Triton 3.6.0 未变）。相对基线的变化：
+
+| 设置 | 基线 0.1.58 | 本次 0.1.79 |
+| --- | --- | --- |
+| 推测解码 | DFlash2 固定 K16 | K15 加自适应：`num_speculative_tokens_per_batch_size` 为 `[[1,8,8]]`，接受阈值 0.8、EMA α 0.25、最小草稿 32 token |
+| 编译 | Eager 执行，禁用 CUDA Graph | `--no-enforce-eager`，启用 CUDA Graph |
+| KV 容量 | 539,789 token | 541,905 token（同一 44.5 GiB 分配） |
+| 解析器 | 未记录 | 显式 `--reasoning-parser qwen3`、`--tool-call-parser qwen3_xml`、`--enable-auto-tool-choice` |
+
+未变的参数：模型名 `qwen-3.8-27b-uncensored`、512,000-token YaRN 视图
+（系数 1.953125）、8 序列、4,096 批处理 token、禁用异步调度、启用前缀缓存
+（SHA-256）、44.5 GiB KV 分配、块大小 864、ModelOpt NVFP4 与 CUTLASS 线性层、
+Mamba SSM FP32、主机网络与主机 IPC、非特权 root 加 `IPC_LOCK`。镜像另显式
+设置 `VLLM_USE_FLASHINFER_MOE_FP4=0` 与 `VLLM_MARLIN_USE_ATOMIC_ADD=1`。
+
+### 部署流程时间线
+
+- 04:40 开始检查环境与模型缓存；04:41–04:59 下载并校验权重文件；
+- 05:04 网盘 → 算力舱传输运行镜像；05:13 算力舱导入镜像层；
+- 05:15 起传输模型文件（约 20.6 GB）；服务随后经 compose 启动并通过健康检查，
+  对外暴露 `http://<算力舱地址>:8005/v1`。
+
+### 0.1.83 清单核对（2026-10-03，未部署）
+
+商店后续推送 0.1.82/0.1.83（changelog：X3 Prefill 提升、X3 工具调用修复）。
+2026-10-03 已将微服本体内 LPK 升级至 0.1.83 并提取其内嵌清单与 0.1.79
+对比：target（`joshebbs/…` @ `e5ff4986…` / `manateelazycat/…-ModelOpt` @
+`07ac7fe7…`，10 文件 20.61 GB）与 draft（`maurienne-ai/…-RTNcal` @
+`bd7a9342…` / `manateelazycat/…-RTNcal` @ `e1d46b29…`，3 文件 1.55 GB）
+**逐字一致，权重无变化**；运行时归档 `qwen-3.8-27b-t5000-0.3.1-model-split.tar`
+（5,740,394,003 B）同名同大小，manifest 标注 imageId `6c13dc1d…`。0.1.79
+的控制面二进制已被升级回收，T5000 运行时镜像 ID 无法逐字节回溯比对；
+changelog 将修复限定在 X3 工具调用，且 0.1.83 新增 Orin AWQ（`qwen-3.8-27b-orin-awq-0.3.0.tar`）
+与 warm-cache 支持归档。T5000 侧推定运行时与推理参数未变，未做部署验证。
+另注：0.1.79/0.1.83 清单含 `policy: user-selected`、`regionProviders`
+（CN→ModelScope、默认 HF）与 `cache: device-persistent` 字段。
+
+应用商店描述宣称的"一次只能发起一个模型下载"与本次观察一致；基线章节的
+测量数据仍属 LPK 0.1.58 时代，与本次参数不同，不能直接比较。
+
+### 基准复测（2026-10-02）
+
+负载提示词、输出上限、温度为零、禁用思考、每请求独立 `cache_salt`、预热
+32-token 后测三次、解码速率按 `(completion tokens - 1) / (stream end - first
+content)` 计算，均与基线一致。种子固定为 42（基线未记录具体种子值）。5K 与
+500K 提示词用重复占位词构造并按 API 回报的 token 数精确校准到目标长度；
+基线的 500K 请求为预分词，此处为客户端构造，属口径差异。推测解码接受/提议
+token 来自 Prometheus 计数器增量。
+
+#### 单流
+
+| 负载 | 输出上限 | 解码速率 | 中位数 | 首个内容延迟中位数 | 接受 / 提议（每次运行） |
+| --- | ---: | --- | ---: | ---: | ---: |
+| 中文 | 256 | 21.46, 21.45, 21.28 | 21.45 tokens/s | 0.175 s | 123 / 1,056 (11.6%) |
+| 短代码 | 256 | 75.58, 73.88, 75.43 | 75.43 tokens/s | 0.147 s | 221 / 345 (64.1%) |
+| 长代码 | 1,024 | 76.25, 75.61, 75.95 | 75.95 tokens/s | 0.184 s | 891 / 1,400 (63.6%) |
+
+相对基线（0.1.58，eager + K16）：中文 +23.5%、短代码 +20.9%、长代码 −4.5%。
+自适应推测将中文负载的提议 token 从基线每次运行约 6,384 降至 1,056，接受率
+5.8% → 11.6%；两种代码负载接受率升至 64% 上下。每种负载三次响应哈希相同，
+与基线的确定性表现一致。长代码略慢于基线，可能与 K15 窗口缩短及自适应
+开销在接近上限的高接受率负载上的权衡有关。
+
+#### 八请求并发
+
+先一批预热，再测三批，每批八份短代码负载（输出上限 128 token）：
+
+| 批次 | 聚合解码速率 | 批次实际耗时 | 单请求速率中位数 | 单请求 TTFC 中位数 | 接受 / 提议 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 297.84 tokens/s | 3.61 s | 40.43 tokens/s | 0.331 s | 892 / 1,488 (59.9%) |
+| 2 | 293.90 tokens/s | 3.61 s | 40.85 tokens/s | 0.334 s | 892 / 1,488 (59.9%) |
+| 3 | 300.69 tokens/s | 3.63 s | 41.16 tokens/s | 0.331 s | 892 / 1,488 (59.9%) |
+
+聚合速率中位数 297.84 tokens/s，比基线 179.50 高 65.8%（本测量的聚合窗口
+扣除了每路 1 个 bonus token，与基线口径差异小于 1%）。TTFC 范围收窄至
+0.16–0.34 秒。
+
+#### 预填充与上下文容量
+
+恰好 5,001-token 提示词 + 32 输出 token，预热一次后测三次；独立 `cache_salt`
+强制全部重算。默认风扇下首个内容延迟 1.6025、1.6017、1.6028 秒，中位数
+1.602 秒，比基线 2.612 秒低 38.7%；切性能风扇后复测为 0.569、0.576、0.614
+秒，中位数 0.576 秒（含分词与排队，未单列服务器端预填充计时；已核对
+`gpu_prefix_cache_hits` 增量为零，非缓存复用）。
+
+500,001 输入 + 1 输出的请求成功完成，两次运行分别为 1,390.35 秒（默认风扇）
+与 1,390.39 秒（性能风扇），计算速率约 359.6 tokens/s（基线 1,490.30 秒、
+335.57 tokens/s）。性能风扇运行的遥测覆盖 2,721 个一秒样本：`VDD_GPU` 平均
+74.79 W、峰值 77.54 W（基线 69.05/74.48 W），GPU 温度平均 69.74 C、峰值
+74.16 C（基线峰值 69.9 C），系统 RAM 平均 80.2 GB、峰值 81.2 GB（基线峰值
+78.15 GB）。GR3D 全程维持 1,385–1,386 MHz；默认风扇的首轮峰值温度为
+79.56 C，切换后降约 5 C，耗时不变，未见热限。
+
+构造的 512,001-token 请求在推理前被 HTTP 400 拒绝，错误信息确认总上下文
+上限仍为 512,000 token。
+
 ## 参考资料
 
-- [本地 SGLang 部署与调优（Lazycat 检查点）](sglang.md)
-- [此前的本地原版 NVFP4 实验](original.md)
-- [厂商公布的性能快照](../../README.md#厂商公布的性能快照)
+- [本地 SGLang 部署与调优（Lazycat 检查点）](../../../../inference/thor/model/qwen3.8-27b/sglang.md)
+- [此前的本地原版 NVFP4 实验](../../../../inference/thor/model/qwen3.8-27b/original.md)
+- [厂商公布的性能快照](../../../../inference/thor/README.md#厂商公布的性能快照)

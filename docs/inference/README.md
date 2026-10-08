@@ -3,6 +3,7 @@
 这里记录模型服务的部署、运行约束与实验结果；Agent 如何选择和使用模型见 [Agentic / models](../agentic/models/README.md)。设备硬件、固件和网络归入 [inventory](../inventory/README.md)，不在此重复。
 
 - [Thor / 算力舱](thor/README.md)：生产 SGLang 的现状、官方 AI Pod 对照及模型实验。
+- [Strata / Titan RTX 与 A2000](strata/README.md)：IQ2/IQ3 的单卡、自动分层、专家辅助与 52 GiB 内存预算对照，以及 128K 配置容量检索验证。
 - [AI 算力设备盘点](ai-compute-inventory.md)：宿主机与 GPU 的现状、约束和待办。
 - [oMLX 容量记录](omlx-model-capacity.md)：Mac mini M4 已退役部署的容量与管理经验；不是当前可用模型清单。
 - [OpenViking 部署评估](openviking-evaluation.md)：单节点 PoC 方案、Memoh v0.20.0 集成限制与转正门槛；[English](openviking-evaluation_en.md)。

@@ -1,0 +1,46 @@
+--- vocab_parallel_embedding.py
++++ vocab_parallel_embedding.py
+@@ -28,7 +28,7 @@
+     is_allocation_symmetric,
+     is_dp_attention_enabled,
+ )
+-from sglang.srt.layers.parameter import BasevLLMParameter
++from sglang.srt.layers.parameter import BasevLLMParameter, BlockQuantScaleParameter
+ from sglang.srt.layers.quantization.base_config import (
+     QuantizationConfig,
+     QuantizeMethodBase,
+@@ -481,3 +481,34 @@
++        if isinstance(param, BlockQuantScaleParameter):
++            if (
++                self.tp_size != 1
++                or self.use_presharded_weights
++                or self.num_added_embeddings
++            ):
++                raise NotImplementedError(
++                    "Block-scale vocab loading requires TP=1, non-presharded "
++                    "weights and no added vocabulary"
++                )
++            block_n, block_k = self.quant_method.quant_config.weight_block_size
++            assert (block_n, block_k) == (128, 128)
++            expected_shape = (
++                (self.org_vocab_size + block_n - 1) // block_n,
++                (self.embedding_dim + block_k - 1) // block_k,
++            )
++            assert output_dim == 0
++            assert param.dtype == loaded_weight.dtype == torch.float32
++            assert tuple(loaded_weight.shape) == expected_shape, (
++                f"{expected_shape=} {loaded_weight.shape=}"
++            )
++            assert tuple(param.shape) == (
++                (self.num_embeddings_per_partition + block_n - 1) // block_n,
++                expected_shape[1],
++            )
++            assert param.shape[0] >= expected_shape[0]
++            # Finite neutral scales for zero-weight vocabulary padding only.
++            param.data.fill_(1.0)
++            param.data[: expected_shape[0]].copy_(loaded_weight)
++            return
++
+         # Shard indexes for loading the weight
+         start_idx = self.shard_indices.org_vocab_start_index
+         shard_size = self.shard_indices.org_vocab_end_index - start_idx

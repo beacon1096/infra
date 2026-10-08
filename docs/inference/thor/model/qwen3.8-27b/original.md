@@ -2,7 +2,7 @@
 
 [Thor 概览](../../README.md)
 
-[官方懒猫微服应用部署与基准测试](lazycat.md)
+[官方懒猫微服应用部署与基准测试](../../../../../inventory/guanggu/lcmd/thor-apps/qwen3.8-27b.md)
 
 复测日期：2026-09-12。[Huihui 试验](huihui.md)对比了一个
 修改后的目标模型，并包含后续的 DFlash2 性能分析。

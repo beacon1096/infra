@@ -338,6 +338,10 @@
     packages.x86_64-linux =
       let
         pkgs = fleetPkgs "x86_64-linux";
+        strataPkgs = import nixpkgs {
+          system = "x86_64-linux";
+          config.allowUnfree = true;
+        };
         paseoPackages = import ./lib/paseo { inherit inputs pkgs; };
       in {
       inherit (pkgs) tailscale;
@@ -345,6 +349,8 @@
       installer-iso = self.nixosConfigurations.installer.config.system.build.isoImage;
 
       gh-proxy = pkgs.callPackage ./packages/gh-proxy { };
+
+      strata-runtime = strataPkgs.callPackage ./packages/strata/runtime.nix { };
 
       # v0.6.0's go.mod requires go >= 1.26.6, but this flake's nixos-26.05
       # pin provides go 1.26.5. Build with the unstable toolchain instead.
@@ -686,6 +692,11 @@
 
     packages.aarch64-linux = {
       inherit (fleetPkgs "aarch64-linux") tailscale;
+
+      r8127-mac-diagnostics =
+        self.nixosConfigurations.thor.config.boot.kernelPackages.callPackage ./packages/r8127 {
+          macDiagnostics = true;
+        };
       common-nixos-closure =
         (nixpkgs.lib.nixosSystem {
           system = "aarch64-linux";

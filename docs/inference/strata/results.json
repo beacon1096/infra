@@ -1,0 +1,1449 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-08",
+  "hardware": {
+    "cpu": "Intel Core i7-11700B",
+    "system": "Intel NUC11BTMi7",
+    "ram_nominal_GiB": 64,
+    "kernel_memtotal_GiB": 62.33,
+    "gpus": [
+      {
+        "name": "NVIDIA Titan RTX",
+        "vram_nominal_GiB": 24,
+        "pcie_link": "PCIe 3.0 x8"
+      },
+      {
+        "name": "NVIDIA RTX A2000",
+        "vram_usable_approx_GiB": 11.24,
+        "pcie_link": "PCIe 4.0 x4",
+        "vram_nominal_GB": 12,
+        "memory_reported_mib": 11514
+      }
+    ]
+  },
+  "software": {
+    "engine_version": "0.1.40.3",
+    "engine_source_commit": "d5ea7133741e67743c0e886bb426c0ce8d69cf6c",
+    "engine_binary_sha256": "a04bddbb993d652f9e37d635636b9820b986a076146c8b98b3aef2b5092394ef",
+    "llama_cpp_fixed_commit": "3cf03257f219afbe7334045ff7c6a06ac68c627d",
+    "nvidia_driver": "595.71.05",
+    "cuda_nvcc": "13.0.88",
+    "cuda_runtime": "13.0.96",
+    "compiler": "GCC 15.2.0",
+    "os": "NixOS",
+    "kernel": "6.18.38"
+  },
+  "model": {
+    "name": "Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+    "hf_revision": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
+    "unique_gguf_files": [
+      {
+        "role": "IQ2_XS shard 1",
+        "bytes": 39225954592,
+        "sha256": "92cee27ae5bbadcd732416a0f7a7f0acc092399dbbe8f5a5efa707c2ec0a49d7"
+      },
+      {
+        "role": "IQ3_XXS shard 1",
+        "bytes": 47039860096,
+        "sha256": "219ea929900dfa9ef091f3aa473fdba6874b65fcb36526d7d851ac9e95856d15"
+      },
+      {
+        "role": "shared shard 2 (IQ2_XS/IQ3_XXS)",
+        "bytes": 28800138432,
+        "sha256": "316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113"
+      }
+    ],
+    "hashes_verified_from": "verified download markers; exact size and SHA-256"
+  },
+  "mtp_revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540",
+  "method": {
+    "context_tokens": 32768,
+    "kv_type": "int8",
+    "speculative_tokens": 4,
+    "spec_min_p": 0.5,
+    "temperature": 0,
+    "reasoning": "none",
+    "warmup_requests": 1,
+    "measured_requests_per_group": {
+      "short": 3,
+      "long": 3
+    },
+    "max_completion_tokens": 256,
+    "long_prompt_actual_tokens_range": [
+      26330,
+      26341
+    ]
+  },
+  "unbounded_runs": [
+    {
+      "model": "IQ2_XS",
+      "mode": "dual",
+      "benchmark": {
+        "short": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 0.866989,
+            "range": [
+              0.86423,
+              0.883983
+            ]
+          },
+          "prefill_ms": {
+            "median": 847.1,
+            "range": [
+              843.9,
+              863.8
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 95.6,
+            "range": [
+              92.6,
+              99.5
+            ]
+          },
+          "decode_ms": {
+            "median": 826.1,
+            "range": [
+              715.1,
+              827.9
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 69.0,
+            "range": [
+              68.8,
+              74.1
+            ]
+          },
+          "prompt_tokens": {
+            "median": 81,
+            "range": [
+              80,
+              84
+            ]
+          },
+          "completion_tokens": {
+            "median": 57,
+            "range": [
+              53,
+              57
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "long": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 72.706928,
+            "range": [
+              72.417724,
+              73.36943
+            ]
+          },
+          "prefill_ms": {
+            "median": 72516.8,
+            "range": [
+              72227.8,
+              73177.9
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 363.2,
+            "range": [
+              359.8,
+              364.6
+            ]
+          },
+          "decode_ms": {
+            "median": 3284.4,
+            "range": [
+              3202.9,
+              3399.7
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 77.9,
+            "range": [
+              75.3,
+              79.9
+            ]
+          },
+          "prompt_tokens": {
+            "median": 26335,
+            "range": [
+              26333,
+              26338
+            ]
+          },
+          "completion_tokens": {
+            "median": 256,
+            "range": [
+              256,
+              256
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "resources": {
+        "engine_peak_loading_plus_inference": {
+          "VmRSS_peak_GiB": 36.179733,
+          "VmHWM_peak_GiB": 36.179733,
+          "RssAnon_peak_GiB": null,
+          "RssFile_peak_GiB": null,
+          "RssShmem_peak_GiB": null
+        },
+        "engine_peak_steady_state": {
+          "VmRSS_peak_GiB": 36.179733,
+          "VmHWM_peak_GiB": 36.179733,
+          "RssAnon_peak_GiB": null,
+          "RssFile_peak_GiB": null,
+          "RssShmem_peak_GiB": null
+        },
+        "gpu": {
+          "peak_VRAM_MiB": {
+            "Titan": 23630.0,
+            "A2000": 6119.0
+          },
+          "peak_temperature_C": {
+            "Titan": 80.0,
+            "A2000": 71.0
+          },
+          "steady_mean_total_power": {
+            "mean_simultaneous_total_gpu_power_W": 241.294793,
+            "samples": 242
+          },
+          "peak_power_W": {
+            "Titan": 269.2,
+            "A2000": 40.12
+          }
+        }
+      }
+    },
+    {
+      "model": "IQ2_XS",
+      "mode": "Titan-only",
+      "benchmark": {
+        "short": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 0.96528,
+            "range": [
+              0.948103,
+              0.975697
+            ]
+          },
+          "prefill_ms": {
+            "median": 945.9,
+            "range": [
+              929.0,
+              957.2
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 89.3,
+            "range": [
+              84.6,
+              89.9
+            ]
+          },
+          "decode_ms": {
+            "median": 728.1,
+            "range": [
+              712.0,
+              767.0
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 78.3,
+            "range": [
+              74.3,
+              80.1
+            ]
+          },
+          "prompt_tokens": {
+            "median": 83,
+            "range": [
+              81,
+              85
+            ]
+          },
+          "completion_tokens": {
+            "median": 57,
+            "range": [
+              57,
+              57
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "long": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 22.971379,
+            "range": [
+              22.812519,
+              23.154513
+            ]
+          },
+          "prefill_ms": {
+            "median": 22781.1,
+            "range": [
+              22617.8,
+              22968.5
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 1155.8,
+            "range": [
+              1146.8,
+              1164.5
+            ]
+          },
+          "decode_ms": {
+            "median": 2796.4,
+            "range": [
+              2777.3,
+              3056.7
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 91.5,
+            "range": [
+              83.8,
+              92.2
+            ]
+          },
+          "prompt_tokens": {
+            "median": 26338,
+            "range": [
+              26330,
+              26341
+            ]
+          },
+          "completion_tokens": {
+            "median": 256,
+            "range": [
+              256,
+              256
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "resources": {
+        "engine_peak_loading_plus_inference": {
+          "VmRSS_peak_GiB": 35.226761,
+          "VmHWM_peak_GiB": 35.226761,
+          "RssAnon_peak_GiB": null,
+          "RssFile_peak_GiB": null,
+          "RssShmem_peak_GiB": null
+        },
+        "engine_peak_steady_state": {
+          "VmRSS_peak_GiB": 35.226761,
+          "VmHWM_peak_GiB": 35.226761,
+          "RssAnon_peak_GiB": null,
+          "RssFile_peak_GiB": null,
+          "RssShmem_peak_GiB": null
+        },
+        "gpu": {
+          "peak_VRAM_MiB": {
+            "Titan": 23640.0,
+            "A2000": 1.0
+          },
+          "peak_temperature_C": {
+            "Titan": 79.0,
+            "A2000": 63.0
+          },
+          "steady_mean_total_power": {
+            "mean_simultaneous_total_gpu_power_W": 261.052967,
+            "samples": 91
+          },
+          "peak_power_W": {
+            "Titan": 298.11,
+            "A2000": 14.06
+          }
+        }
+      }
+    },
+    {
+      "model": "IQ3_XXS",
+      "mode": "dual",
+      "benchmark": {
+        "short": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 1.204561,
+            "range": [
+              1.190832,
+              1.222673
+            ]
+          },
+          "prefill_ms": {
+            "median": 1182.9,
+            "range": [
+              1168.8,
+              1200.6
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 69.3,
+            "range": [
+              69.1,
+              70.2
+            ]
+          },
+          "decode_ms": {
+            "median": 844.3,
+            "range": [
+              843.1,
+              888.2
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 66.3,
+            "range": [
+              63.0,
+              66.4
+            ]
+          },
+          "prompt_tokens": {
+            "median": 83,
+            "range": [
+              81,
+              83
+            ]
+          },
+          "completion_tokens": {
+            "median": 56,
+            "range": [
+              56,
+              56
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "long": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 139.914224,
+            "range": [
+              138.992642,
+              142.706443
+            ]
+          },
+          "prefill_ms": {
+            "median": 139722.6,
+            "range": [
+              138793.4,
+              142508.9
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 188.5,
+            "range": [
+              184.8,
+              189.8
+            ]
+          },
+          "decode_ms": {
+            "median": 3528.8,
+            "range": [
+              3509.3,
+              3714.4
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 72.5,
+            "range": [
+              68.9,
+              72.9
+            ]
+          },
+          "prompt_tokens": {
+            "median": 26337,
+            "range": [
+              26335,
+              26337
+            ]
+          },
+          "completion_tokens": {
+            "median": 256,
+            "range": [
+              256,
+              256
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "resources": {
+        "engine_peak_loading_plus_inference": {
+          "VmRSS_peak_GiB": 43.031681,
+          "VmHWM_peak_GiB": 43.031681,
+          "RssAnon_peak_GiB": null,
+          "RssFile_peak_GiB": null,
+          "RssShmem_peak_GiB": null
+        },
+        "engine_peak_steady_state": {
+          "VmRSS_peak_GiB": 43.031681,
+          "VmHWM_peak_GiB": 43.031681,
+          "RssAnon_peak_GiB": null,
+          "RssFile_peak_GiB": null,
+          "RssShmem_peak_GiB": null
+        },
+        "gpu": {
+          "peak_VRAM_MiB": {
+            "Titan": 23650.0,
+            "A2000": 6899.0
+          },
+          "peak_temperature_C": {
+            "Titan": 77.0,
+            "A2000": 77.0
+          },
+          "steady_mean_total_power": {
+            "mean_simultaneous_total_gpu_power_W": 203.498289,
+            "samples": 450
+          },
+          "peak_power_W": {
+            "Titan": 263.42,
+            "A2000": 42.88
+          }
+        }
+      }
+    },
+    {
+      "model": "IQ3_XXS",
+      "mode": "Titan-only",
+      "benchmark": {
+        "short": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 1.382044,
+            "range": [
+              1.351143,
+              1.407953
+            ]
+          },
+          "prefill_ms": {
+            "median": 1361.4,
+            "range": [
+              1330.9,
+              1386.9
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 61.0,
+            "range": [
+              60.6,
+              62.4
+            ]
+          },
+          "decode_ms": {
+            "median": 812.3,
+            "range": [
+              750.1,
+              833.7
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 71.4,
+            "range": [
+              67.2,
+              74.7
+            ]
+          },
+          "prompt_tokens": {
+            "median": 83,
+            "range": [
+              83,
+              84
+            ]
+          },
+          "completion_tokens": {
+            "median": 56,
+            "range": [
+              56,
+              58
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "long": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 24.4995,
+            "range": [
+              24.387537,
+              24.535547
+            ]
+          },
+          "prefill_ms": {
+            "median": 24275.3,
+            "range": [
+              24191.5,
+              24343.5
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 1084.9,
+            "range": [
+              1082.0,
+              1088.8
+            ]
+          },
+          "decode_ms": {
+            "median": 3373.2,
+            "range": [
+              3132.4,
+              3549.9
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 75.9,
+            "range": [
+              72.1,
+              81.7
+            ]
+          },
+          "prompt_tokens": {
+            "median": 26339,
+            "range": [
+              26336,
+              26340
+            ]
+          },
+          "completion_tokens": {
+            "median": 256,
+            "range": [
+              256,
+              256
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "resources": {
+        "engine_peak_loading_plus_inference": {
+          "VmRSS_peak_GiB": 42.114243,
+          "VmHWM_peak_GiB": 42.114243,
+          "RssAnon_peak_GiB": null,
+          "RssFile_peak_GiB": null,
+          "RssShmem_peak_GiB": null
+        },
+        "engine_peak_steady_state": {
+          "VmRSS_peak_GiB": 42.114246,
+          "VmHWM_peak_GiB": 42.114246,
+          "RssAnon_peak_GiB": null,
+          "RssFile_peak_GiB": null,
+          "RssShmem_peak_GiB": null
+        },
+        "gpu": {
+          "peak_VRAM_MiB": {
+            "Titan": 23652.0,
+            "A2000": 1.0
+          },
+          "peak_temperature_C": {
+            "Titan": 82.0,
+            "A2000": 75.0
+          },
+          "steady_mean_total_power": {
+            "mean_simultaneous_total_gpu_power_W": 256.540792,
+            "samples": 101
+          },
+          "peak_power_W": {
+            "Titan": 299.41,
+            "A2000": 26.25
+          }
+        }
+      }
+    },
+    {
+      "model": "IQ2_XS",
+      "mode": "expert-helper",
+      "benchmark": {
+        "short": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 1.010384,
+            "range": [
+              0.999759,
+              1.013185
+            ]
+          },
+          "prefill_ms": {
+            "median": 991.2,
+            "range": [
+              980.7,
+              993.9
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 81.6,
+            "range": [
+              77.7,
+              82.5
+            ]
+          },
+          "decode_ms": {
+            "median": 768.0,
+            "range": [
+              742.8,
+              776.1
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 75.5,
+            "range": [
+              74.7,
+              78.1
+            ]
+          },
+          "prompt_tokens": {
+            "median": 80,
+            "range": [
+              77,
+              82
+            ]
+          },
+          "completion_tokens": {
+            "median": 58,
+            "range": [
+              58,
+              58
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "long": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 23.443778,
+            "range": [
+              23.192092,
+              23.452474
+            ]
+          },
+          "prefill_ms": {
+            "median": 23229.8,
+            "range": [
+              22996.4,
+              23232.4
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 1133.7,
+            "range": [
+              1133.7,
+              1145.3
+            ]
+          },
+          "decode_ms": {
+            "median": 2856.3,
+            "range": [
+              2809.4,
+              3059.7
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 89.6,
+            "range": [
+              83.7,
+              91.1
+            ]
+          },
+          "prompt_tokens": {
+            "median": 26337,
+            "range": [
+              26336,
+              26338
+            ]
+          },
+          "completion_tokens": {
+            "median": 256,
+            "range": [
+              256,
+              256
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "resources": {
+        "engine_peak_loading_plus_inference": {
+          "VmRSS_peak_GiB": 36.164593,
+          "VmHWM_peak_GiB": 36.164593,
+          "RssAnon_peak_GiB": null,
+          "RssFile_peak_GiB": null,
+          "RssShmem_peak_GiB": null
+        },
+        "engine_peak_steady_state": {
+          "VmRSS_peak_GiB": 36.164589,
+          "VmHWM_peak_GiB": 36.164589,
+          "RssAnon_peak_GiB": null,
+          "RssFile_peak_GiB": null,
+          "RssShmem_peak_GiB": null
+        },
+        "gpu": {
+          "peak_VRAM_MiB": {
+            "Titan": 23646.0,
+            "A2000": 10791.0
+          },
+          "peak_temperature_C": {
+            "Titan": 82.0,
+            "A2000": 75.0
+          },
+          "steady_mean_total_power": {
+            "mean_simultaneous_total_gpu_power_W": 278.642065,
+            "samples": 92
+          },
+          "peak_power_W": {
+            "Titan": 295.53,
+            "A2000": 46.22
+          }
+        }
+      }
+    },
+    {
+      "model": "IQ3_XXS",
+      "mode": "expert-helper",
+      "benchmark": {
+        "short": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 1.437026,
+            "range": [
+              1.432586,
+              1.440844
+            ]
+          },
+          "prefill_ms": {
+            "median": 1416.7,
+            "range": [
+              1412.7,
+              1420.7
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 57.0,
+            "range": [
+              55.2,
+              58.6
+            ]
+          },
+          "decode_ms": {
+            "median": 781.7,
+            "range": [
+              741.5,
+              782.6
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 75.4,
+            "range": [
+              74.2,
+              78.2
+            ]
+          },
+          "prompt_tokens": {
+            "median": 81,
+            "range": [
+              78,
+              83
+            ]
+          },
+          "completion_tokens": {
+            "median": 58,
+            "range": [
+              58,
+              59
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "long": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 24.494121,
+            "range": [
+              24.337237,
+              24.502116
+            ]
+          },
+          "prefill_ms": {
+            "median": 24295.4,
+            "range": [
+              24141.5,
+              24301.5
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 1084.0,
+            "range": [
+              1083.6,
+              1091.0
+            ]
+          },
+          "decode_ms": {
+            "median": 2922.3,
+            "range": [
+              2822.5,
+              2988.5
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 87.6,
+            "range": [
+              85.7,
+              90.7
+            ]
+          },
+          "prompt_tokens": {
+            "median": 26337,
+            "range": [
+              26334,
+              26338
+            ]
+          },
+          "completion_tokens": {
+            "median": 256,
+            "range": [
+              256,
+              256
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "resources": {
+        "engine_peak_loading_plus_inference": {
+          "VmRSS_peak_GiB": 43.098175,
+          "VmHWM_peak_GiB": 43.098175,
+          "RssAnon_peak_GiB": null,
+          "RssFile_peak_GiB": null,
+          "RssShmem_peak_GiB": null
+        },
+        "engine_peak_steady_state": {
+          "VmRSS_peak_GiB": 43.098179,
+          "VmHWM_peak_GiB": 43.098179,
+          "RssAnon_peak_GiB": null,
+          "RssFile_peak_GiB": null,
+          "RssShmem_peak_GiB": null
+        },
+        "gpu": {
+          "peak_VRAM_MiB": {
+            "Titan": 23652.0,
+            "A2000": 10791.0
+          },
+          "peak_temperature_C": {
+            "Titan": 82.0,
+            "A2000": 76.0
+          },
+          "steady_mean_total_power": {
+            "mean_simultaneous_total_gpu_power_W": 268.689899,
+            "samples": 99
+          },
+          "peak_power_W": {
+            "Titan": 299.73,
+            "A2000": 47.27
+          }
+        }
+      }
+    }
+  ],
+  "budget_runs": [
+    {
+      "model": "IQ2_XS",
+      "mode": "Titan-only",
+      "memory_budget_GiB": 52,
+      "swap_max_bytes": 0,
+      "benchmark": {
+        "short": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 0.959148,
+            "range": [
+              0.953768,
+              0.963782
+            ]
+          },
+          "prefill_ms": {
+            "median": 939.5,
+            "range": [
+              933.5,
+              944.6
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 87.9,
+            "range": [
+              86.2,
+              88.9
+            ]
+          },
+          "decode_ms": {
+            "median": 724.1,
+            "range": [
+              717.4,
+              759.2
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 78.7,
+            "range": [
+              75.1,
+              79.5
+            ]
+          },
+          "prompt_tokens": {
+            "median": 83,
+            "range": [
+              81,
+              83
+            ]
+          },
+          "completion_tokens": {
+            "median": 57,
+            "range": [
+              57,
+              57
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "long": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 23.348488,
+            "range": [
+              23.208632,
+              23.355657
+            ]
+          },
+          "prefill_ms": {
+            "median": 23154.7,
+            "range": [
+              22977.8,
+              23163.9
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 1137.5,
+            "range": [
+              1137.1,
+              1146.1
+            ]
+          },
+          "decode_ms": {
+            "median": 2842.2,
+            "range": [
+              2192.0,
+              3310.0
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 78.0,
+            "range": [
+              77.3,
+              90.1
+            ]
+          },
+          "prompt_tokens": {
+            "median": 26339,
+            "range": [
+              26335,
+              26340
+            ]
+          },
+          "completion_tokens": {
+            "median": 256,
+            "range": [
+              171,
+              256
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "resources": {
+        "engine_peak_loading_plus_inference": {
+          "VmRSS_peak_GiB": 35.224358,
+          "VmHWM_peak_GiB": 35.224358,
+          "RssAnon_peak_GiB": null,
+          "RssFile_peak_GiB": null,
+          "RssShmem_peak_GiB": null
+        },
+        "engine_peak_steady_state": {
+          "VmRSS_peak_GiB": 35.224361,
+          "VmHWM_peak_GiB": 35.224361,
+          "RssAnon_peak_GiB": null,
+          "RssFile_peak_GiB": null,
+          "RssShmem_peak_GiB": null
+        },
+        "gpu": {
+          "peak_VRAM_MiB": {
+            "Titan": 23644.0,
+            "A2000": 1.0
+          },
+          "peak_temperature_C": {
+            "Titan": 82.0,
+            "A2000": 71.0
+          },
+          "steady_mean_total_power": {
+            "mean_simultaneous_total_gpu_power_W": 264.800435,
+            "samples": 92
+          },
+          "peak_power_W": {
+            "Titan": 285.09,
+            "A2000": 15.2
+          }
+        }
+      },
+      "cgroup_steady_state": {
+        "current_peak_observed_bytes": 54503305216,
+        "peak_bytes": 54563143680,
+        "memory_max_bytes": 55834574848,
+        "events_max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "memory_stat_anon_peak_bytes": null,
+        "memory_stat_file_peak_bytes": null
+      },
+      "rss_split_peak_GiB": {
+        "VmRSS_peak_GiB": 35.224361,
+        "VmHWM_peak_GiB": 35.224361,
+        "RssAnon_peak_GiB": null,
+        "RssFile_peak_GiB": null,
+        "RssShmem_peak_GiB": null
+      },
+      "expert_memory_mode": "normal"
+    },
+    {
+      "model": "IQ3_XXS",
+      "mode": "Titan-only",
+      "memory_budget_GiB": 52,
+      "swap_max_bytes": 0,
+      "benchmark": {
+        "short": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 1.336158,
+            "range": [
+              1.324922,
+              1.373022
+            ]
+          },
+          "prefill_ms": {
+            "median": 1315.5,
+            "range": [
+              1304.4,
+              1351.7
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 62.1,
+            "range": [
+              61.6,
+              62.9
+            ]
+          },
+          "decode_ms": {
+            "median": 824.1,
+            "range": [
+              772.6,
+              1010.6
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 68.0,
+            "range": [
+              55.4,
+              72.5
+            ]
+          },
+          "prompt_tokens": {
+            "median": 82,
+            "range": [
+              81,
+              84
+            ]
+          },
+          "completion_tokens": {
+            "median": 56,
+            "range": [
+              56,
+              56
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "long": {
+          "rounds": 3,
+          "ttft_s": {
+            "median": 28.748473,
+            "range": [
+              28.705163,
+              28.836681
+            ]
+          },
+          "prefill_ms": {
+            "median": 28557.2,
+            "range": [
+              28508.8,
+              28644.5
+            ]
+          },
+          "prefill_tokens_per_second": {
+            "median": 922.3,
+            "range": [
+              919.4,
+              923.9
+            ]
+          },
+          "decode_ms": {
+            "median": 3541.2,
+            "range": [
+              3311.6,
+              4473.6
+            ]
+          },
+          "decode_tokens_per_second": {
+            "median": 72.3,
+            "range": [
+              57.2,
+              77.3
+            ]
+          },
+          "prompt_tokens": {
+            "median": 26338,
+            "range": [
+              26337,
+              26338
+            ]
+          },
+          "completion_tokens": {
+            "median": 256,
+            "range": [
+              256,
+              256
+            ]
+          },
+          "cache_n": {
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "resources": {
+        "engine_peak_loading_plus_inference": {
+          "VmRSS_peak_GiB": 51.77092,
+          "VmHWM_peak_GiB": 51.783813,
+          "RssAnon_peak_GiB": null,
+          "RssFile_peak_GiB": null,
+          "RssShmem_peak_GiB": null
+        },
+        "engine_peak_steady_state": {
+          "VmRSS_peak_GiB": 51.770916,
+          "VmHWM_peak_GiB": 51.783813,
+          "RssAnon_peak_GiB": 2.090096,
+          "RssFile_peak_GiB": 22.983135,
+          "RssShmem_peak_GiB": 27.015503
+        },
+        "gpu": {
+          "peak_VRAM_MiB": {
+            "Titan": 23706.0,
+            "A2000": 1.0
+          },
+          "peak_temperature_C": {
+            "Titan": 82.0,
+            "A2000": 66.0
+          },
+          "steady_mean_total_power": {
+            "mean_simultaneous_total_gpu_power_W": 247.661017,
+            "samples": 118
+          },
+          "peak_power_W": {
+            "Titan": 284.43,
+            "A2000": 14.56
+          }
+        }
+      },
+      "cgroup_steady_state": {
+        "current_peak_observed_bytes": 55834513408,
+        "peak_bytes": 55834574848,
+        "memory_max_bytes": 55834574848,
+        "events_max": 360,
+        "oom": 0,
+        "oom_kill": 0,
+        "memory_stat_anon_peak_bytes": 2449289216,
+        "memory_stat_file_peak_bytes": 53433896960
+      },
+      "rss_split_peak_GiB": {
+        "VmRSS_peak_GiB": 51.770916,
+        "VmHWM_peak_GiB": 51.783813,
+        "RssAnon_peak_GiB": 2.090096,
+        "RssFile_peak_GiB": 22.983135,
+        "RssShmem_peak_GiB": 27.015503
+      },
+      "expert_memory_mode": "resident",
+      "resident_cache_complement_GiB": 26.11
+    }
+  ],
+  "capacity_check": {
+    "model": "IQ3_XXS",
+    "mode": "Titan-only resident",
+    "configured_context_tokens": 131072,
+    "kv_resident_tokens": 32768,
+    "memory_budget_GiB": 52,
+    "swap_max_bytes": 0,
+    "samples": [
+      {
+        "actual_prompt_tokens": 59995,
+        "ttft_s": 63.752946,
+        "prefill_ms": 63482.1,
+        "completion_tokens": 13,
+        "cache_n": 0,
+        "passkey_correct": true,
+        "prefill_tokens_per_second": 945.1
+      },
+      {
+        "actual_prompt_tokens": 119972,
+        "ttft_s": 136.439085,
+        "prefill_ms": 135897.2,
+        "completion_tokens": 13,
+        "cache_n": 0,
+        "passkey_correct": true,
+        "prefill_tokens_per_second": 882.8
+      }
+    ],
+    "all_passkeys_correct": true,
+    "oom": 0,
+    "oom_kill": 0,
+    "limitation": "one request at each ~60K/~120K length; capacity/passkey sanity check only, not repeated performance or stability evidence",
+    "cgroup_peak_bytes": 55834771456,
+    "cgroup_memory_max_bytes": 55834574848,
+    "engine_peak_RSS_GiB": {
+      "VmRSS": 51.795483,
+      "VmHWM": 51.811245,
+      "RssAnon": 2.535912,
+      "RssFile": 21.709339,
+      "RssShmem": 28.987186
+    },
+    "gpu_peak": {
+      "Titan": {
+        "peak_memory_used_mib": 23682.0,
+        "peak_power_w": 295.54,
+        "peak_temperature_c": 83.0
+      },
+      "A2000": {
+        "peak_memory_used_mib": 1.0,
+        "peak_power_w": 13.44,
+        "peak_temperature_c": 60.0
+      }
+    }
+  },
+  "limits": [
+    "两道固定短质量题不足以证明量化质量优劣；此公开数据不包含质量输出原文。",
+    "VmRSS、VmHWM、RssAnon、RssFile、RssShmem的各自峰值可能不在同一时刻，不可相加；进程RSS含file mapping/cache，不能等同不可回收RAM。",
+    "整盘I/O计数不是进程独占I/O；budget cgroup文件缓存计费属于整个cgroup，存在共享归属影响。",
+    "GPU稳态总功耗为每个采样时点将两卡功耗相加后再对时点取平均；设备各自峰值不能相加成同步峰值。",
+    "缺失资源字段使用null，不以0代替。",
+    "max_tokens=256 是输出上限，不是每次固定生成长度；IQ2 budget 有一轮 long 在 EOS 提前结束，仅生成 171 tokens，因此 decode 差异不能单独归因于 memory limit。",
+    "各组测试前未统一清空 OS page cache。"
+  ],
+  "date_timezone": "Asia/Shanghai"
+}

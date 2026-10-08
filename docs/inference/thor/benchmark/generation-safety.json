@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "purpose": "New public generation-safety load: natural long-form prose that must end with EOS, plus a long ignore-EOS stream used only to exercise client abort and short-request recovery. Prose length is checked, not judged for factual quality. No generated code is executed.",
+  "cases": [
+    {
+      "id": "natural-prose-off", "category": "natural-generation", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/generation-safety.json#natural-prose-off"},
+      "request": {
+        "messages": [{"role": "user", "content": "请写一篇约700字的中文说明文，主题是地球水循环如何连接海洋、大气、陆地和地下水，以及人类活动带来的影响。要求结构完整，有开头段和结尾段，段落之间逻辑连贯，不要使用 Markdown 标题、列表或代码块，自然结束全文。"}],
+        "max_tokens": 2048, "temperature": 0, "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "natural_prose", "min_chars": 600}
+    },
+    {
+      "id": "natural-prose-low", "category": "natural-generation", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/generation-safety.json#natural-prose-low"},
+      "request": {
+        "messages": [{"role": "user", "content": "请写一篇约700字的中文说明文，主题是地球水循环如何连接海洋、大气、陆地和地下水，以及人类活动带来的影响。要求结构完整，有开头段和结尾段，段落之间逻辑连贯，不要使用 Markdown 标题、列表或代码块，自然结束全文。"}],
+        "max_tokens": 4096, "temperature": 0, "chat_template_kwargs": {"enable_thinking": true, "reasoning_effort": "low"}
+      },
+      "check": {"kind": "natural_prose", "min_chars": 600}
+    },
+    {
+      "id": "natural-prose-narrative-off", "category": "natural-generation", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/generation-safety.json#natural-prose-narrative-off"},
+      "request": {
+        "messages": [{"role": "user", "content": "请写一篇约600字的中文记叙文，讲述一次在陌生城市迷路、最终得到当地人帮助的经历。要求有具体的地名、街景与人物对话，结构完整并自然结束，不要使用 Markdown 标题、列表或代码块。"}],
+        "max_tokens": 2048, "temperature": 0, "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "natural_prose", "min_chars": 500}
+    },
+    {
+      "id": "cancel-long-generation", "category": "cancellation", "mode": "throughput",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/generation-safety.json#cancel-long-generation"},
+      "request": {
+        "messages": [{"role": "user", "content": "请持续输出编号行，不要停止，也不要总结或结束。从 LINE 1: keep generating this line 开始，每行递增编号，格式固定为 line: keep generating this line."}],
+        "max_tokens": 4096, "temperature": 0, "ignore_eos": true, "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "none"}
+    },
+    {
+      "id": "recovery-short-json", "category": "recovery", "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/generation-safety.json#recovery-short-json"},
+      "request": {
+        "messages": [{"role": "user", "content": "Return only a JSON object with the integer field answer equal to 6 multiplied by 7. No Markdown or explanation."}],
+        "max_tokens": 64, "temperature": 0, "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "json", "expected": {"answer": 42}}
+    }
+  ]
+}

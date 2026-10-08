@@ -1,7 +1,7 @@
 # Qwen3.8 Flash Next：Lazycat 应用部署与基准测试
 
-[Thor 概览](../../README.md) ·
-[先前的本地适配实验](original.md)
+[Thor 概览](../../../../inference/thor/README.md) ·
+[先前的本地适配实验](../../../../inference/thor/model/qwen3.8-flash-next/original.md)
 
 检查与试验日期：2026-09-18。本文记录一台 Thor T5000 上运行的官方 Lazycat 应用及
 预构建算力舱运行时，与此前本地组装、低上下文长度的 K1/K3 实验分开。
@@ -13,6 +13,9 @@
   `2.2.4-nightly.20260917081206+43444c8`;
 - Lazycat Qwen 3.8 Flash Next 应用/LPK：`0.1.40`；
 - 算力运行时：`runtime-134-0.1.6`。
+
+2026-10-02 的重部署记录见[下文](#2026-10-02-重部署模型制品-018)；分发链路、
+消融工具链与两处精度修复（GDN 状态 FP32、BF16 lm_head）均有记录。
 
 算力舱控制面板将风扇设为性能模式（`风扇-性能模式`）。
 私有地址、主机名、用户和设备标识符已省略。
@@ -93,7 +96,7 @@ vLLM 报告加载的目标模型和草稿模型共占 78.67 GiB。观察到的�
 配置和环境通过 `VLLM_QWEN4_DISABLE_COOP_TOPK=1` 请求禁用 cooperative-top-k。
 然而，此 vLLM 构建版本将该变量报告为未知，已安装的稀疏索引器源码也不读取该变量，
 其 SM110 选择器条件仍然存在。因此，没有执行追踪就不能认为预期的禁用已生效。
-这与[先前本地实验](original.md#确定性-qsa-选择正确性回归)中
+这与[先前本地实验](../../../../inference/thor/model/qwen3.8-flash-next/original.md#确定性-qsa-选择正确性回归)中
 验证过的确定性选择器补丁不同。
 
 ## API 与功能观察
@@ -210,7 +213,192 @@ JSON 响应则为两个。观察到的非确定性可能与多种批处理、QSA
 
 原始请求元数据、计数器和遥测数据保存在公开仓库之外。
 
+## 2026-10-02 重部署（模型制品 0.1.8）
+
+微服本体缓存 LPK 仍为 `0.1.48`，本次更新的是模型制品与运行时：安装包含
+运行时镜像归档 `qwen-3.8-flash-next-t5000-0.1.8.tar`（9.93 GB，导入后即
+`runtime-124-0.1.8`）与网盘 `target/` 权重工件（约 126 GiB：9+1 片消融后
+NVFP4 主体、8 片 `model-plefp8-*` PLE FP8 权重及脚本，见下文清单）。
+部署完成后算力舱运行时镜像为
+`registry.lazycat.cloud/catdogai/qwen38-flash-next:runtime-124-0.1.8`。
+注意权重清单钉的检查点修订 `2065365912…` 与基线 0.1.6 时代相同——0.1.8
+未更换权重，变化是打包（权重从运行时镜像中拆出独立分发）、运行时镜像
+重建及下述服务参数修复。
+
+### 背景：长上下文多语言漂移
+
+上游开发者博客披露，未审查版在长上下文下出现多语言乱码，归因为两处精度
+损失：GDN 循环状态使用 BF16，舍入误差随生成长度与层数累积（逐层对比显示
+相对误差从第 0 层约 0.017% 增长到第 43 层约 12.69%）；量化的 lm_head 扰动
+相近 token 的概率排序并在自回归中放大。修复为 GDN 状态恢复 FP32、lm_head
+使用原生 BF16（主体保持 NVFP4），修复后连续生成约 1.1 万 token 未再漂移，
+代价是显存占用增加、并发容量与速度下降。博客建议生产使用原版量化，破甲
+仅作研究用途；该部署因此处于被上游搁置的状态。
+
+### 分发链路
+
+#### 下载机制与取证方法
+
+- 下载器为微服上 aipod_backend 容器内的 aria2c（RPC 模式，`--rpc-secret`
+  在 cmdline 中被打码，RPC 不可直接用）。任务清单与日志在容器内
+  `/lzcapp/var/aipod_backend/aria2/session.txt` 与 `aria2.log`，宿主侧可经
+  `/proc/<pid>/root/…` 读取；取证时对 aria2c 发 `SIGSTOP` 可即时冻结全部
+  下载（`SIGCONT` 恢复），不依赖 RPC。若需 RPC 自动化：真实 secret 不在
+  cmdline，可扫描 `server.amd64` 进程内存中的 `--rpc-secret=` 残留获得，
+  随后可经容器内 `127.0.0.1:<port>/jsonrpc` 查询/改并发。注意 ModelScope
+  对单连接限速（约 6–11 MB/s），提高每服务器连接数到 16 会触发 TLS 握手
+  失败并被后端整体暂停；取消部署后 session 中的陈旧任务不会自动清除，
+  `unpauseAll` 之类操作可能把它们复活并烧掉代理流量，需按 URL 过滤清理。
+- 任务 URL 形如
+  `https://modelscope.cn/models/<org>/<repo>/resolve/<rev>/<file>` 或
+  `https://huggingface.co/<org>/<repo>/resolve/<rev>/<file>`，302 重定向到
+  各自的 LFS CDN（ModelScope 为 `cdn-lfs-cn-1.modelscope.cn`）。
+- 每份落盘文件附 `.aipod-verified.json`（path、size、sha256，不含来源
+  URL）；来源信息只存在于 aria2 会话/日志中。
+- 安装时下载源可选 HF/ModelScope，切换 UI 无版本钉扎，钉扎发生在
+  应用清单内部（LPK 0.1.51 起）。
+
+#### 观察到的来源（0.1.8 制品）
+
+控制面二进制（`qwen38-flash-next-lpk`，6897848 字节）内嵌完整下载清单，
+schema `model-host.runtime-model-manifest.v1`、完整性策略
+`size-and-sha256`，可用 `dd` + 可打印串提取。清单与实测结论：
+
+- **权重清单**（role `target`，双源同哈希、逐字节一致）：
+  - HF：`gorbatjovy/qwen3.8-flash-next-abliterated-NVFP4-plefp8` @
+    `2065365912…`
+  - ModelScope：`manateelazycat/Qwen3.8-Flash-Next-NVFP4-PLEFP8-20653659`
+    @ `3e0e2711…`
+  - 文件集：主体分片 `model-00001..00007` 与 `00009`-of-00009（各约
+    10 GB，**命名中不存在 00008**）、嫁接分片
+    `model-00010-of-00010-graft.safetensors`（6.1 GB，含 MTP 行）、
+    `model-plefp8-00000..00007`-of-00008（8 × 约 6.4 GB）、
+    `model.safetensors.index.json`（24.6 MB）、config/tokenizer 及
+    消融脚本（`apply_ablation_flashnext.py`、`graft_nvfp4.py`、
+    `fix_nvfp4_config.py`）。合计约 135.2 GB（≈126 GiB）。
+  - 抽验（HF LFS oid 与清单 sha256）：`model-00001` `6b7fff8d…` ✓、
+    `model-plefp8-00000` `f8fbc923…` ✓、`config.json` 下载后实测
+    `35ce005b…` ✓。早前"两源工件不同代"的结论系比较方法错误
+    （HF API 的 git blobId 是 SHA-1，非内容 sha256），已撤回。
+- **运行时归档清单**：`qwen-3.8-flash-next-t5000-0.1.8.tar`
+  （9,929,953,280 B，sha256 `d5c25c4f…`）——这是**运行时镜像归档而非
+  权重**，导入后 imageId `acb9d00f…` 即
+  `registry.lazycat.cloud/catdogai/qwen38-flash-next:runtime-124-0.1.8`
+  本尊。归档同样双源：HF `manateelazycat/Qwen3.8-Flash-Next-Uncensored-Runtime`
+  @ `883ffe9f…`，ModelScope `manateelazycat/Qwen3.8-Flash-Next-UC-Runtime`
+  @ `271a4796…`。
+- **组装**：分片下载到网盘 `target/` 并逐文件 size+sha256 校验 → 传算力舱
+  按修订版键入缓存 → 运行时归档导入 Docker → vLLM 挂载 `target/` 为
+  `/model`；MTP/嫁接行由 `graft_nvfp4.py` 系脚本按 `index.json` 装配
+  （运行时兼容"异构 target/MTP 行"）。上游链条：
+  `windowsxp811203/Qwen3.8-Flash-Next-Abliterated-NVFP4`（消融本体，
+  @ `ed55beec…`）→ PLE 表 FP8 重排（173.6 → 125.9 GiB）→
+  `gorbatjovy/…-plefp8`。
+
+#### 缓存层级与部署行为
+
+部署按三层缓存判定，全部未命中才真正下载：
+
+1. 用户网盘工件目录（`AI 模型/T5000 …/`，为后续安装暂存）；
+2. 算力舱本地按检查点修订版组织的权重缓存
+   `/var/lib/lzc-ai-agent/data/qwen38-flash-next/models/<checkpoint-rev>/`
+   （0.1.51 升级时由网盘预置；目录键为检查点修订 `2065365912…`，与
+   下载源修订无关）；
+3. 算力舱上的运行时镜像。
+
+实测行为：网盘清空后部署仍命中第 2 层（零下载、约 7 分钟完成）；挪走
+第 2 层后 HF 部署立即出全量下载计划。LPK 升级不会重启 Pod 上已运行的
+服务容器；0.1.48 → 0.1.51（控制面 `0e8678f9…` → `edb7caf1…`）把
+未审查版 0.1.8 制品解析到与之前相同的 `runtime-124-0.1.8`，属防御性
+修复（专用仓库防止未审查版与原版运行时元数据互相覆盖），未换运行时。
+
+#### 坑位记录
+
+- 磁盘满会在写入中途损坏 `.aria2` 控制文件（0 字节），此后每次重试
+  2 秒内 `Download aborted`，需删除对应 `.part` 与控制文件重来
+  （2026-10-02 15:22 事故）。
+- 网盘目录删除后空间被 btrfs 每日快照钉住
+  （`snapshot/daily/beacon/document/beacon.<date><time>`），清缓存需连
+  快照一并删除，且注意快照生成时刻与删除时刻的先后。
+- LPK 升级会对既有工件做全量 SHA256 校验，期间微服负载高到 sshd 无法
+  完成认证（约两小时），属正常现象，勿在此时段判定故障。
+- 微服 SSH 优先用 TPM key（`ssh-tpm-agent.sock`）；gpg/YubiKey 通道会
+  在 PIN 缓存过期后频繁弹 pinentry。
+
+### 服务参数变化
+
+引擎仍为 vLLM `0.0.0+18f658bb3185`（Torch 2.11.0、Transformers 5.12.1、
+FlashInfer 0.6.18 均未变）。相对基线的变化：
+
+| 设置 | 基线 0.1.40 | 本次 0.1.8 |
+| --- | --- | --- |
+| Mamba/GDN 循环状态 | BF16 | `--mamba-ssm-cache-dtype float32` |
+| 输出头 | NVFP4 候选优先 | 原生 BF16（FP8 实验安装但 `enabled=False`） |
+| KV 容量 | 351,829 token | 271,973 token（同一 12.8 GiB 分配） |
+| 工具解析器 | Qwen3 工具调用 | 显式 `--tool-call-parser qwen3_coder` |
+| 启动健壮性 | — | 新增预热与超时环境变量（warmup targets、`VLLM_USE_BREAKABLE_CUDAGRAPH=1`、ready timeout 1800 s） |
+
+未变的参数：模型名 `qwen-3.8-flash-next-uncensored`、265,000-token 硬上限
+（320K YaRN 视图）、8 序列、8,704 批处理 token、禁用前缀缓存、一层 MTP
+K16、CUDA Graph FULL_DECODE_ONLY 捕获 [1, 17]、PLE FP8 内存映射（32 线程、
+固定内存、2,048 行分块）、默认采样 0.3/0.95/20。
+
+KV 容量下降 23% 即博客所述显存代价的直接体现：同一 12.8 GiB 下仅能容纳
+约 1.03 个完整 265K 请求（基线 1.33 个）。
+
+### 基准复测（2026-10-02，性能风扇）
+
+负载提示词、输出上限（中文 128/代码 256 固定长度、JSON 自然停止）、温度
+为零、禁用思考、预热与计时口径均与基线一致；种子固定为 42（基线未记录）。
+接受/提议 token 取 Prometheus 计数器增量。
+
+#### 单流
+
+| 负载 | 输出 token 数 | 解码速率 | 中位数 | 首个内容延迟中位数 | MTP 接受 / 提议 |
+| --- | ---: | --- | ---: | ---: | ---: |
+| 中文 | 128 | 11.85, 12.17, 13.26 | 12.17 tokens/s | 0.362 s | 226 / 2,496 (9.1%) |
+| 代码 | 256 | 36.20, 36.89, 34.21 | 36.20 tokens/s | 0.383 s | 665 / 1,696 (39.2%) |
+| JSON | 15, 15, 15 | 35.23, 34.53, 34.52 | 34.53 tokens/s | 0.378 s | 48 / 96 (50.0%) |
+
+相对基线：中文 −35.0%、代码 −38.3%、JSON −35.8%，而 MTP 接受率基本持平
+（9.1%/39.2%/50.0% 对 9.8%/41.8%/51.0%）——速度损失来自 FP32 状态与 BF16
+输出头的每步开销，而非推测解码失效。首个内容延迟 0.36–0.40 秒（基线
+0.305–0.323 秒）。
+
+#### 八请求并发
+
+| 批次 | 汇总解码速率 | 批次总耗时 | 单请求速率中位数 | 单请求 TTFC 中位数 | 接受 / 提议 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 58.38 tokens/s | 18.01 s | 32.56 tokens/s | 7.533 s | 938 / 1,968 (47.7%) |
+| 2 | 58.82 tokens/s | 17.90 s | 33.98 tokens/s | 7.520 s | 950 / 1,952 (48.7%) |
+| 3 | 57.17 tokens/s | 18.35 s | 32.09 tokens/s | 7.513 s | 943 / 2,016 (46.8%) |
+
+汇总速率中位数 58.38 tokens/s，比基线 135.84 低 57.0%；批次耗时从约 8 秒
+增至约 18 秒。单请求解码速率中位数仅降约 10%（32–34 对 35–37.5 tokens/s），
+但单请求 TTFC 中位数从 2.35–3.34 秒升至 7.5 秒，`request_queue_time_seconds`
+累计 215 秒（100 个请求）：请求明显排队而非并行解码。结合
+`kv_cache_max_concurrency=1.03` 与 FP32 GDN 状态池，判断并发车道被状态
+容量压缩；确切池大小未从指标中核实，记为现象。
+
+#### 预填充与上下文容量
+
+5,001-token 提示词 + 32 输出 token：首个内容延迟 3.027、2.996、3.287 秒，
+中位数 3.027 秒（基线 2.945 秒，+2.8%，基本持平）。
+
+260,001 输入 + 1 输出成功完成，整请求 179.14 秒（基线 175.73 秒），计算
+速率约 1,451 tokens/s（基线 1,486）。遥测覆盖 472 个一秒样本：`VDD_GPU`
+平均 45.62 W、峰值 51.73 W（基线 49.74/51.31 W），GPU 温度平均 56.68 C、
+峰值 61.91 C（基线峰值 59 C），系统 RAM 平均 113.7 GB、峰值 113.8 GB。
+265,001-token 请求在推理前被 HTTP 400 拒绝，上限仍为 265,000 token。
+
+#### 小结
+
+精度修复（FP32 GDN 状态 + BF16 lm_head）的代价集中在解码侧：单流
+−35~38%，八请求并发聚合 −57%（排队导致）；预填充几乎不受影响。与上游
+博客"并发量和生成速度有所下降"的描述一致且幅度更大，支持其"破甲仅作
+研究用途"的结论。
+
 ## 参考资料
 
-- [先前的本地 Qwen3.8 Flash Next 实验](original.md)
-- [厂商公布的性能快照](../../README.md#厂商公布的性能快照)
+- [先前的本地 Qwen3.8 Flash Next 实验](../../../../inference/thor/model/qwen3.8-flash-next/original.md)
+- [厂商公布的性能快照](../../../../inference/thor/README.md#厂商公布的性能快照)

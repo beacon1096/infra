@@ -1,0 +1,260 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "historical-device-tree-256",
+      "category": "device-tree",
+      "mode": "throughput",
+      "provenance": {"kind": "historical-exact", "source": "docs/inference/thor/model/qwen3.8-27b/original.md"},
+      "request": {
+        "messages": [{"role": "user", "content": "\u7528\u4e2d\u6587\u8be6\u7ec6\u89e3\u91ca\u8bbe\u5907\u6811\u5982\u4f55\u5e2e\u52a9Linux\u542f\u52a8\uff0c\u5206\u4e94\u70b9\u8bf4\u660e\uff0c\u7ea6400\u5b57\u3002"}],
+        "max_tokens": 256,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "none"}
+    },
+    {
+      "id": "historical-prime-256",
+      "category": "prime-code",
+      "mode": "throughput",
+      "provenance": {"kind": "historical-exact", "source": "docs/inference/thor/model/qwen3.8-27b/original.md"},
+      "request": {
+        "messages": [{"role": "user", "content": "\u8bf7\u5199\u4e00\u4e2aPython\u51fd\u6570\u5224\u65ad\u6574\u6570\u662f\u5426\u662f\u8d28\u6570\uff0c\u5e76\u7ed9\u51fa\u4e94\u4e2a\u6d4b\u8bd5\u7528\u4f8b\uff0c\u7136\u540e\u89e3\u91ca\u65f6\u95f4\u590d\u6742\u5ea6\u3002"}],
+        "max_tokens": 256,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "none"}
+    },
+    {
+      "id": "historical-lru-1024",
+      "category": "lru-code",
+      "mode": "throughput",
+      "provenance": {"kind": "historical-exact", "source": "docs/inference/thor/model/qwen3.8-27b/original.md"},
+      "request": {
+        "messages": [{"role": "user", "content": "\u8bf7\u5b9e\u73b0\u4e00\u4e2a\u5b8c\u6574\u7684Python LRU\u7f13\u5b58\u7c7b\uff0c\u4f7f\u7528\u53cc\u5411\u94fe\u8868\u548c\u5b57\u5178\uff0c\u652f\u6301get\u548cput\uff0c\u63d0\u4f9b\u8be6\u5c3d\u7684\u5355\u5143\u6d4b\u8bd5\u3002\u76f4\u63a5\u8f93\u51fa\u4ee3\u7801\uff0c\u5c3d\u53ef\u80fd\u5b8c\u6574\u3002"}],
+        "max_tokens": 1024,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "none"}
+    },
+    {
+      "id": "historical-water-cycle-128",
+      "category": "water-cycle",
+      "mode": "throughput",
+      "provenance": {"kind": "historical-exact", "source": "docs/inference/thor/model/qwen3.8-flash-next/original.md"},
+      "request": {
+        "messages": [{"role": "user", "content": "\u8bf7\u5199\u4e00\u7bc7\u8be6\u7ec6\u7684\u79d1\u666e\u6587\u7ae0\uff0c\u89e3\u91ca\u5730\u7403\u6c34\u5faa\u73af\u5982\u4f55\u8fde\u63a5\u6d77\u6d0b\u3001\u5927\u6c14\u3001\u9646\u5730\u548c\u5730\u4e0b\u6c34\uff0c\u5e76\u8ba8\u8bba\u4eba\u7c7b\u6d3b\u52a8\u7684\u5f71\u54cd\u3002"}],
+        "max_tokens": 128,
+        "ignore_eos": true,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "none"}
+    },
+    {
+      "id": "historical-interval-256",
+      "category": "interval-code",
+      "mode": "throughput",
+      "provenance": {"kind": "historical-exact", "source": "docs/inference/thor/model/qwen3.8-flash-next/original.md"},
+      "request": {
+        "messages": [{"role": "user", "content": "Write a Python function that merges overlapping integer intervals. Include type hints and three assert examples. Output only code."}],
+        "max_tokens": 256,
+        "ignore_eos": true,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "none"}
+    },
+    {
+      "id": "historical-json-80",
+      "category": "json",
+      "mode": "throughput",
+      "provenance": {"kind": "historical-exact", "source": "docs/inference/thor/model/qwen3.8-flash-next/original.md"},
+      "request": {
+        "messages": [{"role": "user", "content": "\u4ec5\u8f93\u51fa\u4e00\u4e2aJSON\u5bf9\u8c61\uff0c\u5305\u542bcity\u503c\u5317\u4eac\uff0ccountry\u503c\u4e2d\u56fd\uff0cnumber\u503c42\uff0c\u4e0d\u8981Markdown\u3002"}],
+        "max_tokens": 80,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "none"}
+    },
+    {
+      "id": "exact-short-output",
+      "category": "exact-output",
+      "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/fixtures.json#exact-short-output"},
+      "request": {
+        "messages": [{"role": "user", "content": "Compute 17 * 23 - 19. Reply with only the decimal integer, without punctuation, whitespace or explanation."}],
+        "max_tokens": 32,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "exact", "expected": "372"}
+    },
+    {
+      "id": "python-interval-repair-ast",
+      "category": "python-repair",
+      "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/fixtures.json#python-interval-repair-ast"},
+      "request": {
+        "messages": [{"role": "user", "content": "Repair this Python function for closed integer intervals. Accept unsorted input, merge overlapping intervals (including a shared endpoint), handle empty input and negative bounds, and do not mutate the caller's input. Keep the name merge_intervals, add type hints and at least five assert examples covering these requirements. Output only Python code without Markdown.\n\ndef merge_intervals(intervals):\n    result = [intervals[0]]\n    for start, end in intervals[1:]:\n        if start < result[-1][1]:\n            result[-1][1] = end\n        else:\n            result.append([start, end])\n    return result"}],
+        "max_tokens": 2048,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "python_exec", "function": "merge_intervals", "minimum_asserts": 5, "tests": [{"call": "merge_intervals([[1,3],[2,6],[8,10],[15,18]])", "expected": [[1,6],[8,10],[15,18]]}, {"call": "merge_intervals([[1,4],[4,5]])", "expected": [[1,5]]}, {"call": "merge_intervals([])", "expected": []}, {"call": "merge_intervals([[-3,-1],[-2,2]])", "expected": [[-3,2]]}, {"call": "merge_intervals([[5,6],[1,3],[2,4]])", "expected": [[1,4],[5,6]]}, {"call": "(lambda iv: [merge_intervals(iv), iv])([[1,3],[2,6]])", "expected": [[[1,6]],[[1,3],[2,6]]]}]}
+    },
+    {
+      "id": "agent-plan-thinking-low",
+      "category": "operations-plan",
+      "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/fixtures.json#agent-plan-thinking-low"},
+      "request": {
+        "messages": [{"role": "user", "content": "Write an operations agent plan for a fictional inference service: after a deployment, short requests succeed but long requests sometimes time out. There is no evidence yet of OOM or a cache hit. You have read-only access to request timings, usage counters, service logs and sampled memory; changes require operator approval. Propose an ordered investigation separating queueing, cold prefill, decode and gateway deadlines. Explain how to establish cache reuse rather than infer it from labels. Define stop conditions, validation and rollback criteria. Do not run commands, invent measurements, disable safeguards or include real hosts or credentials."}],
+        "max_tokens": 4096,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": true, "reasoning_effort": "low"}
+      },
+      "check": {
+        "kind": "manual",
+        "criteria": [
+          "Human quality review required; this is not an automatic pass or a previously validated historical task.",
+          "Separates queueing, cold prefill, decode and gateway deadlines using observable timing boundaries.",
+          "Requires counters or backend evidence for cache reuse and distinguishes sampled memory from an exact peak.",
+          "Orders read-only diagnostics before approved changes and states stop, validation and rollback conditions without inventing evidence or weakening safeguards."
+        ]
+      }
+    },
+    {
+      "id": "agent-plan-thinking-medium",
+      "category": "operations-plan",
+      "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/fixtures.json#agent-plan-thinking-medium"},
+      "request": {
+        "messages": [{"role": "user", "content": "Write an operations agent plan for a fictional inference service: after a deployment, short requests succeed but long requests sometimes time out. There is no evidence yet of OOM or a cache hit. You have read-only access to request timings, usage counters, service logs and sampled memory; changes require operator approval. Propose an ordered investigation separating queueing, cold prefill, decode and gateway deadlines. Explain how to establish cache reuse rather than infer it from labels. Define stop conditions, validation and rollback criteria. Do not run commands, invent measurements, disable safeguards or include real hosts or credentials."}],
+        "max_tokens": 4096,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": true, "reasoning_effort": "medium"}
+      },
+      "check": {
+        "kind": "manual",
+        "criteria": [
+          "Human quality review required; this is not an automatic pass or a previously validated historical task.",
+          "Separates queueing, cold prefill, decode and gateway deadlines using observable timing boundaries.",
+          "Requires counters or backend evidence for cache reuse and distinguishes sampled memory from an exact peak.",
+          "Orders read-only diagnostics before approved changes and states stop, validation and rollback conditions without inventing evidence or weakening safeguards."
+        ]
+      }
+    },
+    {
+      "id": "chinese-synthesis-thinking-low",
+      "category": "chinese-synthesis",
+      "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/fixtures.json#chinese-synthesis-thinking-low"},
+      "request": {
+        "messages": [{"role": "user", "content": "\u8bf7\u7528\u4e2d\u6587\u5199\u4e00\u4efd\u9762\u5411\u516c\u4f17\u7684\u6c34\u5faa\u73af\u8bf4\u660e\uff1a\u89e3\u91ca\u6d77\u6d0b\u3001\u5927\u6c14\u3001\u9646\u5730\u548c\u5730\u4e0b\u6c34\u4e4b\u95f4\u7684\u8054\u7cfb\uff1b\u6bd4\u8f83\u57ce\u5e02\u786c\u5316\u5730\u9762\u4e0e\u690d\u6811\u5bf9\u5f84\u6d41\u548c\u8865\u7ed9\u7684\u5f71\u54cd\uff1b\u533a\u5206\u76f8\u5173\u6027\u4e0e\u56e0\u679c\u6027\uff1b\u7ed9\u51fa\u4e24\u9879\u53ef\u6d4b\u91cf\u7684\u89c2\u5bdf\u6307\u6807\u53ca\u5176\u5c40\u9650\u3002\u4e0d\u8981\u7f16\u9020\u7edf\u8ba1\u6570\u636e\u6216\u5f15\u7528\u3002"}],
+        "max_tokens": 4096,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": true, "reasoning_effort": "low"}
+      },
+      "check": {
+        "kind": "manual",
+        "criteria": [
+          "Human Chinese-language quality review required; no automatic semantic correctness claim.",
+          "Explains evaporation, condensation, precipitation, runoff and groundwater recharge coherently in Chinese.",
+          "Compares urban surfaces and trees with appropriate uncertainty and distinguishes correlation from causation.",
+          "Provides two measurable indicators with limitations and does not fabricate data or citations."
+        ]
+      }
+    },
+    {
+      "id": "strict-json-schema",
+      "category": "structured-output",
+      "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/fixtures.json#strict-json-schema"},
+      "request": {
+        "messages": [{"role": "user", "content": "Return only a JSON object with answer equal to 42 and label equal to thor."}],
+        "max_tokens": 128,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false},
+        "response_format": {
+          "type": "json_schema",
+          "json_schema": {
+            "name": "benchmark_answer",
+            "strict": true,
+            "schema": {
+              "type": "object",
+              "properties": {"answer": {"type": "integer", "enum": [42]}, "label": {"type": "string", "enum": ["thor"]}},
+              "required": ["answer", "label"],
+              "additionalProperties": false
+            }
+          }
+        }
+      },
+      "check": {"kind": "json", "expected": {"answer": 42, "label": "thor"}}
+    },
+    {
+      "id": "tool-get-weather",
+      "category": "tool-call",
+      "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/fixtures.json#tool-get-weather"},
+      "request": {
+        "messages": [{"role": "user", "content": "What is the weather in Beijing? Call get_weather exactly once with city Beijing. Do not invent a weather result."}],
+        "max_tokens": 256,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false},
+        "tools": [{"type": "function", "function": {"name": "get_weather", "description": "Retrieve weather for the requested city; this benchmark checks the call only and does not execute the tool.", "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"], "additionalProperties": false}}}],
+        "tool_choice": "auto"
+      },
+      "check": {"kind": "tool", "name": "get_weather", "arguments": {"city": "Beijing"}}
+    },
+    {
+      "id": "stress-numbered-records-8192",
+      "category": "continuous-generation",
+      "mode": "stress",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/fixtures.json#stress-numbered-records-8192"},
+      "request": {
+        "messages": [{"role": "user", "content": "Generate records numbered 1 through 10000 in increasing order. Each complete line must have exactly the format RECORD <n>: amber blue cedar delta. Replace <n> with the unpadded decimal record number. Start with RECORD 1: amber blue cedar delta. Use no headings, blank lines, Markdown or explanations. Continue until all records are complete or the response is cut off; do not summarize or skip records."}],
+        "max_tokens": 8192,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "manual", "criteria": ["Human format review required: every complete line matches ^RECORD ([1-9][0-9]*): amber blue cedar delta[.]$ and numbers start at 1 and increase by 1; a truncated final line is permitted only on a length stop.", "8192 is an output budget, not a guarantee of 8192 generated tokens; report actual completion usage and finish reason without claiming full task completion."]}
+    },
+    {
+      "id": "stress-numbered-records-16384",
+      "category": "continuous-generation",
+      "mode": "stress",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/fixtures.json#stress-numbered-records-16384"},
+      "request": {
+        "messages": [{"role": "user", "content": "Generate records numbered 1 through 10000 in increasing order. Each complete line must have exactly the format RECORD <n>: amber blue cedar delta. Replace <n> with the unpadded decimal record number. Start with RECORD 1: amber blue cedar delta. Use no headings, blank lines, Markdown or explanations. Continue until all records are complete or the response is cut off; do not summarize or skip records."}],
+        "max_tokens": 16384,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "manual", "criteria": ["Human format review required: every complete line matches ^RECORD ([1-9][0-9]*): amber blue cedar delta[.]$ and numbers start at 1 and increase by 1; a truncated final line is permitted only on a length stop.", "16384 is an output budget, not a guarantee of 16384 generated tokens; report actual completion usage and finish reason without claiming full task completion."]}
+    },
+    {
+      "id": "cache-public-archive-four-turns",
+      "category": "archive-retrieval",
+      "mode": "cache",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/thor/benchmark/fixtures.json#cache-public-archive-four-turns"},
+      "prefix": {"line": "PUBLIC SYNTHETIC ARCHIVE: a fictional museum catalog lists amber stones, blue ribbons, cedar boxes and delta maps. This filler contains no lookup keys or real personal records.\n", "repeat": 500},
+      "request": {
+        "messages": [{"role": "user", "content": "The preceding text is public synthetic archive filler. Authoritative lookup entries follow:\nalpha = cobalt-7319\nbeta = willow-4826\ngamma = silver-9053\nReturn only a JSON object containing alpha, beta and gamma with their exact archive values. Retain these entries for the next questions."}],
+        "max_tokens": 128,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "json", "expected": {"alpha": "cobalt-7319", "beta": "willow-4826", "gamma": "silver-9053"}},
+      "followups": [
+        {"messages": [{"role": "user", "content": "From the same archive, return only a JSON object with the key beta and its exact value."}], "check": {"kind": "json", "expected": {"beta": "willow-4826"}}},
+        {"messages": [{"role": "user", "content": "From the same archive, return only a JSON object with the key gamma and its exact value."}], "check": {"kind": "json", "expected": {"gamma": "silver-9053"}}},
+        {"messages": [{"role": "user", "content": "From the same archive, return only a JSON object containing alpha, beta and gamma with their exact values."}], "check": {"kind": "json", "expected": {"alpha": "cobalt-7319", "beta": "willow-4826", "gamma": "silver-9053"}}}
+      ]
+    }
+  ]
+}

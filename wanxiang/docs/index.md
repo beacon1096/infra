@@ -27,6 +27,7 @@ ADRs are organized by their scope:
 - [shared/0001 — Spec-Driven Development with spec-kit](decisions/shared/0001-spec-driven-development.md)
 - [shared/0002 — Mesh integration modes for K8s clusters](decisions/shared/0002-mesh-integration-modes.md) (accepted 2026-05-04 — Option C: Talos extension + subnet router)
 - [shared/0003 — talos-i positioning: offsite observability + backup](decisions/shared/0003-talos-i-positioning.md) (accepted 2026-05-04 — residential, tailnet-only inbound, Tailscale-now/self-hosted-later; hypervisor TBD)
+- [shared/0004 — Site edge and ingress responsibility boundaries](decisions/shared/0004-site-edge-and-ingress-boundaries.md) (accepted 2026-10-01 — Envoy=K8s ingress / Caddy=site edge / mesh=L3-L4 / DNS=locality)
 
 #### talos-ii
 

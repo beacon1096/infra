@@ -1,4 +1,4 @@
-{ lib, pkgs, ... }:
+{ config, lib, pkgs, ... }:
 
 let
   image = "sha256:b4625e472cec3abf4b811a7d308704e757e92c324db52f52b8dc5721877934da";
@@ -78,7 +78,7 @@ let
         --linear-attn-backend triton --linear-attn-prefill-backend triton \
         --linear-attn-decode-backend triton --linear-attn-verify-backend triton \
         --kv-cache-dtype bfloat16 --fp4-gemm-backend flashinfer_cutlass \
-        --mamba-ssm-dtype bfloat16 --max-mamba-cache-size ${toString mambaSlots} \
+        --mamba-ssm-dtype ${if config.services.thorInference.mambaStateDtype == null then "bfloat16" else config.services.thorInference.mambaStateDtype} --max-mamba-cache-size ${toString mambaSlots} \
         --cuda-graph-backend-decode full --cuda-graph-max-bs-decode ${toString graphBatch} \
         --cuda-graph-backend-prefill disabled \
         --speculative-algorithm DFLASH --speculative-num-draft-tokens 16 \
@@ -88,6 +88,13 @@ let
     '';
 in
 {
+  options.services.thorInference.mambaStateDtype = lib.mkOption {
+    type = lib.types.nullOr (lib.types.enum [ "float32" "bfloat16" ]);
+    default = null;
+    description = "Override --mamba-ssm-dtype for the 27B recurrent-state precision axis.";
+  };
+
+  config = {
   systemd.services.thor-inference = {
     description = "Thor Qwen3.8-27B DFlash2 inference";
     wantedBy = [ "multi-user.target" ];
@@ -247,5 +254,6 @@ in
       ProtectHome = true;
       RestrictAddressFamilies = [ "AF_INET" "AF_INET6" ];
     };
+  };
   };
 }

@@ -14,6 +14,39 @@
 
 以上文件描述公开的声明式配置。下列固件信息是带日期的只读快照，不表示各项数值均为 NixOS 所需设置。
 
+## 磁盘布局与角色规划（2026-10-07）
+
+Thor 目前只有一块 NVMe（`nvme0n1`，2 TB），根文件系统 ext4 挂在整盘（`nvme0n1p2`），`/boot`
+为 `nvme0n1p1`（vfat）。原装 1 TB（PCIe5×4）已拔下。保留一份整盘备份
+`thor-factory-backup/thor-nvme1n1-20260916.img.zst`（265 GB，zstd）。
+
+### 推理角色占用
+
+| 角色 | 组成 | 占用 |
+| --- | --- | ---: |
+| qwen3.8-27b | 模型 target 20G + draft 1.5G + 镜像 `thor-sglang:dflash2` 45.6G + 补丁/缓存/head ≈0.15G | **≈67 GB** |
+| qwen3.8-flash-next（单变体） | 模型 `flash-next/radixark-7b719225-sglang-b8c4002b` 125 GB + 镜像 `lmsysorg/sglang` 49.1 GB | **≈174 GB**（+ 每次启动重建的 PLE 表 48 GB/实例，纯缓存） |
+| NixOS 基础系统 | `/nix`（当前 24 GB，含 528 个 system generation；`gc` 后约 10–15 GB） | 预留 **30–50 GB** |
+| 用户数据 | `/home/beacon` | 47 GB |
+| 原装系统整盘备份 | `thor-factory-backup/…img.zst` | 265 GB |
+
+### 现状与可回收
+
+2 TB 盘：1.79 TiB 总量，**1.50 TiB 已用，≈204 GiB 可用**。磁盘大头：
+`thor-inference` 640G、`docker` 363G（未用镜像可回收 ~148G）、`thor-factory-backup` 265G、
+`thor-flash-next` PLE 缓存 196G（可重建）、`exl3` 实验 184G、`/home` 47G、`/nix` 24G。
+
+### 规划分配
+
+- **Thor = 仅 qwen3.8-27b**，系统盘换回原装 **1 TB（PCIe5×4）**：27B(67) + 基础(30–50) +
+  home(47) + 原装备份(265) ≈ **410–430 GB**；1 TB 可用约 930G，**剩 ≈500 GB**。
+- **2 TB 盘移到 nuc11**，承担 qwen3.8-flash-next（Strata 引擎）与 offload/scratch。
+- 另有 M.2 **2230 两块（500 GB / 1000 GB）**（主板无 2030 孔位，用转接板临时固定）作为**实验临时盘**，
+  不占主机盘；1000G 一块可容纳一套 Flash-Next（模型 ~125G + PLE 48G + 工作区 ~100G）。
+
+依据：Flash-Next 在 Thor 上的解码速度主要依赖 MoE 分层/offload，难以超过高显存带宽的消费级
+GPU；Thor 更适合高吞吐的 27B，快速本地交互模型（Flash-Next）交给 nuc11 + Titan RTX / A2000。
+
 ## 固件快照
 
 2026-09-11，在初次安装 NixOS 并修复显示交接后进行了只读检查。固件报告 `39.2.0-gcid-45755727`；已安装的 JetPack NixOS 配置使用 L4T 39.2.1 和 Linux 6.8.12。
@@ -70,6 +103,68 @@ GUID：`8be4df61-93ca-11d2-aa0d-00e098032b8c`。
 Linux 变量清单中没有单独命名的 ACPI/Device Tree 选择变量；Device Tree 启动是从运行中的系统确认的。
 
 并非所有 UEFI 菜单设置都能在启动后读取。r39.2 的表单定义包含 `QuickBootEnabled`、`EnablePcieInOS`、`SerialPortConfig`、`KernelCommandLine`、`AcpiTimerEnabled`、`UefiShellEnabled`、`EnabledPcieNicTopology` 和 `LockAllVarsConfig` 等不带运行时访问权限的设置。Linux 下看不到不代表它们已关闭；需要在 UEFI 设置界面或通过合适的预启动工具检查。
+
+## RTL8127 MAC 与 DHCP（2026-10-04）
+
+在一台采用 RTL8127 有线网卡的算力舱上，NixOS 每次启动可能获得不同的 DHCP 地址，即使 NetworkManager 已配置 `cloned-mac-address=permanent`。本节仅保留可复用的调查结论，不包含现场 MAC、IP、SSH 公钥、设备序列号或私有运维路径。
+
+### 驱动的 permanent 不一定是出厂地址
+
+本次 NixOS 使用 Realtek `r8127 11.015.00-NAPI`，官方系统使用同版 `11.015.00-NAPI-PTP`。源码中的 `rtl8127_get_mac_address()`：
+
+1. 读取当前 MAC 寄存器 `MAC0`。
+2. 使用备份寄存器 `0x19e0/0x19e4` 覆盖前面读取的六个字节。
+3. 若结果不是有效单播地址，生成随机 MAC。
+4. 将选定地址写入当前 MAC 寄存器，并复制到 `org_mac_addr` 和 `dev->perm_addr`。
+
+因此，`ethtool -P` 可能返回本次启动生成的随机地址。NetworkManager 的 `permanent` 策略会使用这个值，不能保证跨启动稳定。DHCP 服务端按客户端 MAC 匹配的固定分配仍然有效，但新 MAC 不再匹配原预留。
+
+### 热启动、冷启动与官方系统对照
+
+使用仅增加日志、不改变地址选择逻辑的诊断模块，记录首次 BAR 映射、OOB 退出、PLL 上电、硬件初始化、两次网卡复位及 EEPROM 检测前后的寄存器。以下为去掉设备身份和非关键字段后的摘录：
+
+```text
+stage=bar-mapped mac0=00:00:00:00:00:00 backup=00:00:00:00:00:00 d2=04
+stage=before-exit-oob mac0=00:00:00:00:00:00 backup=00:00:00:00:00:00 d2=04
+stage=after-hw-reset mac0=00:00:00:00:00:00 backup=00:00:00:00:00:00 d2=04
+reset_poll_remaining=100 timeout=0
+eeprom_probe=unsupported-d2
+eeprom_result type=0 length=0
+```
+
+NixOS 普通重启和正常关机、移除外部供电后冷启动的结果一致：首次读取时两组 MAC 已为零，后续初始化没有恢复地址，两次复位均未报告超时。本次并不是复位首次清掉有效 MAC，也不是选取备份值时丢弃了一个有效的当前 MAC。
+
+`rtl_eeprom.c` 在 `0xD2 & 0x04` 非零时直接跳过其支持的串行 EEPROM 读取路径，源码中的 `EEPROM_TWSI` 处理被注释。因此 `eeprom_type=0`、`eeprom_len=0` 不能证明 EEPROM 为空或不存在。
+
+另一次热启动进入官方系统后，原厂驱动同样记录全零地址、随机回退，备份寄存器仍为零；但 NetworkManager 随后通过 `stable` 策略设置稳定的活动 MAC，取得对应 DHCP 预留。官方系统的稳定联网是软件策略的结果，不是恢复出厂 MAC 的证据。此次未对官方系统另做断电冷启动测试。
+
+最早快照仍发生在 PCI 设备启用之后，不能覆盖固件、PCI 核心或平台上电过程。是否存在已烧录但没有装载、或无法通过当前驱动读取的出厂地址，仍需厂商支持的 NVM 读取方法确认；不应据此尝试写 EEPROM。
+
+### 可选诊断构建
+
+[驱动包](../../../../packages/r8127/default.nix)提供默认关闭的 `macDiagnostics` 参数，[诊断补丁](../../../../packages/r8127/mac-diagnostics.patch)将版本标记为 `-MAC-DIAG`。检查点日志仅在网卡注册前输出，避免在运行中的复位恢复流程持续增加 MMIO 读取和日志。
+
+```sh
+nix build .#packages.aarch64-linux.r8127-mac-diagnostics --no-link
+sudo journalctl -b -k -o short-monotonic --grep='r8127-mac-diag'
+```
+
+此输出针对当前公开 Thor 配置的内核构建，不一定匹配已部署系统。实际试验必须核对内核构建和模块符号版本，不能只比较 `uname -r`；保留正常启动项，优先使用一次性诊断启动，而不是在线卸载网卡驱动。新增读取和日志也可能影响时序，诊断结果应结合对照实验解释。
+
+### 稳定地址与双系统 SSH
+
+可在 NixOS 的声明式有线 profile 中写入一次选定的本地管理单播 MAC，不再依赖驱动的 `permanent` 值。例如：
+
+```nix
+networking.networkmanager.ensureProfiles.profiles."Wired connection 1".ethernet.cloned-mac-address =
+  "02:00:00:00:00:01";
+```
+
+该 MAC 仅为文档示例，部署时应选取所在二层网络内唯一的地址，并为其建立 DHCP 预留。也可使用 NetworkManager 的 `stable` 策略，但结果依赖本机状态及 profile 输入，跨系统不保证得到同一地址。
+
+双系统可分别保留自己的稳定 MAC、DHCP 地址和 SSH 主机密钥。连接不同地址，或通过不同的 `HostKeyAlias` 区分主机身份，避免同一 IP 在切系统后对应另一套公钥。迁移时应通过可信渠道核对并更新旧的 `known_hosts` 条目，而不是关闭主机密钥检查。
+
+本次以明确固定的 NixOS 软件 MAC 和官方系统已有的 stable MAC 分配两个独立地址，分别启动验证 DHCP 与严格 SSH 校验后，恢复正常 NixOS 和推理服务。旧回退 MAC 的固定分配取消，避免继续占用地址。
 
 ## 参考资料
 

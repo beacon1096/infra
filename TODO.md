@@ -46,29 +46,16 @@
 
 ## CI 推送入口（OCI 镜像与 Attic 缓存）
 
-正式工作项见 [`wanxiang/specs/009-caddy-edge-ingress/`](wanxiang/specs/009-caddy-edge-ingress/spec.md)：
-把站点侧自建 Caddy 边缘反代作为高带宽流量的正式入口（宪法 §VI 的按服务 VPS
-例外），按主机名把下列路径从 Cloudflare Tunnel 迁到该边缘；边缘已终止公网 TLS
-并经由 mesh 反代到集群内服务。迁移是增量的，其余 `*.${SECRET_DOMAIN}` 仍走
-Cloudflare。
+**已完成**。规格见 [`wanxiang/specs/009-caddy-edge-ingress/`](wanxiang/specs/009-caddy-edge-ingress/spec.md)，
+边界决策见 [ADR shared/0004](wanxiang/docs/decisions/shared/0004-site-edge-and-ingress-boundaries.md)。
 
-- [ ] 将 collector 的 OCI 镜像推送迁到自建入口/反向代理，替代经
-  Cloudflare 的公网路径。
-  - 现状：推送大镜像层时，公网 `forgejo.beaco.works`（Cloudflare tunnel）
-    返回 `502 Bad Gateway`（skopeo `uploading layer chunked`），曾使
-    coding-agent 发布 job 失败；`build-and-push-nix-collector-oci` 的
-    ~130 MiB 镜像还被公网 front 以 HTTP `413` 拒绝。临时改走集群内
-    `forgejo-http.development.svc.cluster.local:3000`（明文 HTTP，需
-    `--tls-verify=false`），属权宜之计。
-  - 目标：在我们自己的设施上运行反向代理，恢复单一且带校验证书的
-    registry endpoint，移除 `--tls-verify=false` 与硬编码的
-    `svc.cluster.local` 目标。
-  - 该入口需同时服务集群内 runner 与集群外的 Taichu builder
-    （`build-and-push-nix-collector-oci` 目前仍走公网 endpoint）。
-- [ ] 将 CI 的 Attic 闭包推送（`attic push`，公网 `nix.beaco.works`，
-  最近返回 Cloudflare `502`）迁到同一自建边缘。
-- [ ] 边缘路径端到端验证后，移除 Talos 节点对 `forgejo.beaco.works` 的
-  `/etc/hosts` 覆盖及相关权宜注释。
+- [x] collector 的 OCI 镜像推送已迁到自建 Caddy 边缘，替代经 Cloudflare 的公网路径。
+  - `forgejo.beaco.works` 由边缘（`cygnus.beaco.works`）权威；公开与私有 CI 均改走
+    `https://forgejo.beaco.works`，集群内 runner 经 `hostAliases` 走 `envoy-internal`（LAN），
+    移除 `--tls-verify=false` 与字面 `svc.cluster.local`。
+- [x] CI 的 Attic 闭包推送（`attic push`）已改走边缘 `https://nix.beaco.works`。
+- [x] 节点 `/etc/hosts` 覆盖：复核后**保留**——它是刻意的 LAN locality（集群内走
+  `envoy-internal`），移除会让节点拉镜像绕到公网边缘节点；仅刷新注释。
 
 ## nix-collector store 种子
 

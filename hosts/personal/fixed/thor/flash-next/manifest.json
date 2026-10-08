@@ -1,0 +1,46 @@
+[
+  {
+    "file": "vocab_parallel_embedding.py",
+    "source": "/sgl-workspace/sglang/python/sglang/srt/layers/vocab_parallel_embedding.py",
+    "engine_revision": "94602c9c2b7cbdb8efd5c52802dac6a1c180089e",
+    "source_url": "https://raw.githubusercontent.com/sgl-project/sglang/94602c9c2b7cbdb8efd5c52802dac6a1c180089e/python/sglang/srt/layers/vocab_parallel_embedding.py",
+    "original_sha256": "43ca7c6fabd7c66adf14c5c871cf6ec3070b23b53d7786a9d4cee7a4b68d0931",
+    "patched_sha256": "e1b318d23d304d2ba09dfea3312909219eb396139f08408f6035191345a9dea5",
+    "patch_sha256": "670d5af364c57201fe74ec96745564fcf583f2b3b4f89afa880fd2a78520b05b",
+    "scope": "FP32 block scales with [128,128] blocks; TP=1, non-presharded, no added vocabulary",
+    "gpu_numerical_parity": "small Triton block-FP8 matrices passed independent FP64 W8A8 references; full-head/model parity not qualified"
+  },
+  {
+    "file": "eagle_worker_v2.py",
+    "source": "/sgl-workspace/sglang/python/sglang/srt/speculative/eagle_worker_v2.py",
+    "engine_revision": "94602c9c2b7cbdb8efd5c52802dac6a1c180089e",
+    "source_url": "https://raw.githubusercontent.com/sgl-project/sglang/94602c9c2b7cbdb8efd5c52802dac6a1c180089e/python/sglang/srt/speculative/eagle_worker_v2.py",
+    "original_sha256": "8fc9285c458d746874c96da7b16bef2733509dea3d1170cbad9e787bcde67754",
+    "patched_sha256": "38030ca95fd3e2623587dbef7e2f9c71f4432a36c6b0d2d1ff32ef863e186dd8",
+    "patch_sha256": "9625968d73b374d8c9b0df3798fbc927b332da1cb24a938bc5cc4a06c284774a",
+    "scope": "NEXTN/EAGLE speculative token map: dequantize a block-FP8 target lm_head with its weight_scale_inv before selecting the reduced vocabulary rows, because the draft head is unquantized. No-op when no token map is set; target head stays FP8.",
+    "gpu_numerical_parity": null
+  },
+  {
+    "file": "fp8_kernel.py",
+    "source": "/sgl-workspace/sglang/python/sglang/kernels/ops/quantization/fp8_kernel.py",
+    "engine_revision": "94602c9c2b7cbdb8efd5c52802dac6a1c180089e",
+    "source_url": "https://raw.githubusercontent.com/sgl-project/sglang/94602c9c2b7cbdb8efd5c52802dac6a1c180089e/python/sglang/kernels/ops/quantization/fp8_kernel.py",
+    "original_sha256": "70e77198045fb8b7308be9c314392dee972ffd910260c53a36e2fd596f8b43bc",
+    "patched_sha256": "3fc4e609e9b77aa742ea6a64ad7f1c042dbf48025a5a098b7967e5d61bc772a0",
+    "patch_sha256": "248298cc4cf04aa24318d9febb7d984cb6acaf9c888a604a4ee2724bedfa43e2",
+    "scope": "Optional W8A8 dense-FP8 shape logging in w8a8_block_fp8_matmul_triton, gated by env SGLANG_W8A8_SHAPE_LOG; no behavior change when unset. Used only for offline shape inventory.",
+    "gpu_numerical_parity": null
+  },
+  {
+    "file": "gdn_backend.py",
+    "source": "/sgl-workspace/sglang/python/sglang/srt/layers/attention/linear/gdn_backend.py",
+    "engine_revision": "94602c9c2b7cbdb8efd5c52802dac6a1c180089e",
+    "source_url": "https://raw.githubusercontent.com/sgl-project/sglang/94602c9c2b7cbdb8efd5c52802dac6a1c180089e/python/sglang/srt/layers/attention/linear/gdn_backend.py",
+    "original_sha256": "3bc3cf81319ad0cac2bf606d35d50d24f961d4a92b2a814ef502e531f7c76217",
+    "patched_sha256": "a5adc72bc078cc7f0010c4d22b0d51f121d4c0558f1d69145da69370d1a5e0f6",
+    "patch_sha256": "adf21da589b8f30336cc9e882c265f7ff374147f99664b74a1dc0dd1f18fcf29",
+    "scope": "Diagnostic only, no-op unless SGLANG_GDN_STATE_DUMP is set: after the prefill/extend kernel, dump the written per-layer SSM state to <dir>/layerNNN_seqNNNNNN.npy for offline state-dtype drift analysis. Layers selectable via SGLANG_GDN_STATE_DUMP_LAYERS (comma list, default all).",
+    "gpu_numerical_parity": null
+  }
+]
