@@ -4,10 +4,13 @@
 
 这是历史实验记录，不代表当前生产部署。数值、范围、文件哈希与资源采样汇总见 [results.json](results.json)。
 
+发布准备中的日常默认档位为 **Strata low、Thor 27B medium**。下面的硬件吞吐实验使用关闭 thinking 的请求；这些历史数字不代表新档位下的回答完成耗时。
+
 ## 结论
 
-- **默认优先 IQ2_XS + Titan 单卡**：本次无额外内存上限的长提示测试中，prefill 约 1,156 tok/s、decode 91.5 tok/s。
-- **使用 IQ3_XXS 时，A2000 适合做专家缓存辅助**：decode 从单卡 75.9 提升至 87.6 tok/s，prefill 基本持平；测试期间两卡总 GPU 平均功耗增加约 12 W。
+- **A2000 可用且内存余量充足时，优先评估 IQ3_XXS + 专家辅助这个更高精度档位**：相对 IQ2 单卡，长提示 decode 只慢约 4.3%、prefill 慢约 6.2%。加卡的价值可以是把 IQ2 升到 IQ3，而不只是让同一量化跑得更快；实际本地任务的能力增益仍需按角色验证。
+- **A2000 不可用或内存更紧时，IQ2_XS + Titan 单卡仍是回退基线**：本次无额外内存上限的长提示 prefill 约 1,156 tok/s、decode 91.5 tok/s。
+- **同一 IQ3 下的专家辅助有加速效果**：decode 从单卡 75.9 提升至 87.6 tok/s，prefill 基本持平；测试期间两卡总 GPU 平均功耗增加约 12 W。
 - **当前自动分层不适合作为这组异构 GPU 的默认方案**：两种量化的长提示 prefill 均明显慢于单卡。该结论针对本次版本、自动放置和负载，不排除其他手动分层方案。
 - **52 GiB 预算下，优先 IQ2 normal**：IQ3 resident 可运行，但较慢，且“26.1 GiB 专家常驻池”不等于总内存需求。
 - **IQ3 resident 的长上下文有可运行路径**：128K 配置、52 GiB 上限、禁用 swap，约 60K 与 120K token 输入均找回中段 passkey；这不是长期稳定性或综合质量评测。
@@ -73,6 +76,47 @@ shard 2 是 PLE lookup table，两个量化目录的文件名不同、内容相�
 IQ2 的专家辅助模式没有显示吞吐收益；IQ3 长提示 decode 相对单卡提升约 15.4%。这是小规模单路测量，不是所有提示词或并发负载的通用排名。
 
 专家辅助模式下，A2000 显存采样峰值约 10,791 MiB。两卡同步功耗读数逐时点相加后取平均：IQ2 helper 为 278.64 W、对应单卡组为 261.05 W；IQ3 helper 为 268.69 W、对应单卡组为 256.54 W。单卡组也包含闲置 A2000 的功耗；这些不是整机墙上功耗，也没有把两卡各自峰值相加冒充同步峰值。
+
+### 换一个比较轴：加卡换取更高精度
+
+实际选型还应比较 **IQ2 单卡 → IQ3 + helper**，而不只比较同一量化有没有双卡加速：
+
+| 指标 | IQ2 单卡 | IQ3 + helper | 变化 |
+| --- | ---: | ---: | --- |
+| 长提示 decode（tok/s） | 91.5 | 87.6 | 约 -4.3% |
+| 长提示 prefill（tok/s） | 1,155.8 | 1,084.0 | 约 -6.2% |
+| 短提示 TTFT（s） | 0.965 | 1.437 | 约 +0.472 s |
+| 长提示 TTFT（s） | 22.971 | 24.494 | 约 +1.523 s |
+| Engine RSS 峰值（GiB） | 35.23 | 43.10 | 约 +7.87 GiB |
+| 两卡总 GPU 平均功耗（W） | 261.05 | 268.69 | 约 +7.64 W |
+
+这支持把空闲 A2000 看作**量化精度与能力余量的增益资源**：更高精度模型可维持接近原来的输出速率，而不是给 IQ2 再叠一张几乎没有收益的卡。“速度几乎一致”在这里主要指 decode；短请求 TTFT 的约半秒代价、额外内存和副卡占用应按实际角色权衡。
+
+### 实际起点是 Thor 27B 的聊天响应
+
+当前使用观察是：原先承担聊天的 Jetson AGX Thor / Qwen3.8-27B 响应偏慢，希望把快速响应职责交给更合适的 MoE。这个产品替换场景的主基线是**现有 Thor 27B 聊天服务**，IQ2 单卡只是 Strata 内部的速度与回退参照。
+
+本工作流认为 IQ3 helper 相对 IQ2 单卡增加的约 0.47 秒短提示 TTFT 可接受，因而不把它作为否决精度升级的条件。优先评估的是能否更快给出正确、可用的聊天答案，并减少不必要的长思考与等待；不是从已经足够快的两个 Strata 档位中机械地挑最低 TTFT。
+
+“Thor 27B 偏慢”属于使用观察。当前数值表没有对 Thor 做同请求 A/B，不能据此宣称 Strata 相对它快了多少倍。后续需记录响应开始、有效答案完成、thinking、排队和修正开销，才能把体感问题归因到具体环节。
+
+### 分享对话中提到的评分是什么
+
+评分已核对到量化作者的[固定 revision 模型卡 Results](https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/blob/ed59f92082b1e93c0e96d60a8b11aab089b52f09/README.md#results)。下面是**作者报告的公开评测**，不是本次 NUC / Strata 实验测得的质量分数：
+
+| 版本 | Transformer 平均 bpw | ZS avg | AIME25 | GPQA-Diamond | LiveCodeBench v6 | Task avg |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| BF16 | 16.00 | 76.94 | 100.00 | 91.92 | 87.43 | 93.12 |
+| Q2_0 | 2.40 | 78.00 | 96.67 | 89.39 | 81.14 | 89.07 |
+| IQ2_XS | 2.50 | 77.16 | 96.67 | 87.37 | 83.43 | 89.16 |
+| IQ3_XXS | 3.00 | 77.23 | 100.00 | 91.41 | 86.29 | 92.57 |
+| IQ3_S | 3.50 | — | 100.00 | 92.93 | 86.86 | 93.26 |
+
+`Task avg = (AIME25 + GPQA-Diamond + LiveCodeBench v6) / 3`，即三项数学、专家问答和代码评测的等权平均。另列的 `ZS avg` 是 `arc_easy`、`arc_challenge`、`hellaswag`、`winogrande`、`piqa` 五项 zero-shot 任务的平均，**不参与 Task avg**。
+
+IQ3 的 Task avg 比 IQ2 高 3.41 分，接近 BF16；作者报告的归一化回收率约为 99.4%，IQ2 约为 95.7%。这为精度升级提供了公开质量依据，但回收率不是本地任务通过率，也不是“保留了 99.4% 的所有能力”。作者明确将略超 BF16 的部分得分解释为评测波动，而不是量化使模型变得更强。
+
+这些分数尤其适合观察难题上的量化损失，却没有给本地 chat、工具使用或按计划执行划定统一及格线。IQ2 与 IQ3 在 ZS avg 上接近，也不能单凭此推断两者在中文或具体操作任务上必然相同。这张表只比较 Flash-Next 的量化版本，不给 Thor 27B 或未来 dense 模型评分。选型应同时保留公开质量证据、本地运行代价和角色任务通过情况。
 
 ## 52 GiB：IQ2 normal 与 IQ3 resident
 
@@ -165,9 +209,151 @@ systemd-run --user --scope -p MemoryMax=52G -p MemorySwapMax=0 \
 
 ## 解释边界与后续
 
-两道中文/代码质量题不足以证明 IQ3 的回答质量显著优于 IQ2。更高量化位宽、吞吐和本次质量样本分别记录，不将它们自动合并成质量排名。后续若把配置用于实际助手，应补任务集、长时间稳定性及并发测量。
+本次两道中文/代码题主要是运行 sanity check，不能识别完整的量化质量差异。公开难题评测给出了升级 IQ3 的理由，本地测量给出了硬件代价；二者都不能替代特定角色的可用性验证。
+
+### 按模型分层评估，而不是要求所有本地模型全能
+
+后续考虑如下分工，这是评估目标，不是已部署的模型路由：
+
+| 角色 | 输入与职责 | 主要验收依据 |
+| --- | --- | --- |
+| 云端模型：Roadmap 规划者 | 需求、长期目标、约束；制定阶段方向和优先级 | 人工检查依赖、取舍、遗漏与阶段可验收性 |
+| 大 dense：实现改动规划者 | 已确定的阶段目标与代码上下文；提出具体修改计划 | 目标文件、接口、不变量、验证步骤是否充分且可执行 |
+| 小 dense：具体操作者 | 明确计划与范围；完成指定改动和验证 | 测试通过、diff 符合范围、能正确处理反馈；不要求独立重做 Roadmap |
+| 快速 MoE：chat / 快速响应 | 日常问答、材料解释、轻量整理；有工具时按既定协议使用 | 给定材料内的正确性、指令遵循、有效响应延迟；工具能力只在实际需要时验收 |
+
+除承担复杂改动规划的大 dense 外，本地角色首先需要“足够胜任分配的工作”，不必统一追求难题榜单最高分。模型结构是这里的分工偏好，验收仍看任务本身。复杂目标、不完整计划或超出职责的问题应转交上层，而不是在快速响应层无限尝试。
+
+这与 [Agentic / models](../../agentic/models/README.md) 已有的能力不足或长时间不收敛时转交原则衔接。各角色的具体门槛、允许修正轮次与截止时间仍应在工作流评估前确定，不能从 Task avg 直接换算。
+
+### 从小型、可判分的材料起步
+
+已有 [Thor fixtures](../thor/benchmark/fixtures.json) 和 [held-out fixtures](../thor/benchmark/held-out.json) 可复用判分结构，无需先造一套覆盖所有能力的大 benchmark。以下是后续评估建议，**尚未作为 Strata 质量实验执行**：
+
+| 用例 | 适用角色 | 可判分依据 / 复用起点 |
+| --- | --- | --- |
+| 严格短回答 | 快速 MoE | 精确答案、无多余格式；`exact-short-output` |
+| 中文材料摘要与解释 | 快速 MoE | 预先列必需事实、输出约束和材料缺项；逐项判定，不以文风代替正确性 |
+| JSON 输出 | 需要结构化交付的角色 | 可解析、目标字段和值；`strict-json-schema`，按实际需求补类型和额外字段检查 |
+| 工具调用与结果续接 | 实际使用工具的角色 | `tool-get-weather` 的函数名/参数 gate；另补工具返回后的事实使用与最终回复检查 |
+| 按要求修复小函数 | 小 dense 操作者 | `python-interval-repair-ast` 的测试和输入不被修改要求；不作为 chat-only 模型的必考项 |
+| 计划内的最小仓库改动 | 小 dense 操作者 | 使用脱敏小仓库和固定计划，检查验证结果、diff 与是否擅自扩大任务 |
+| 缺资料时的澄清 / 转交 | 各本地角色 | 预先定义可继续、需补充和需上层规划的情形；不把编造方案计为完成 |
+
+每类分别记录**首次通过、允许修正后的通过、错误类型、转交次数、有效完成耗时**，再对角色真正需要的能力设置 gate。复杂规划题采用人工 criteria；能精确验证的题用答案、结构或测试，不用另一模型的总体印象分替代。
+
+能力 gate 达到后再比较性能：chat 看首个有效回答，工具角色看首次可用调用，操作者看验证完成的耗时；TTFT 和 tok/s 是解释这些耗时的辅助指标。样本少时报告每题结果与修正记录，不宣称统计显著或用不稳定的 p95 作决策。
+
+第一轮主对照是 **Thor Qwen3.8-27B 现有聊天配置 → Strata IQ3 helper 快速响应候选**。先用同类请求比较实际产品配置，判断等待与可用答案耗时是否改善；再按各后端真实支持的参数匹配并确认 thinking 行为、提示长度、回答预算和缓存条件，做诊断对照。前者评估工作流替换效果，后者帮助解释模型、推理设置和后端开销，不将二者混成一个加速倍数。
+
+IQ2 单卡与 IQ3 helper 的配对仍用于判断 Strata 内部的精度升级价值以及 A2000 不可用时的回退。锁定工具协议及修正预算，保留少量 held-out 题，避免围绕已知答案调参。如果两者都满足快速响应角色的门槛，IQ3 是可用余量而非必需升级；如果 IQ3 能减少返工或上层介入，才把公开质量提升兑现为本地能力收益。
+
+### 三项补测的执行准备（WIP）
+
+当前安排先暂缓第 1 项 Thor 替换 A/B：在 NUC 重启后确认 GPU、驱动与加载状态，先试用 IQ3 helper 收集实际问题。第 2、3 项的材料和协议保留，按试用反馈决定先补哪一项；不把一次正常聊天当作完整接入或稳定性测试通过。
+
+先准备 chat-only 的[合成用例](benchmark/fixtures.json)，不要求快速 MoE 独立规划大改动或执行生成的代码。用例包含可精确判分的回答与需要人工逐项评阅的中文交付；人工项在评阅前必须保持待判，不能自动算通过。实际日常材料尚未收集，这套 starter 只用于跑通协议与初步筛查，后续应替换部分题目为脱敏的真实请求。
+
+#### 重启后的试用准备
+
+模型、pack、MTP 与启动配置保存在磁盘；重启后重用这些文件，但仍需启动服务并重新加载权重。先确认 GPU 编号/PCI 顺序符合配置预期：Titan 为 CUDA0、A2000 为 CUDA1，驱动可用且内存满足普通 IQ3 模式，再启动已验证的 32K helper 副本。浏览器开始聊天前，检查 `/health` 返回 `loaded=true`。
+
+初次试用采用内置 Web Chat。Loopback 服务可通过临时 SSH 转发接入；下面的命令在**浏览器所在电脑**运行，目标使用者自行设置，不写入公开记录：
+
+```bash
+ssh -N -L 18880:127.0.0.1:8080 "$STRATA_SSH_TARGET"
+```
+
+打开 `http://127.0.0.1:18880/`，使用同一来源的页面和相对 API 路径，无需为此修改 CORS 或生产路由。
+
+**日常试用先选择 low**：输入框旁齿轮 **Sampling and thinking → Thinking: Low → Apply**。固定版本 Web UI 在新浏览器默认选择 high，并随请求显式发送档位；Low 对应 `reasoning_effort=low`。诊断对照的 Off 才对应 `none`；`Show thinking` 只是显示开关，不会调整思考档位。该选择保存在浏览器来源的 `localStorage`，同浏览器、同来源会沿用；不同访问来源需重新确认。
+
+源码中没有可用的 run config 字段或 URL 参数代替这个 Web UI 选择。**Use for other apps too** 可保存服务器共享默认值，但不能覆盖 Web Chat 每次显式发送的选择；后续 API/客户端接入仍应明确快速聊天的 thinking 设置。
+
+先从日常问答、材料解释、摘要、多轮更正与取消开始体验；出现问题时保留题目、当时的档位、错误表现和等待环节，后续再整理为脱敏用例。Thor 对照和半小时自动循环不在这个重启准备步骤中启动。
+
+#### 1. 替换 Thor 27B 聊天的效果
+
+保留三条清楚标记的路径：
+
+| 路径 | 目的 | Thinking 控制 |
+| --- | --- | --- |
+| Thor 现有聊天配置 | 实际产品基线 | 记录实际生效值；此前默认 low，本轮发布准备改为模板开启 thinking、effort medium |
+| Thor 关闭 thinking | 判断等待中有多少来自思考策略 | `chat_template_kwargs.enable_thinking=false`；不能假定顶层 `reasoning_effort` 对此路由有效 |
+| Strata IQ3 helper 日常配置 | 快响应替换候选 | 默认 low；关闭 thinking 的请求单独作为诊断对照，不采用 API 未指定时的 xhigh 默认 |
+
+先确认模型已加载并预热一次，再按同一题目配对运行，首批每题 2–3 轮。不同路径轮换顺序，记录实际输出和提前 EOS，不把重复同一道题当作更多独立能力样本。
+
+产品基线保留其实际输出预算，并给候选合理的同类交付预算；模板诊断对照再统一输出上限。Thinking 也消耗输出 token，如果机械地给开启 thinking 的路径一个很小的上限，可能截断在答案之前；这类结果应标截断，不能当成模型不会回答。
+
+逐请求保留首个 generation、首个 reasoning、首个 content/工具输出、`[DONE]`、usage、finish reason 和可用 timings。首个 content 不等于正确答案已经交付；通过用例 gate 后的完整回答耗时才计入“有效完成耗时”。Reasoning 缺字段时记录缺失，不推算思考时间。
+
+先走明确的模型 ID，不用自动故障切换别名改变测试对象；实际客户端与直连后端的结果分开标记。Thor 现有客户端有路由，Strata 目前只有 loopback 实验服务，客户端入口尚需准备。首批可用临时 SSH 转发和测试进程配置接入，保持生产路由不变；URL 与用户 API key 只从运行环境取值，不进入公开 fixtures 或报告。
+
+#### 2. IQ2 与 IQ3 的本地能力余量
+
+复用同一套题和 gate，对照 IQ2 Titan-only 与 IQ3 helper，统一关闭 thinking。JSON/精确答案逐项判分，中文项按固定 criteria 人工评阅；分别报告首次通过、有限修正后通过、错误类型和完成耗时，不合成一个未经标定的总分。
+
+若第一项的 IQ3 配置、输入和预算完全一致，可复用那些结果，只新增 IQ2 样本。需要客户端自动修正时，应另做限定轮次的实验；直接 API 一次答复不能冒充完整 Agent 收敛验证。
+
+现有用例使用 Thor fixture schema，带有显式关闭 thinking 的模板意图。Strata 需要后端适配器将意图转为它实际支持的参数；当前 Thor runner 的 runtime/profile 校验也不能拿来证明 Strata 运行时一致。材料可复用不等于跨后端执行器已经完成。
+
+#### 3. 接入、取消、排队与持续运行
+
+| 场景 | 测试动作 | 需要观察的结果 |
+| --- | --- | --- |
+| 流式响应 | 一次短请求经直连、再经实际客户端/路由 | reasoning/content 分离、流式到达与完整结束；不把 UI/网关缓冲误算为后端生成速度 |
+| 多轮 | 把实际生成的 assistant 回复加入后续 messages，再做追问和更正 | 用户最新要求生效、旧信息未误覆盖；静态多消息题只验理解，不证明真实客户端传递历史 |
+| 活跃请求取消 | 长 prefill 或输出过程中关闭 SSE，再发短请求 | 客户端关闭时间、后端请求结束证据、短请求恢复耗时；不以客户端停止收数据代替后端已停止 |
+| 等待请求取消 | 长请求运行时排入第二个请求，再取消第二个 | 等待项是否移除、是否稍后仍执行、队列是否恢复 |
+| 长短混合 | 同一段长输入运行时提交一个短聊天，对照孤立短请求 | 短请求额外等待及完成耗时；记录真正的队列/后端证据，不从 TTFT 独自推算排队时间 |
+| 30 分钟持续使用 | 低负载串行循环短请求和多轮，间隔留空闲 | 有效完成数、错误、取消恢复、截断，以及预热后内存/队列趋势；缓存增长不自动判为泄漏 |
+
+长输入先选约 12K–24K token、预留回答空间，并记录两后端的实际 usage；不一开始就施加 120K 压力。Strata 当前 helper 未启用并行 batch，是单请求 FIFO；Thor 生产配置允许最多 4 个运行请求但共享 token 池。因此先按实际配置测等待体验，再把更改 parallel 或长任务路由作为独立实验，不能悄悄改变配置后混合结果。
+
+取消检查应尽可能读取直接后端状态；网关健康不等于模型已空闲。状态不可观察时应标“后端取消未确认”。取消一个请求也不要求卸载模型，正常保留权重与缓存的显存不算泄漏。半小时场景最后执行，在短请求、结束标记及取消恢复基本通过后再开始，不持续累积新的并发请求。
+
+**执行器缺口**：现有 Thor 工具已有 SSE 计时、gate 和 `followups`，但缺跨后端参数/runtime 适配、程序化取消确认、并发长短请求编排与 soak 控制。这些场景尚未执行，不能把只关闭连接或只跑通数据校验写成已通过接入测试。
+
+这些补测均可在 A2000 保持安装的情况下完成；IQ2 单卡仍用 CUDA 可见性限制。物理移除 A2000 后的 Titan lane 宽度、功耗与散热变化另排窗口，不包含在本轮角色评估中。
 
 游戏 VM、A2000 直通与自动切换仍属于后续工作。本次只证明独立推理配置可启动、响应及释放资源，没有验证在途请求、会话或 KV cache 在切换时无缝保留。
+
+## LiteLLM 接入准备
+
+准备的客户端 alias 为 `strata/qwen3.8-flash-next`，对应 IQ3 helper、32K 上下文的文本聊天，默认思考 low。共享 [客户端模型表](../../../modules/home/beacoworks-models.nix) 声明 context 32768、output 4096，开放 reasoning 档位，不声明视觉能力；LiteLLM 输入预算为 28672，给输出预留 4096。思考输出也计入回答预算，模板及工具开销应计入总上下文。
+
+新增 [strata-runtime](../../../packages/strata/runtime.nix) FHS 包只提供已准备 engine/venv 所需的 Python、CUDA runtime/cuBLAS、C++ runtime 和 CA 环境，不下载或打包模型。GGUF、pack、MTP、venv、配置和日志留在运行机器的磁盘上，不能将这些文件直接读入 Nix derivation。
+
+主机侧准备为 systemd 管理的 loopback 服务，再通过 Tailnet TCP Serve 提供入口。NUC 使用 userspace Tailscale，不能照搬 Thor 的 `tailscale0` 地址绑定 socket。集群侧沿用 Tailscale Operator ExternalName Service，LiteLLM 只访问集群 Service DNS；主机访问地址和 Terraform 清单属于私有仓。
+
+LiteLLM 使用标准 OpenAI-compatible provider。日常路由的 `litellm_params` 设置可覆写默认值，而不是在固定 `extra_body` 中锁死 effort：
+
+```json
+{
+  "reasoning_effort": "low",
+  "allowed_openai_params": ["reasoning_effort"],
+  "extra_body": {
+    "chat_template_kwargs": {
+      "enable_thinking": true
+    }
+  }
+}
+```
+
+在 LiteLLM 1.90.0 Router、全局 `drop_params=true` 的本地 HTTP mock 中，流式与非流式默认请求得到有效 low；Pi 模板参数显式选择 medium/off、OpenCode 顶层参数选择 medium/none 也均通过最终 payload 与固定 Strata frontend 解析验证。`extra_body` 会展开到后端请求体，allowlist 防止显式 effort 被过滤。这证明参数路径，尚不代表生产网关已接通。
+
+不要同时给 Strata 放一个固定的顶层 effort 和嵌套的默认 `chat_template_kwargs.reasoning_effort=low`：固定版本的 `effort_kwargs()` 对 low/medium 只设置 effort，不设置 `enable_thinking`，嵌套 low 仍可能覆盖显式 medium。当前配置把默认 effort 放在 Router 可覆写的部署参数，嵌套模板只开启 thinking，因此两类客户端都可控制档位。
+
+Thor 的明确 27B 路由及 auto 路由的 NixOS 27B 成员默认模板档位改为 medium，保留 `preserve_thinking=true`；Pi 的显式 low/off 不改为 medium。AstrBot 持久配置中还发现了 Thor 条目的显式 low，这会压过网关默认值；本轮准备一项启动前的一次性 low→medium 迁移，不改选模、其它 provider 或后续用户自行选择的档位。当前群聊实际选模尚未确认。
+
+该调整用于改善群聊上下文判断的使用问题，不证明根因已经定位或问题已经修复；发布后应以脱敏的称呼、引用、代词指向和多轮群聊样例回归，同时确认实际输入中包含相应上下文。
+
+OpenCode 的模型级默认值分别为 Strata low、Thor 27B medium，显式 variants 另行选择；Thor 还直接发送 `chat_template_kwargs`，不能只依赖 SGLang 不消费的顶层 effort。OpenCode 1.18.34 的隔离 mock 已捕获这些字段，Pi 沿模型表的模板兼容映射生成请求。Home Manager 激活后需重启 OpenCode 加载新配置，运行中的旧会话不热更新。原生 Strata 已通过一次基础工具调用 smoke；实际客户端工具结果续接仍待补测。
+
+启用顺序是：公开 runtime/客户端登记进入私有仓锁定的基线 → 准备好运行机上的模型 artifacts → 在迁移窗口由 systemd 接管临时进程并确认 `loaded=true` → 启用 Tailnet/集群代理并验证可达性 → 应用 LiteLLM 声明并用用户模型 API key 测试。
+
+路由超时和 stream timeout 按现有本地模型设置为 2400 秒，`num_retries=0`；取消、排队以及客户端实际体验仍按前述协议补测。Terraform 应用还会把新 alias 加入现有“所有已登记模型”虚拟密钥的模型列表，应在部署 diff 中确认该权限变化。
 
 ## 固定版本参考
 
@@ -176,4 +362,5 @@ systemd-run --user --scope -p MemoryMax=52G -p MemorySwapMax=0 \
 - [多 GPU 分层](https://github.com/Niko1221/Strata/blob/d5ea7133741e67743c0e886bb426c0ce8d69cf6c/docs/MULTI_GPU.md)
 - [第二 GPU / 专家辅助](https://github.com/Niko1221/Strata/blob/d5ea7133741e67743c0e886bb426c0ce8d69cf6c/docs/SECOND_GPU.md)
 - [HTTP wrapper](https://github.com/Niko1221/Strata/blob/d5ea7133741e67743c0e886bb426c0ce8d69cf6c/serve/server.py)
+- [Web Chat 参数与本地存储](https://github.com/Niko1221/Strata/blob/d5ea7133741e67743c0e886bb426c0ce8d69cf6c/serve/web/app.js)
 - [Native expert source](https://github.com/Niko1221/Strata/blob/d5ea7133741e67743c0e886bb426c0ce8d69cf6c/src/core/expert_source.cpp)

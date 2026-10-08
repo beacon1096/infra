@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "adapter_metadata": {
+    "thinking_intent": "off",
+    "thor_fixture_request": {"chat_template_kwargs": {"enable_thinking": false}},
+    "strata_openai_request": {"reasoning_effort": "none"},
+    "note": "Fixture template flags express intent only; direct fixture use is not proof of cross-backend request adaptation."
+  },
+  "cases": [
+    {
+      "id": "strata-short-exact",
+      "category": "exact-short",
+      "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/strata/benchmark/fixtures.json#strata-short-exact"},
+      "request": {
+        "messages": [{"role": "user", "content": "计算 29 × 14 − 6。只输出十进制整数。"}],
+        "max_tokens": 256,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "exact", "expected": "400"}
+    },
+    {
+      "id": "strata-order-json-unknown-date",
+      "category": "structured-extraction",
+      "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/strata/benchmark/fixtures.json#strata-order-json-unknown-date"},
+      "request": {
+        "messages": [{"role": "user", "content": "从订单资料提取 JSON：订单号 A-731，商品是蓝色水壶 2 个，收货城市杭州。资料没有下单日期。只输出含 order_id、item、quantity、city、order_date 的 JSON；quantity 用整数，未知日期用 null，不要推测。"}],
+        "max_tokens": 256,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "json", "expected": {"order_id": "A-731", "item": "蓝色水壶", "quantity": 2, "city": "杭州", "order_date": null}}
+    },
+    {
+      "id": "strata-effective-vs-planned-json",
+      "category": "status-distinction",
+      "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/strata/benchmark/fixtures.json#strata-effective-vs-planned-json"},
+      "request": {
+        "messages": [{"role": "user", "content": "配置记录：当前生效的 worker_count 是 2；变更计划写 worker_count 改为 3，但状态为 planned，尚未部署。只输出 JSON：effective_worker_count、planned_worker_count、plan_deployed。"}],
+        "max_tokens": 256,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "json", "expected": {"effective_worker_count": 2, "planned_worker_count": 3, "plan_deployed": false}}
+    },
+    {
+      "id": "strata-shared-context-budget-json",
+      "category": "technical-interpretation",
+      "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/strata/benchmark/fixtures.json#strata-shared-context-budget-json"},
+      "request": {
+        "messages": [{"role": "user", "content": "资料说明：单请求上下文上限是 262144 tokens；最多四个生成可以同时活动，但它们共享总量为 270336 tokens 的 KV 驻留池。只输出 JSON，字段为 shared_pool_tokens、per_request_context_limit、four_requests_each_at_full_context（布尔值）。"}],
+        "max_tokens": 256,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "json", "expected": {"shared_pool_tokens": 270336, "per_request_context_limit": 262144, "four_requests_each_at_full_context": false}}
+    },
+    {
+      "id": "strata-multiturn-correction-preserves-fields",
+      "category": "multi-turn-correction",
+      "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/strata/benchmark/fixtures.json#strata-multiturn-correction-preserves-fields"},
+      "request": {
+        "messages": [{"role": "user", "content": "为订单生成 JSON，字段为 recipient、city、delivery。收件人林青，城市苏州，配送方式普通。只输出 JSON。"}],
+        "max_tokens": 256,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "json", "expected": {"recipient": "林青", "city": "苏州", "delivery": "普通"}},
+      "followups": [
+        {
+          "messages": [{"role": "user", "content": "更正：配送方式改为加急，收件人和城市保持不变。重新输出完整 JSON。"}],
+          "check": {"kind": "json", "expected": {"recipient": "林青", "city": "苏州", "delivery": "加急"}}
+        }
+      ]
+    },
+    {
+      "id": "strata-missing-quote-clarification-json",
+      "category": "clarification-no-invention",
+      "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/strata/benchmark/fixtures.json#strata-missing-quote-clarification-json"},
+      "request": {
+        "messages": [{"role": "user", "content": "活动已经选定标准套餐，menu 字段已完整提供。报价规则是每人单价乘以用餐人数，但资料没有 unit_price 或 headcount。请给这场活动报价。若无法报价，只用 JSON 返回 questions 数组和 quote 字段。questions 用字段标识列出还需补充的信息，不写自然语言问题；候选字段按 menu、unit_price、headcount 的顺序排列，已提供的信息不要再次询问。无法计算的 quote 用 null，不要编造价格。"}],
+        "max_tokens": 256,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {"kind": "json", "expected": {"questions": ["unit_price", "headcount"], "quote": null}}
+    },
+    {
+      "id": "strata-chinese-three-point-summary",
+      "category": "chinese-summary",
+      "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/strata/benchmark/fixtures.json#strata-chinese-three-point-summary"},
+      "request": {
+        "messages": [{"role": "user", "content": "根据材料写恰好三条中文摘要，每条一句，覆盖关键事实与证据限制，不增加材料之外的结论。\n材料：社区试点将图书馆开放时间从工作日 9:00–17:00 延长到 8:00–20:00，试点持续四周。四周内晚间到馆人数比试点前四周增加 30%。同期没有记录周末人数，也没有对照社区，因此材料不能证明延长开放时间单独造成了增长。"}],
+        "max_tokens": 512,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {
+        "kind": "manual",
+        "criteria": [
+          "人工评审；不是自动语义判分或既有历史结果。",
+          "恰好三条中文摘要，每条一句，表达简洁且忠于材料。",
+          "准确保留开放时间变化、四周试点及晚间到馆人数增加 30% 这三项信息。",
+          "明确材料不能单独证明因果，不补写周末数据或对照社区结果。"
+        ]
+      }
+    },
+    {
+      "id": "strata-polite-deadline-rewrite",
+      "category": "constrained-rewrite",
+      "mode": "quality",
+      "provenance": {"kind": "new-synthetic", "source": "docs/inference/strata/benchmark/fixtures.json#strata-polite-deadline-rewrite"},
+      "request": {
+        "messages": [{"role": "user", "content": "把这句话改写得礼貌、清楚，但保留原有截止时间和时区：‘周五 17:00 UTC 前把表格发我，别拖到下周。’只输出改写后的句子。"}],
+        "max_tokens": 512,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": false}
+      },
+      "check": {
+        "kind": "manual",
+        "criteria": [
+          "人工评审；不是自动风格评分或既有历史结果。",
+          "语气礼貌、表达清楚，且只输出改写句子。",
+          "保留周五 17:00 UTC 这一截止时间，不改变日期、时间或时区。",
+          "仍要求发送表格，不把截止时间放宽至下周，不增加原句没有的任务或承诺。"
+        ]
+      }
+    }
+  ]
+}

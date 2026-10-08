@@ -329,12 +329,18 @@
     packages.x86_64-linux =
       let
         pkgs = import nixpkgs { system = "x86_64-linux"; };
+        strataPkgs = import nixpkgs {
+          system = "x86_64-linux";
+          config.allowUnfree = true;
+        };
         paseoPackages = import ./lib/paseo { inherit inputs pkgs; };
       in {
       # nix build .#installer-iso
       installer-iso = self.nixosConfigurations.installer.config.system.build.isoImage;
 
       gh-proxy = pkgs.callPackage ./packages/gh-proxy { };
+
+      strata-runtime = strataPkgs.callPackage ./packages/strata/runtime.nix { };
 
       # v0.6.0's go.mod requires go >= 1.26.6, but this flake's nixos-26.05
       # pin provides go 1.26.5. Build with the unstable toolchain instead.
