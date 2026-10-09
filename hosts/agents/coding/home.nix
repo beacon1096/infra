@@ -35,6 +35,8 @@ in
     pkgs.yq-go
     pkgs.gawk
     pkgs.diffutils
+    # OpenTofu for the Terraform stacks (docs/agentic/workflow/infra-ops/terraform.md).
+    pkgs.opentofu
     multica
   ];
 
