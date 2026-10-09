@@ -1436,6 +1436,175 @@
       }
     }
   },
+  "helper_128k_evaluation": {
+    "date": "2026-10-09",
+    "model": "IQ3_XXS",
+    "mode": "Titan-primary A2000 expert-helper",
+    "source_commit": "d5ea7133741e67743c0e886bb426c0ce8d69cf6c",
+    "configured_context_tokens": 131072,
+    "kv_resident_tokens": 32768,
+    "kv_type": "int8",
+    "memory_budget_GiB": 52,
+    "swap_max_bytes": 0,
+    "thinking": "disabled via reasoning_effort=none",
+    "capacity_matrix": [
+      {
+        "target_prompt_tokens": 60000,
+        "samples": 6,
+        "needle_depths": [0.1, 0.5, 0.9],
+        "repeats_per_depth": 2,
+        "all_passkeys_correct": true,
+        "cache_n_values": [0],
+        "ttft_s_min": 55.658905,
+        "ttft_s_max": 56.880084,
+        "ttft_s_mean": 56.423925,
+        "prefill_tokens_per_second_min": 1059.3,
+        "prefill_tokens_per_second_max": 1083.0
+      },
+      {
+        "target_prompt_tokens": 96000,
+        "samples": 6,
+        "needle_depths": [0.1, 0.5, 0.9],
+        "repeats_per_depth": 2,
+        "all_passkeys_correct": true,
+        "cache_n_values": [0],
+        "ttft_s_min": 92.139646,
+        "ttft_s_max": 92.501114,
+        "ttft_s_mean": 92.33896,
+        "prefill_tokens_per_second_min": 1042.3,
+        "prefill_tokens_per_second_max": 1046.4
+      },
+      {
+        "target_prompt_tokens": 120000,
+        "samples": 6,
+        "needle_depths": [0.1, 0.5, 0.9],
+        "repeats_per_depth": 2,
+        "all_passkeys_correct": true,
+        "cache_n_values": [0],
+        "ttft_s_min": 119.884987,
+        "ttft_s_max": 120.408908,
+        "ttft_s_mean": 120.130726,
+        "prefill_tokens_per_second_min": 1000.9,
+        "prefill_tokens_per_second_max": 1004.9
+      },
+      {
+        "target_prompt_tokens": 126000,
+        "samples": 2,
+        "needle_depths": [0.5],
+        "repeats_per_depth": 2,
+        "all_passkeys_correct": true,
+        "cache_n_values": [0],
+        "ttft_s_min": 128.592799,
+        "ttft_s_max": 128.614984,
+        "ttft_s_mean": 128.603892,
+        "prefill_tokens_per_second_min": 983.7,
+        "prefill_tokens_per_second_max": 984.3
+      }
+    ],
+    "long_output": [
+      {
+        "actual_prompt_tokens": 119975,
+        "completion_tokens": 512,
+        "finish_reason": "length",
+        "done_marker": true,
+        "ttft_s": 119.884642,
+        "total_s": 125.294712,
+        "decode_tokens_per_second": 94.3
+      },
+      {
+        "actual_prompt_tokens": 119974,
+        "completion_tokens": 2048,
+        "finish_reason": "length",
+        "done_marker": true,
+        "ttft_s": 119.791229,
+        "total_s": 141.222468,
+        "decode_tokens_per_second": 95.5
+      },
+      {
+        "actual_prompt_tokens": 119976,
+        "completion_tokens": 4096,
+        "total_tokens": 124072,
+        "finish_reason": "length",
+        "done_marker": true,
+        "ttft_s": 119.738752,
+        "total_s": 161.925169,
+        "decode_tokens_per_second": 97.1
+      }
+    ],
+    "context_regression": {
+      "short_prompt": {
+        "samples_per_config": 3,
+        "context_32k_ttft_s_mean": 1.392021,
+        "context_128k_ttft_s_mean": 1.4424,
+        "relative_increase_percent": 3.62
+      },
+      "prompt_26k": {
+        "samples_per_config": 3,
+        "context_32k_ttft_s_mean": 24.368482,
+        "context_128k_ttft_s_mean": 26.059333,
+        "relative_increase_percent": 6.94
+      },
+      "all_stream_and_structure_checks_valid": true
+    },
+    "soak": {
+      "duration_s": 3342.467286,
+      "cycles": 14,
+      "requests": 56,
+      "all_valid": true,
+      "all_correct": true,
+      "first_half_ttft_s_mean": {
+        "short": 0.471154,
+        "prompt_60k": 56.020359,
+        "prompt_120k": 119.6828
+      },
+      "second_half_ttft_s_mean": {
+        "short": 0.460543,
+        "prompt_60k": 56.027258,
+        "prompt_120k": 119.751567
+      },
+      "engine_rss_peak_kib": 47677280,
+      "engine_rss_first_quarter_mean_kib": 47241451.813174,
+      "engine_rss_last_quarter_mean_kib": 47324266.287081,
+      "cgroup_memory_peak_bytes": 55834578944,
+      "memory_events_max_delta": 281,
+      "oom": 0,
+      "oom_kill": 0,
+      "host_mem_available_min_kib": 13879320,
+      "gpu_peak": {
+        "Titan": {
+          "memory_used_mib": 23678,
+          "temperature_c": 84,
+          "reported_power_w": 340.53
+        },
+        "A2000": {
+          "memory_used_mib": 10793,
+          "temperature_c": 74,
+          "reported_power_w": 32.15
+        }
+      },
+      "power_note": "nvidia-smi reported a few instantaneous Titan values above the configured power limit; do not treat these as reliable wall power"
+    },
+    "cancellation": {
+      "active_prefill": {
+        "cancel_after_s": 10,
+        "recovery_short_ttft_s": 4.179415,
+        "recovery_valid": true
+      },
+      "queued_long_request": {
+        "cancel_after_s": 5,
+        "primary_finished_after_cancel_s": 112.404751,
+        "recovery_short_ttft_s": 0.556385,
+        "recovery_valid": true,
+        "canceled_request_executed_later": false
+      }
+    },
+    "limitations": [
+      "direct loopback backend only; 128K LiteLLM, Tailnet and OpenCode product metadata were not tested",
+      "single-request FIFO only; no multi-client parallel-generation test",
+      "reasoning_effort=none only; production low-thinking long-context behavior remains untested",
+      "raw prompts, SSE and per-second telemetry remain on the test host and are not included in this aggregate"
+    ]
+  },
   "limits": [
     "两道固定短质量题不足以证明量化质量优劣；此公开数据不包含质量输出原文。",
     "VmRSS、VmHWM、RssAnon、RssFile、RssShmem的各自峰值可能不在同一时刻，不可相加；进程RSS含file mapping/cache，不能等同不可回收RAM。",
