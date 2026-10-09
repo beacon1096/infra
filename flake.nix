@@ -407,6 +407,8 @@
               hash = "sha256-vaOQmZXrelbamCPlhZwfkHbGLLUSSNbrL6VvhAvwnDY=";
             }}
             install -m 0755 coder $out/bin/coder-agent
+            # The full Coder CLI is the same binary; expose it as `coder` too.
+            ln -s coder-agent $out/bin/coder
           '';
           paseoPackage = (import ./lib/paseo { inherit inputs pkgs; }).withNodePty;
           # nix-ld: lets foreign (downloaded, glibc/FHS-linked) binaries run in

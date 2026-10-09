@@ -30,6 +30,11 @@ in
   home.packages = [
     pkgs.code-server
     pkgs.gnupg
+    # Ops/troubleshooting tools the minimal image otherwise lacks.
+    pkgs.kubernetes-helm
+    pkgs.yq-go
+    pkgs.gawk
+    pkgs.diffutils
     multica
   ];
 
@@ -98,14 +103,15 @@ in
         User admin
 
       Host m920x
-        HostName 100.101.83.77
+        HostName 172.16.100.250
+        HostKeyAlias 100.101.83.77
         User beacon
 
       Host m920x-probe
-        HostName 100.101.83.77
+        HostName 172.16.100.250
         HostKeyAlias 100.101.83.77
         User agent-prober
-        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        ProxyCommand none
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
         IdentitiesOnly yes
@@ -300,9 +306,15 @@ in
         StrictHostKeyChecking yes
 
       Host 172.16.100.250
-        HostName 100.101.83.77
+        HostName 172.16.100.250
         HostKeyAlias 100.101.83.77
         User beacon
+
+      # 172.16.100.0/24 (太初 Harvester / RB5009 / m920x) is reachable directly
+      # over the runtime's tailnet route; the userspace `tailscale nc` proxy
+      # hangs on this path, so disable it for these hosts.
+      Host mc5-01 mc4-01 mc4-02 rb5009 m920x 172.16.100.201 172.16.100.202 172.16.100.203 172.16.100.250 172.16.100.254
+        ProxyCommand none
 
       Host mc5-01 mc4-01 mc4-02 rb5009 m920x ms-r1 udm-pro 100.100.250.57 100.101.83.77 172.16.20.* 172.16.80.* 172.16.81.* 172.16.82.* 172.16.83.* 172.16.84.* 172.16.85.* 172.16.86.* 172.16.87.* 172.16.88.* 172.16.89.* 172.16.90.* 172.16.91.* 172.16.92.* 172.16.93.* 172.16.94.* 172.16.95.* 172.16.100.* 172.16.101.* 172.16.102.* 172.16.107.*
         ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
@@ -376,10 +388,10 @@ in
         StrictHostKeyChecking yes
 
       Host m920x-root
-        HostName 100.101.83.77
+        HostName 172.16.100.250
         HostKeyAlias 100.101.83.77
         User root
-        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        ProxyCommand none
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
         IdentitiesOnly yes
