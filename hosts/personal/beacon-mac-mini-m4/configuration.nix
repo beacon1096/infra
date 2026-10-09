@@ -19,7 +19,7 @@
     PermitRootLogin prohibit-password
   '';
 
-  system.activationScripts.gitopsRootAuthorizedKeys.text = ''
+  system.activationScripts.extraActivation.text = ''
     install -d -m 700 /var/root/.ssh
     printf '%s\n' \
       'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBwxZlOGdS5wy5dWPvAaI7d0dXt9+aGz+p8XTzZG+y6Q multica-gitops-push' \

@@ -137,6 +137,16 @@ in
         HostName 172.16.80.254
         User root
 
+      Host beacon-mac-mini-m4-root
+        HostName 172.16.20.62
+        HostKeyAlias 172.16.20.62
+        User root
+        ProxyCommand none
+        IdentityFile /home/coder/.ssh/runtime/id_ed25519
+        UserKnownHostsFile /home/coder/.ssh/known_hosts
+        IdentitiesOnly yes
+        StrictHostKeyChecking yes
+
       Host ark 107.189.6.180
         HostName 107.189.6.180
         HostKeyAlias ark
@@ -424,6 +434,7 @@ in
   home.file.".ssh/known_hosts".text = ''
     forgejo.beaco.works ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDFSbio+wB8pGs+wsuNgwg8qK4sIpYkHafO+00p36aLdHG7lqDvyVkN96L2bgSFtCou2QQKl4cV6+kjdNNzXPn1dzbyoqceG/6kmnUDlUurBzMnkF6ZoaV5CQsmhsPmY1zO7fXACfBMpiXi7+wt9aDvVNb7pneqiyk6yhi49dQ9Uto85DT+mw6o5SiwG7LcnV4FFujIFC5Zy0NHMOnXMMnXgYGEzgTIRSqHuMM6CTRuoW7gY4KKXIAzWlk6ht0riKWWtNZiL9/rZqnMGPB/OYTlFmqiwSo/1TSuLqt1kZ+DWtkwYTEBrv6/iVU27T6IcGPH2tX2XTGYfNVFPy1SAL4SjUoa81Q3RZn6jty7FASlwHcX++4r8ZCgm1ocBp1O2cX5mk6eTKWiyCZBav7P7mRn1J8DUuuPYg0vNG+4MTuakpwn3n/4ZdxBOAGlG+L32IVycA7lToCWXVqmnkaENldrNa5qQ6LLdqo+PxTkX6Xfdg7BfNoudA6UMjfe5wNsYf2Rfjc4Hs3HJev+n6yhKwhTn60bsG/gGq6CVOLsWAKhkMWWhoN3Zq0eWGqY1C4Nl2DKKNKB+DX/d/grt7/RZkHxqtQzqCNQQBfGe+C4HzbdscttN2vAvYBmcNXM/IxvUn3PpSEfOchM99y1w++Irps/4ovnOWJMWkDF0Uv96/wFDQ==
     github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+    172.16.20.62 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGa7J943MgLYtbJCEIHPE0U/OS1v2r9Xnd5bBImpttCv
     172.16.100.201 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDDOM5tvAKArzAxiOKzNAcYuDEpnD2DWAd2BBFblYj0S
     172.16.100.202 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOikROTkMCwuryzx9SGcFvzN36feTZo+9ZGGqL4kRpVe
     172.16.100.203 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHUjlPsAqLLX1D9qw52ND81Ck6qNqP4Z8YnCnBWzyu8y
