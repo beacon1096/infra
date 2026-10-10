@@ -45,6 +45,14 @@ terraform/cloudflare-dns/run.sh apply tfplan
   权限，一次性；刻意不入 SOPS）。
 - 需要访问 vault/provider 凭据的栈，按其 `run.sh` 从 SOPS 解密到进程环境，
   不要把解密结果写入 state 或磁盘。
+- `authentik-wanxiang` 的 provider 凭据与 4 个敏感变量不在本仓：用
+  `terraform/authentik-wanxiang/run.sh`，它从 **infra-private** 的
+  `secrets/infrastructure/authentik-terraform.yaml`（SOPS）解密 `authentik_token`
+  及 `netlock_radius_shared_secret` / `anyconn_rac_settings` /
+  `rac_rdp_beaco_settings` / `rac_rdp_beacon_settings`，以 `TF_VAR_*` 注入进程
+  环境（不落盘）；默认读同级的 `infra-private` checkout，可用
+  `AUTHENTIK_TERRAFORM_SECRETS` 覆盖路径。该栈的 `run.sh` 依赖此私有 bundle，
+  缺它时拒绝运行。
 
 ## 凭据与边界
 
