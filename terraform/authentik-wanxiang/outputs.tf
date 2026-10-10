@@ -10,3 +10,16 @@ output "tailscale_client_secret" {
 output "tailscale_oidc_issuer" {
   value = "https://id.beaco.works/application/o/${authentik_application.tailscale.slug}/"
 }
+
+output "litellm_client_id" {
+  value = authentik_provider_oauth2.oidc["litellm"].client_id
+}
+
+output "litellm_client_secret" {
+  value     = authentik_provider_oauth2.oidc["litellm"].client_secret
+  sensitive = true
+}
+
+output "litellm_oidc_issuer" {
+  value = "https://id.beaco.works/application/o/${authentik_application.oidc["litellm"].slug}/"
+}

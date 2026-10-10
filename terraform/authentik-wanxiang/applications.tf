@@ -53,6 +53,18 @@ locals {
         },
       ]
     }
+    litellm = {
+      name             = "LiteLLM @ Beacoworks"
+      client_id        = "vuCsy7cctHxAIqpgWM2q1B5gwtQsmbq1kJRuu9NzCD"
+      explicit_consent = false
+      offline_access   = true
+      redirect_uris = [
+        {
+          matching_mode = "strict"
+          url           = "https://models.beaco.works/sso/callback"
+        },
+      ]
+    }
     matrix = {
       name             = "Matrix @ Beacoworks"
       client_id        = "A1zaJfZZBJYjVv3H83hUWSvC8ujajOl6EKYo"
