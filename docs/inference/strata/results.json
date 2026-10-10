@@ -1605,6 +1605,52 @@
       "raw prompts, SSE and per-second telemetry remain on the test host and are not included in this aggregate"
     ]
   },
+  "abliterated_iq3_evaluation": {
+    "date": "2026-10-10",
+    "model": "SC117/Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF",
+    "hf_revision": "eec4e10a2c29b440a2ae85591fa11569ce752963",
+    "quantization": "IQ3_XXS",
+    "shard1": {
+      "bytes": 47342144896,
+      "sha256": "03b11926b41a3d7f7a008882b1bc7a6330a3c9c43d3cad4598d31dc73042fdc5"
+    },
+    "shared_ple_shard": {
+      "bytes": 28800138432,
+      "sha256": "316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113"
+    },
+    "mode": "Titan-primary A2000 expert-helper",
+    "configured_context_tokens": 32768,
+    "kv_type": "int8",
+    "mtp_provenance": "stock Qwen MTP runtime; not abliterated",
+    "samples_per_performance_case": 3,
+    "original_baseline": {
+      "short_ttft_s_median": 1.412699,
+      "short_decode_tokens_per_second_median": 78.5,
+      "prompt_26k_ttft_s_median": 24.156762,
+      "prompt_26k_prefill_tokens_per_second_median": 1099.7,
+      "prompt_26k_decode_tokens_per_second_median": 85.9
+    },
+    "sc117": {
+      "short_ttft_s_median": 1.443028,
+      "short_decode_tokens_per_second_median": 69.9,
+      "prompt_26k_ttft_s_median": 24.237316,
+      "prompt_26k_prefill_tokens_per_second_median": 1095.7,
+      "prompt_26k_decode_tokens_per_second_median": 81.9,
+      "errors": 0,
+      "incomplete_streams": 0
+    },
+    "functional_checks": {
+      "existing_quality_sanity": true,
+      "strict_json_schema": true,
+      "required_tool_call": true,
+      "fictional_non_refusal": true
+    },
+    "limitations": [
+      "three performance samples per prompt class; decode varies with generated content and MTP acceptance",
+      "no repeated 128K, soak, or broad quality evaluation for the abliterated weights",
+      "abliteration reduces refusal behavior but does not establish unrestricted behavior or improved general capability"
+    ]
+  },
   "limits": [
     "两道固定短质量题不足以证明量化质量优劣；此公开数据不包含质量输出原文。",
     "VmRSS、VmHWM、RssAnon、RssFile、RssShmem的各自峰值可能不在同一时刻，不可相加；进程RSS含file mapping/cache，不能等同不可回收RAM。",

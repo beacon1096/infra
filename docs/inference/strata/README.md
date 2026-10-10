@@ -206,6 +206,23 @@ A2000 10,793 MiB，温度峰值分别为 84°C 和 74°C，未触发预设的 86
 - 这些实验验证的是直接 loopback 后端、单请求 FIFO 和关闭 thinking 的路径。尚未验证 LiteLLM/Tailnet/OpenCode 的 128K 元数据、生产默认 low thinking、多客户端并发或服务重启后的长期运维行为。
 - 若进入产品试用，可先声明 context 131,072、输入预算 122,880、输出预算 4,096，保留约 4K 给模板、工具和 token 估算误差；正式模型仍应在产品路径门禁通过后再切换。
 
+## SC117 abliterated IQ3_XXS 试用
+
+2026-10-10 以 [SC117/Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF](https://huggingface.co/SC117/Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF) 的 `IQ3_XXS` 做同机替换检查，固定 revision 为 `eec4e10a2c29b440a2ae85591fa11569ce752963`。修改后的 shard 1 为 47,342,144,896 bytes，SHA-256 为 `03b11926b41a3d7f7a008882b1bc7a6330a3c9c43d3cad4598d31dc73042fdc5`；shard 2 与原模型逐字节相同，继续复用上文已校验的 PLE 文件。
+
+该模型必须从新 GGUF 生成独立 native pack，不能复用原 pack 的 tensor offsets。MTP runtime 仍来自原始 Qwen 检查点，并未随主模型做 abliteration。测试保持 Titan 主卡、A2000 expert helper、32K context、int8 KV、相同 expert profile 和推测解码参数，不使用 layer split。
+
+新旧模型各运行一次相同 harness；每组包含三次短提示、三次约 26.3K 提示和两道质量 sanity。下表为三次性能样本的中位数：
+
+| 模型 | 短提示 TTFT（s） | 26K TTFT（s） | 26K prefill（tok/s） | 26K decode（tok/s） |
+| --- | ---: | ---: | ---: | ---: |
+| 原始 IQ3_XXS | 1.413 | 24.157 | 1,099.7 | 85.9 |
+| SC117 abliterated IQ3_XXS | 1.443 | 24.237 | 1,095.7 | 81.9 |
+
+SC117 的 26K prefill 低约 0.4%、TTFT 高约 0.3%，本轮长输出 decode 中位数低约 4.7%。只有三次输出且 MTP 接受率随生成内容变化，不能把这组 decode 差异当作稳定回归比例。所有流均正常结束，无错误或截断；中文材料摘要和 Python 小函数题均满足原 sanity 要求。另做的严格 JSON schema、强制工具调用和明确标为虚构的反乌托邦写作请求也均通过。
+
+这只证明该权重能沿现有 Strata expert-helper 路径加载并通过初步功能门槛。Abliteration 旨在减少拒答，不代表通用能力提升，也不证明所有类别都不会拒答；本轮没有重跑 128K、长期 soak、大规模质量评测或公开服务安全边界。对外暴露仍需独立访问控制和工具权限隔离。
+
 ## 复现实验配置
 
 以下命令在固定 Strata 源码目录、已经准备好的 CUDA/FHS 环境中执行。GPU 编号需先确认 Titan 为 0、A2000 为 1。
