@@ -1645,9 +1645,167 @@
       "required_tool_call": true,
       "fictional_non_refusal": true
     },
+    "helper_128k_evaluation": {
+      "configured_context_tokens": 131072,
+      "kv_resident_tokens": 32768,
+      "memory_budget_GiB": 52,
+      "swap_max_bytes": 0,
+      "capacity_matrix": [
+        {
+          "target_prompt_tokens": 60000,
+          "samples": 6,
+          "needle_depths": [0.1, 0.5, 0.9],
+          "repeats_per_depth": 2,
+          "all_passkeys_correct": true,
+          "ttft_s_min": 56.071871,
+          "ttft_s_max": 56.765341,
+          "ttft_s_mean": 56.524845,
+          "prefill_tokens_per_second_min": 1063.3,
+          "prefill_tokens_per_second_max": 1075.5
+        },
+        {
+          "target_prompt_tokens": 96000,
+          "samples": 6,
+          "needle_depths": [0.1, 0.5, 0.9],
+          "repeats_per_depth": 2,
+          "all_passkeys_correct": true,
+          "ttft_s_min": 92.199109,
+          "ttft_s_max": 92.350537,
+          "ttft_s_mean": 92.286852,
+          "prefill_tokens_per_second_min": 1044.2,
+          "prefill_tokens_per_second_max": 1045.7
+        },
+        {
+          "target_prompt_tokens": 120000,
+          "samples": 6,
+          "needle_depths": [0.1, 0.5, 0.9],
+          "repeats_per_depth": 2,
+          "all_passkeys_correct": true,
+          "ttft_s_min": 119.938923,
+          "ttft_s_max": 120.098645,
+          "ttft_s_mean": 120.016714,
+          "prefill_tokens_per_second_min": 1003.1,
+          "prefill_tokens_per_second_max": 1004.9
+        },
+        {
+          "target_prompt_tokens": 126000,
+          "samples": 2,
+          "needle_depths": [0.5],
+          "repeats_per_depth": 2,
+          "all_passkeys_correct": true,
+          "ttft_s_min": 128.358387,
+          "ttft_s_max": 128.574634,
+          "ttft_s_mean": 128.46651,
+          "prefill_tokens_per_second_min": 984.3,
+          "prefill_tokens_per_second_max": 986.1
+        }
+      ],
+      "long_output": [
+        {
+          "actual_prompt_tokens": 119978,
+          "completion_tokens": 512,
+          "finish_reason": "length",
+          "done_marker": true,
+          "ttft_s": 119.858422,
+          "total_s": 125.28726,
+          "decode_tokens_per_second": 94.0
+        },
+        {
+          "actual_prompt_tokens": 119972,
+          "completion_tokens": 2048,
+          "finish_reason": "length",
+          "done_marker": true,
+          "ttft_s": 119.85983,
+          "total_s": 141.012258,
+          "decode_tokens_per_second": 96.7
+        },
+        {
+          "actual_prompt_tokens": 119974,
+          "completion_tokens": 4096,
+          "finish_reason": "length",
+          "done_marker": true,
+          "ttft_s": 119.906356,
+          "total_s": 161.703994,
+          "decode_tokens_per_second": 98.0
+        }
+      ],
+      "context_regression": {
+        "context_32k": {
+          "short_ttft_s_median": 1.443028,
+          "prompt_26k_ttft_s_median": 24.237316,
+          "prompt_26k_prefill_tokens_per_second_median": 1095.7,
+          "prompt_26k_decode_tokens_per_second_median": 81.9
+        },
+        "context_128k": {
+          "short_ttft_s_median": 1.499966,
+          "prompt_26k_ttft_s_median": 26.138845,
+          "prompt_26k_prefill_tokens_per_second_median": 1015.5,
+          "prompt_26k_decode_tokens_per_second_median": 81.9
+        },
+        "all_stream_and_structure_checks_valid": true
+      },
+      "soak": {
+        "duration_s": 3347.319865,
+        "cycles": 14,
+        "requests": 56,
+        "all_valid": true,
+        "all_correct": true,
+        "first_half_ttft_s_mean": {
+          "short": 0.481325,
+          "prompt_60k": 56.11707,
+          "prompt_120k": 119.888158
+        },
+        "second_half_ttft_s_mean": {
+          "short": 0.474236,
+          "prompt_60k": 56.177534,
+          "prompt_120k": 119.995207
+        },
+        "engine_rss_peak_kib": 47560380,
+        "engine_rss_first_quarter_mean_kib": 47230639.966507,
+        "engine_rss_last_quarter_mean_kib": 47318899.660693,
+        "cgroup_memory_peak_bytes": 55834574848,
+        "memory_events_max_delta": 524,
+        "oom": 0,
+        "oom_kill": 0,
+        "host_mem_available_min_kib": 14328916,
+        "gpu_peak": {
+          "Titan": {
+            "memory_used_mib": 23660,
+            "temperature_c": 85
+          },
+          "A2000": {
+            "memory_used_mib": 10791,
+            "temperature_c": 63
+          }
+        }
+      },
+      "resources": {
+        "engine_rss_peak_kib": 47662684,
+        "cgroup_memory_peak_bytes": 55834574848,
+        "memory_events_max": 307,
+        "oom": 0,
+        "oom_kill": 0,
+        "host_mem_available_min_kib": 14141560,
+        "gpu_peak": {
+          "Titan": {
+            "memory_used_mib": 23656,
+            "temperature_c": 85
+          },
+          "A2000": {
+            "memory_used_mib": 10791,
+            "temperature_c": 74
+          }
+        }
+      },
+      "limitations": [
+        "direct loopback backend with reasoning disabled; production low-thinking and product paths were not tested at 128K",
+        "no cancellation evaluation for the abliterated weights"
+      ],
+      "production_promoted": true
+    },
     "limitations": [
       "three performance samples per prompt class; decode varies with generated content and MTP acceptance",
-      "no repeated 128K, soak, or broad quality evaluation for the abliterated weights",
+      "no broad quality evaluation for the abliterated weights",
       "abliteration reduces refusal behavior but does not establish unrestricted behavior or improved general capability"
     ]
   },
