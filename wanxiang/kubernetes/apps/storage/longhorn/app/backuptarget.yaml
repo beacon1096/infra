@@ -1,0 +1,25 @@
+---
+# Longhorn off-site backup target.
+#
+# The endpoint and storage path are private topology and are being moved to the
+# `infra-private` overlay (`BackupTarget/default` is re-declared there). This
+# public copy is kept only as the first phase of that migration and is annotated
+# with `prune: disabled` so the later removal of this file does not make Flux
+# prune the live object while the private Kustomization takes it over.
+#
+# Migration order (all in BEACO-203):
+#   1. this file gains `kustomize.toolkit.fluxcd.io/prune: disabled` (this PR)
+#   2. `infra-private` re-declares `BackupTarget/default` + Kustomization
+#   3. this file is deleted (follow-up PR) — Flux skips the prune
+apiVersion: longhorn.io/v1beta2
+kind: BackupTarget
+metadata:
+  name: default
+  namespace: storage
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: Override
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  backupTargetURL: nfs://172.16.19.254:/mnt/beaco-01/Backups/wanxiang/longhorn
+  credentialSecret: ""
+  pollInterval: 5m0s
