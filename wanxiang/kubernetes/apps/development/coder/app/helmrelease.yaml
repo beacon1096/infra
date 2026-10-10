@@ -23,6 +23,10 @@ spec:
           value: "https://code.${SECRET_DOMAIN}"
         - name: CODER_WILDCARD_ACCESS_URL
           value: "*.code.${SECRET_DOMAIN}"
+        # Coder 2.34 起 AI Gateway 默认启用；本环境不使用，显式关闭，
+        # 避免引入额外的出网/密钥面。见 BEACO-202。
+        - name: CODER_AI_GATEWAY_ENABLED
+          value: "false"
         - name: CODER_MAX_TOKEN_LIFETIME
           value: "8760h"
         - name: CODER_MAX_ADMIN_TOKEN_LIFETIME
