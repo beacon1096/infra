@@ -18,6 +18,10 @@ spec:
   interval: 1h
   values:
     coder:
+      # Temporary downstream build for the resource allow-list SQL fix.
+      image:
+        repo: forgejo.beaco.works/infrastructure/nix-fleet/coder
+        tag: 2.36.5-beacon.2
       env:
         - name: CODER_ACCESS_URL
           value: "https://code.${SECRET_DOMAIN}"
