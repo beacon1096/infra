@@ -124,6 +124,8 @@ spec:
               value: https://models.beaco.works
             - name: PROXY_LOGOUT_URL
               value: https://id.beaco.works/application/o/litellm/end-session/
+            - name: AUTO_REDIRECT_UI_LOGIN_TO_SSO
+              value: "true"
           volumeMounts:
             - name: config
               mountPath: /app/config.yaml
