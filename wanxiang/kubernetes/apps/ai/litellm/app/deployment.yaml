@@ -102,6 +102,28 @@ spec:
               value: postgresql://litellm:$(POSTGRES_PASSWORD)@litellm-pg-rw:5432/litellm
             - name: TZ
               value: Asia/Shanghai
+            - name: GENERIC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-secret
+                  key: oidc-client-id
+            - name: GENERIC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-secret
+                  key: oidc-client-secret
+            - name: GENERIC_AUTHORIZATION_ENDPOINT
+              value: https://id.beaco.works/application/o/authorize/
+            - name: GENERIC_TOKEN_ENDPOINT
+              value: https://id.beaco.works/application/o/token/
+            - name: GENERIC_USERINFO_ENDPOINT
+              value: https://id.beaco.works/application/o/userinfo/
+            - name: GENERIC_SCOPE
+              value: openid email profile
+            - name: PROXY_BASE_URL
+              value: https://models.beaco.works
+            - name: PROXY_LOGOUT_URL
+              value: https://id.beaco.works/application/o/litellm/end-session/
           volumeMounts:
             - name: config
               mountPath: /app/config.yaml
