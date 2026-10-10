@@ -42,6 +42,8 @@ jobs:
             .#coding-agent-oci | tee coding-agent-store-path.txt
           nix build --print-out-paths --out-link result-ci-multica \
             .#multica-backend-oci | tee multica-store-path.txt
+          nix build --print-out-paths --out-link result-ci-coder-server \
+            .#coder-server-oci | tee coder-server-store-path.txt
       - name: Push OCI smoke-test images
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/prod'
         env:
@@ -80,3 +82,8 @@ jobs:
             --dest-authfile "$auth_file" \
             docker-archive:result-ci-multica \
             "docker://$registry_host/ci-publisher/nix-fleet/multica-backend:ci-scratch"
+          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-ci-tmp" copy \
+            "${skopeo_args[@]}" \
+            --dest-authfile "$auth_file" \
+            docker-archive:result-ci-coder-server \
+            "docker://$registry_host/ci-publisher/nix-fleet/coder:ci-scratch"

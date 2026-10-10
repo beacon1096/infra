@@ -1,0 +1,53 @@
+diff --git a/coderd/rbac/regosql/compile_test.go b/coderd/rbac/regosql/compile_test.go
+index f912172..2416c49 100644
+--- a/coderd/rbac/regosql/compile_test.go
++++ b/coderd/rbac/regosql/compile_test.go
+@@ -226,6 +226,26 @@ func TestRegoQueries(t *testing.T) {
+ 			ExpectedSQL: "((chats_expanded.user_acl#>array['d5389ccc-57a4-4b13-8c3f-31747bcdc9f1', 'permissions'] ? 'read')" +
+ 				" OR (chats_expanded.user_acl#>array['d5389ccc-57a4-4b13-8c3f-31747bcdc9f1', 'permissions'] ? '*'))",
+ 			VariableConverter: regosql.ChatConverter(),
+ 		},
++		{
++			Name: "TemplateAllowList",
++			Queries: []string{
++				`input.object.id in ["9046b041-58ed-47a3-9c3a-de302577875a"]`,
++			},
++			ExpectedSQL: p(
++				`t.id :: text = ANY(ARRAY ['9046b041-58ed-47a3-9c3a-de302577875a'])`,
++			),
++			VariableConverter: regosql.TemplateConverter(),
++		},
++		{
++			Name: "WorkspaceAllowList",
++			Queries: []string{
++				`input.object.id in ["9046b041-58ed-47a3-9c3a-de302577875a"]`,
++			},
++			ExpectedSQL: p(
++				`workspaces.id :: text = ANY(ARRAY ['9046b041-58ed-47a3-9c3a-de302577875a'])`,
++			),
++			VariableConverter: regosql.WorkspaceConverter(),
++		},
+		{
+			Name: "ChatAllowList",
+diff --git a/coderd/rbac/regosql/configs.go b/coderd/rbac/regosql/configs.go
+index 93e3203..9244b03 100644
+--- a/coderd/rbac/regosql/configs.go
++++ b/coderd/rbac/regosql/configs.go
+@@ -28,7 +28,7 @@ func userACLMatcher(m sqltypes.VariableMatcher) ACLMappingVar {
+ 
+ func TemplateConverter() *sqltypes.VariableConverter {
+ 	matcher := sqltypes.NewVariableConverter().RegisterMatcher(
+-		resourceIDMatcher(),
++		sqltypes.StringVarMatcher("t.id :: text", []string{"input", "object", "id"}),
+ 		sqltypes.StringVarMatcher("t.organization_id :: text", []string{"input", "object", "org_owner"}),
+ 		// Templates have no user owner, only owner by an organization.
+ 		sqltypes.AlwaysFalse(userOwnerMatcher()),
+@@ -42,7 +42,7 @@ func TemplateConverter() *sqltypes.VariableConverter {
+ 
+ func WorkspaceConverter() *sqltypes.VariableConverter {
+ 	matcher := sqltypes.NewVariableConverter().RegisterMatcher(
+-		resourceIDMatcher(),
++		sqltypes.StringVarMatcher("workspaces.id :: text", []string{"input", "object", "id"}),
+ 		sqltypes.StringVarMatcher("workspaces.organization_id :: text", []string{"input", "object", "org_owner"}),
+ 		userOwnerMatcher(),
+ 	)

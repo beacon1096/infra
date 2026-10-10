@@ -799,6 +799,59 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Image: \`forgejo.beaco.works/infrastructure/nix-fleet/multica-backend:0.6.0-beacon.1\`" >> "$GITHUB_STEP_SUMMARY"
 
+  build-and-push-coder-server-oci:
+    needs: warm-cache
+    runs-on: nix-collector
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Configure Attic
+        run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_READ_TOKEN"
+
+      - name: Build patched Coder server
+        run: |
+          set -euo pipefail
+          nix build --print-out-paths --out-link result-coder \
+            .#coder-server-oci | tee coder-store-path.txt
+          attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "${{ secrets.ATTIC_TOKEN }}"
+          attic push "$ATTIC_CACHE" "$(cat coder-store-path.txt)"
+
+      - name: Push to Forgejo Registry
+        env:
+          IMAGE_PATH: infrastructure/nix-fleet/coder
+          IMAGE_TAG: 2.36.5-beacon.1
+          REGISTRY_USER: ${{ secrets.REPO_TOKEN_OWNER }}
+          REGISTRY_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          registry_host="${REGISTRY_ENDPOINT#http://}"
+          registry_host="${registry_host#https://}"
+          test -n "$REGISTRY_USER"
+          test -n "$REGISTRY_TOKEN"
+          skopeo_args=(--retry-times 5 --retry-delay 10s)
+          login_args=(--username "$REGISTRY_USER" --password-stdin)
+          auth_file="$PWD/.skopeo-auth.json"
+          trap 'rm -f "$auth_file"' EXIT
+          mkdir -p "$PWD/.skopeo-tmp"
+          printf '%s' "$REGISTRY_TOKEN" | nix shell nixpkgs#skopeo -c \
+            skopeo login --authfile "$auth_file" "${login_args[@]}" "$registry_host"
+          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
+            "${skopeo_args[@]}" \
+            --dest-authfile "$auth_file" \
+            docker-archive:result-coder \
+            "docker://$registry_host/$IMAGE_PATH:$IMAGE_TAG"
+
+      - name: Summary
+        run: |
+          echo "### coder-server-oci" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image: \`forgejo.beaco.works/infrastructure/nix-fleet/coder:2.36.5-beacon.1\`" >> "$GITHUB_STEP_SUMMARY"
+
   # ── Collector runner image (Forgejo runner + Nix, host mode) ──
   build-and-push-nix-collector-oci:
     needs: warm-cache
@@ -872,6 +925,7 @@ jobs:
       - build-installer-iso
       - build-and-push-coding-agent-oci
       - build-and-push-multica-backend-oci
+      - build-and-push-coder-server-oci
       - build-and-push-nix-collector-oci
     runs-on: nix-collector
     steps:
