@@ -64,5 +64,8 @@ spec:
       # No upstream telemetry.
       allowCollectingLonghornUsageMetrics: false
     metrics:
+      # Expose the manager metrics (incl. longhorn_volume_last_backup_at and
+      # longhorn_backup_state) for the backup alert rules in prometheusrule.yaml.
+      # The ServiceMonitor is inert until a Prometheus-compatible scraper lands.
       serviceMonitor:
-        enabled: false  # flip to true once VictoriaMetrics lands
+        enabled: true

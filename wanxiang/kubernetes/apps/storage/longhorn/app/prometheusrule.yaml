@@ -1,0 +1,55 @@
+---
+# Backup health alerts for Longhorn.
+#
+# These rules read the metrics the longhorn-manager exposes when
+# `metrics.serviceMonitor.enabled` is true (see helmrelease.yaml). They require a
+# Prometheus/VictoriaMetrics-compatible scraper (and Alertmanager for delivery);
+# the cluster does not run one yet, so the rules are declared here and only
+# become live once that stack lands. Until then, failure state is still visible
+# through the `RecurringJob` status, Longhorn events, and the daily manual check
+# in wanxiang/docs/operations/database-backup.md.
+#
+# `longhorn_volume_last_backup_at` is a Unix timestamp per volume:
+#   0            -> never backed up
+#   <timestamp>  -> time of the last successful backup
+# `longhorn_backup_state` encodes backup state; 4 == Error.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: longhorn-backup
+  namespace: storage
+  labels:
+    app.kubernetes.io/name: longhorn
+    app.kubernetes.io/part-of: longhorn
+spec:
+  groups:
+    - name: longhorn.backup.rules
+      rules:
+        - alert: LonghornBackupStale
+          # A volume that has been backed up before but has not had a successful
+          # backup in 48h (2x the 24h RPO). Catches a broken recurring job, a
+          # stuck/queued backup, or an unavailable backup target.
+          expr: |
+            longhorn_volume_last_backup_at > 0
+              and (time() - longhorn_volume_last_backup_at) > 172800
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: Longhorn volume {{ $labels.pvc }} has no recent backup
+            description: >-
+              Volume {{ $labels.volume }} (PVC {{ $labels.pvc }} in namespace
+              {{ $labels.pvc_namespace }}) was last backed up
+              {{ $value | humanizeDuration }} ago, more than 2x the 24h RPO.
+              Check the Longhorn recurring job and the backup target.
+        - alert: LonghornBackupFailed
+          expr: |
+            longhorn_backup_state == 4
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Longhorn backup {{ $labels.backup }} failed
+            description: >-
+              Backup {{ $labels.backup }} for volume {{ $labels.volume }} is in
+              the Error state. Inspect the Longhorn UI or the `Backup` CR.

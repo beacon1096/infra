@@ -19,6 +19,8 @@
 
 Longhorn 卷备份和 `SystemBackup` 对象覆盖卷数据与集群元数据。需要时间点恢复的应用还应具备自身的备份方案。
 
+每日周期备份（Longhorn `RecurringJob/daily-backup`）的排程、RPO/RTO、保留与告警策略，以及恢复 runbook 见[数据库与卷备份](database-backup.md)。
+
 ## 恢复演练记录
 
 ### 2026-10-10 — coder-pg 卷备份恢复演练（Coder 升级前置门槛）

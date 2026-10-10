@@ -1,0 +1,37 @@
+---
+# Periodic off-site backup of every Longhorn volume in the `default` group.
+#
+# Longhorn automatically places a volume in the `default` group while the volume
+# has no other recurring job, so this single job covers all current volumes
+# (including the CNPG data volumes such as `coder-pg`) without per-volume
+# labelling — see
+# https://longhorn.io/docs/1.12.1/snapshots-and-backups/scheduling-backups-and-snapshots/
+#
+# `task: backup` takes an incremental snapshot and uploads it to the backup
+# target declared by the `BackupTarget/default` CR (owned by `infra-private`).
+# Longhorn skips a run when the volume has no new data since the last backup.
+#
+# The cron is evaluated in UTC by the longhorn-manager (TZ=UTC):
+#   0 18 * * * -> 02:00 Asia/Shanghai (UTC+8)
+#
+# RPO target is 24h. `retain` keeps 14 dailies and `full-backup-interval`
+# forces a full backup every 7th run, so a corrupted content-addressed block is
+# rewritten at most ~weekly while full uploads stay bounded. Capacity budget is
+# documented in wanxiang/docs/operations/database-backup.md.
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: daily-backup
+  namespace: storage
+spec:
+  cron: "0 18 * * *"
+  task: backup
+  groups:
+    - default
+  retain: 14
+  concurrency: 1
+  parameters:
+    full-backup-interval: "6"
+  labels:
+    backup-tier: offsite
+    backup-schedule: daily

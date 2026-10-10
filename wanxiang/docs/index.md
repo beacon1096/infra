@@ -57,6 +57,9 @@ ADRs are organized by their scope:
   approval, protected merging, Forgejo service accounts, and Nix rollout.
 - [Wanxiang off-site backups](operations/offsite-backup.md) — TrueNAS,
   routed NFS, Longhorn SystemBackup, and restore verification.
+- [Database and volume backups](operations/database-backup.md) — periodic
+  Longhorn off-site backups for `coder-pg`, RPO/RTO/retention, alert rules, and
+  the restore-drill runbook.
 - [Syncthing introducer](operations/syncthing-introducer.md)
 - [ArchiveBox web archiving](operations/archivebox.md) — self-hosted capture/replay for
   references cited in our documentation (e.g. ChatGPT share links).
