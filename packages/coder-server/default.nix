@@ -97,6 +97,9 @@ in
 dockerTools.buildLayeredImage {
   name = "coder-server";
   tag = version;
+  fakeRootCommands = ''
+    chown -R 1000:1000 ./home/coder
+  '';
   contents = [
     rootFiles terraform busybox cacert curl wget bash gitMinimal openssl openssh tzdata
   ];

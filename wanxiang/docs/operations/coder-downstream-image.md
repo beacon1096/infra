@@ -19,7 +19,7 @@ only the disposable `ci-scratch` tag. The release workflow publishes the
 immutable production tag:
 
 ```text
-forgejo.beaco.works/infrastructure/nix-fleet/coder:2.36.5-beacon.1
+forgejo.beaco.works/infrastructure/nix-fleet/coder:2.36.5-beacon.2
 ```
 
 The production tag must be anonymously pullable before the HelmRelease image
