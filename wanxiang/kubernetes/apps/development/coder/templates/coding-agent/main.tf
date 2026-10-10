@@ -298,6 +298,20 @@ resource "kubernetes_pod" "workspace" {
         }
       }
 
+      dynamic "env" {
+        for_each = local.gitops_workspace ? [local.agent_secret] : []
+        content {
+          name = "CODER_SESSION_TOKEN"
+          value_from {
+            secret_key_ref {
+              name     = env.value
+              key      = "CODER_SESSION_TOKEN"
+              optional = true
+            }
+          }
+        }
+      }
+
       env {
         name  = "BEACOWORKS_MODELS_API_BASE"
         value = "http://litellm.ai.svc.cluster.local:4000/v1"

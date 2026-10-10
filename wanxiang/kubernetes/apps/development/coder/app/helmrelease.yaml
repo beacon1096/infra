@@ -23,6 +23,8 @@ spec:
           value: "https://code.${SECRET_DOMAIN}"
         - name: CODER_WILDCARD_ACCESS_URL
           value: "*.code.${SECRET_DOMAIN}"
+        - name: CODER_MAX_TOKEN_LIFETIME
+          value: "8760h"
         - name: CODER_PG_CONNECTION_URL
           valueFrom:
             secretKeyRef:
