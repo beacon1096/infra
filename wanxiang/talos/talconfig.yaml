@@ -36,7 +36,7 @@ nodes:
       # Explicit NIC names instead of deviceSelectors: talhelper 3.1.x splits
       # bond+vlan into modular configs (BondConfig/VLANConfig kinds) when
       # deviceSelectors is used, and silently drops VIP during that translation.
-      # All three MS-01 hosts have identical X710 NIC naming.
+      # NIC names depend on each node's PCIe topology.
       - interface: bond0
         bond:
           interfaces:
@@ -86,12 +86,12 @@ nodes:
       # Explicit NIC names instead of deviceSelectors: talhelper 3.1.x splits
       # bond+vlan into modular configs (BondConfig/VLANConfig kinds) when
       # deviceSelectors is used, and silently drops VIP during that translation.
-      # All three MS-01 hosts have identical X710 NIC naming.
+      # Installing the Arc Pro B50 moved the X710 from PCI bus 2 to bus 6.
       - interface: bond0
         bond:
           interfaces:
-            - enp2s0f0np0
-            - enp2s0f1np1
+            - enp6s0f0np0
+            - enp6s0f1np1
           mode: 802.3ad
           lacpRate: fast
           xmitHashPolicy: layer3+4
@@ -136,7 +136,7 @@ nodes:
       # Explicit NIC names instead of deviceSelectors: talhelper 3.1.x splits
       # bond+vlan into modular configs (BondConfig/VLANConfig kinds) when
       # deviceSelectors is used, and silently drops VIP during that translation.
-      # All three MS-01 hosts have identical X710 NIC naming.
+      # NIC names depend on each node's PCIe topology.
       - interface: bond0
         bond:
           interfaces:
