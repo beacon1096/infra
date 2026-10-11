@@ -107,7 +107,7 @@
         HostName 172.16.80.240
         HostKeyAlias 172.16.80.240
         User agent-prober
-        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        ProxyCommand none
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
         IdentitiesOnly yes
@@ -248,20 +248,20 @@
         StrictHostKeyChecking yes
 
       Host microserver-gen10plus 100.121.229.9
-        HostName 100.121.229.9
+        HostName 172.16.20.11
         HostKeyAlias microserver-gen10plus
         User beacon
-        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        ProxyCommand none
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
         IdentitiesOnly yes
         StrictHostKeyChecking yes
 
       Host microserver-gen10plus-probe
-        HostName 100.121.229.9
+        HostName 172.16.20.11
         HostKeyAlias microserver-gen10plus
         User agent-prober
-        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        ProxyCommand none
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
         IdentitiesOnly yes
@@ -271,7 +271,7 @@
         HostName 172.16.101.31
         HostKeyAlias 172.16.101.31
         User agent-prober
-        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        ProxyCommand none
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
         IdentitiesOnly yes
@@ -281,7 +281,7 @@
         HostName 172.16.101.32
         HostKeyAlias 172.16.101.32
         User agent-prober
-        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        ProxyCommand none
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
         IdentitiesOnly yes
@@ -291,7 +291,7 @@
         HostName 172.16.101.33
         HostKeyAlias 172.16.101.33
         User agent-prober
-        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        ProxyCommand none
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
         IdentitiesOnly yes
@@ -302,14 +302,17 @@
         HostKeyAlias 100.101.83.77
         User beacon
 
-      # 172.16.100.0/24 (太初 Harvester / RB5009 / m920x) is reachable directly
-      # over the runtime's tailnet route; the userspace `tailscale nc` proxy
-      # hangs on this path, so disable it for these hosts.
+      # Internal LAN hosts are reachable directly over the cluster underlay
+      # route, while the runtime's userspace `tailscale nc` proxy hangs (its
+      # tailscaled runs with `--tun=userspace-networking` and loses the
+      # control-plane map, so the proxy dials time out). Keep the direct path
+      # for every 172.16.0.0/12 host so the inspection checks do not depend on
+      # the userspace proxy.
       Host mc5-01 mc4-01 mc4-02 rb5009 m920x 172.16.100.201 172.16.100.202 172.16.100.203 172.16.100.250 172.16.100.254
         ProxyCommand none
 
       Host mc5-01 mc4-01 mc4-02 rb5009 m920x ms-r1 udm-pro 100.100.250.57 100.101.83.77 172.16.20.* 172.16.80.* 172.16.81.* 172.16.82.* 172.16.83.* 172.16.84.* 172.16.85.* 172.16.86.* 172.16.87.* 172.16.88.* 172.16.89.* 172.16.90.* 172.16.91.* 172.16.92.* 172.16.93.* 172.16.94.* 172.16.95.* 172.16.100.* 172.16.101.* 172.16.102.* 172.16.107.*
-        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        ProxyCommand none
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
         IdentitiesOnly yes
@@ -393,17 +396,17 @@
         HostName 172.16.80.240
         HostKeyAlias 172.16.80.240
         User root
-        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        ProxyCommand none
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
         IdentitiesOnly yes
         StrictHostKeyChecking yes
 
       Host microserver-gen10plus-root
-        HostName 100.121.229.9
+        HostName 172.16.20.11
         HostKeyAlias microserver-gen10plus
         User root
-        ProxyCommand /bin/tailscale --socket=/tmp/tailscale/tailscaled.sock nc %h %p
+        ProxyCommand none
         IdentityFile /home/coder/.ssh/runtime/id_ed25519
         UserKnownHostsFile /home/coder/.ssh/known_hosts
         IdentitiesOnly yes
