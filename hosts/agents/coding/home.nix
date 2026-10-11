@@ -1,24 +1,5 @@
 # Coder-backed general coding agent profile.
 { lib, pkgs, ... }:
-
-let
-  multica = pkgs.stdenvNoCC.mkDerivation {
-    pname = "multica";
-    version = "0.6.0";
-    src = pkgs.fetchurl {
-      url = "https://github.com/multica-ai/multica/releases/download/v0.6.0/multica-cli-0.6.0-linux-amd64.tar.gz";
-      hash = "sha256-eITj5sZ4rEhcryC85MyYNT6SxvWG7I3z3z/ry3yOnls=";
-    };
-    dontUnpack = true;
-    installPhase = ''
-      runHook preInstall
-      mkdir -p $out/bin
-      tar -xzf $src
-      install -m 0755 multica $out/bin/multica
-      runHook postInstall
-    '';
-  };
-in
 {
   imports = [
     ../common/home.nix
@@ -37,7 +18,6 @@ in
     pkgs.diffutils
     # OpenTofu for the Terraform stacks (docs/agentic/workflow/infra-ops/terraform.md).
     pkgs.opentofu
-    multica
   ];
 
   programs.git.settings = {

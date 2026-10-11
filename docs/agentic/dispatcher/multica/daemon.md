@@ -8,7 +8,7 @@ Multica 管理长期 Agent 身份、工单、Autopilot 和任务运行；Coder �
 
 ## 执行 daemon
 
-Coder 的 `coding-agent` 模板位于 `wanxiang/kubernetes/apps/development/coder/templates/coding-agent/main.tf`。每个工作区有持久化的 `/home/coder` 卷，工作目录为 `/home/coder/workspace`；工作区镜像含 `multica` CLI `0.4.24` 和 Pi 等 agent 工具。Coder agent 的启动脚本在 CLI 可用时执行 `multica daemon start`，失败时查询 `multica daemon status`。因此 daemon 依附 Coder 工作区生命周期，不是 Multica HelmRelease 里另一个常驻执行器。
+Coder 的 `coding-agent` 模板位于 `wanxiang/kubernetes/apps/development/coder/templates/coding-agent/main.tf`。每个工作区有持久化的 `/home/coder` 卷，工作目录为 `/home/coder/workspace`；工作区镜像含 `multica` CLI `0.6.1` 和 Pi 等 agent 工具。Coder agent 的启动脚本在 CLI 可用时执行 `multica daemon start`，失败时查询 `multica daemon status`。因此 daemon 依附 Coder 工作区生命周期，不是 Multica HelmRelease 里另一个常驻执行器。
 
 工作区启动时挂载运行所需凭据、Git SSH 和模型入口；具体授权由 Secret 与工作区模板控制，不在本文复制凭据内容。执行中的 agent 应先确认当前工单、运行 ID 和目录，再对代码或其他资源操作；不能因为同一工作区里有未提交改动，就推断它们属于自己的任务。
 

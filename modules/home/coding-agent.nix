@@ -170,6 +170,7 @@ in
       spec-kit
       openspec
       gh
+      multica-cli
       tea
       # Cursor Agent CLI. llm-agents.nix ships it as a bare binary, so there is
       # no Home Manager module (unlike programs.claude-code/opencode) — install

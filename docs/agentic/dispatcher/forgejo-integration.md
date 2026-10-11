@@ -67,7 +67,7 @@ Paseo `v0.9.2` 原生列出 `forgejo`、`gitea` 与 `codeberg`（`packages/proto
 
 **仍然保留**：`multica-webhook-issue-dedup.patch` —— v0.6.0 的 `dispatchCreateIssue` 仍无条件调用 `LockAndFindRecentAutopilotDuplicate`（标题级去重），而 `AdmitAutopilotWebhookDelivery`/`webhook_delivery_id` 已存在；上游未修，故继续由下游镜像携带，并待提交上游（见 [`TODO.md`](../../../../TODO.md) §Multica 上游）。
 
-**待办**：coding-agent 的 `multica` CLI 升到 `0.6.0`（`hosts/agents/coding/home.nix` 已改）；合并后 CI 重建 `coding-agent:latest`，再用新 digest 更新 `wanxiang/kubernetes/apps/development/coder/templates/coding-agent/main.tf` 的镜像 pin。
+**待办**：合并后 CI 重建 `coding-agent:latest`，再用新 digest 更新 `wanxiang/kubernetes/apps/development/coder/templates/coding-agent/main.tf` 的镜像 pin。CLI 已由共享 `coding-agent` 模块从锁定的 `nixpkgs-unstable` 提供，当前版本为 `0.6.1`。
 
 ## Terraform 评估结论：不采用
 
