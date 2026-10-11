@@ -76,6 +76,12 @@ spec:
           memory: 256Mi
         limits:
           memory: 1Gi
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
       service:
         type: ClusterIP
         externalTrafficPolicy: ""   # ClusterIP can't take externalTrafficPolicy
