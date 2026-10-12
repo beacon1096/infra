@@ -30,7 +30,7 @@ nodes:
     installDisk: "/dev/nvme0n1"
     machineSpec:
       secureboot: true
-    talosImageURL: factory.talos.dev/installer-secureboot/5456009e429379979faf6c8c7c4791309a0b125f3caafc728e8f90c3c5f0deb4
+    talosImageURL: factory.talos.dev/metal-installer-secureboot/12175c047e8ec8d0febdc45bdc10f2f4e6286e8171bb68f7699357bcc1acf9c1
     controlPlane: true
     networkInterfaces:
       # Explicit NIC names instead of deviceSelectors: talhelper 3.1.x splits
@@ -80,7 +80,7 @@ nodes:
     installDisk: "/dev/nvme0n1"
     machineSpec:
       secureboot: true
-    talosImageURL: factory.talos.dev/installer-secureboot/5456009e429379979faf6c8c7c4791309a0b125f3caafc728e8f90c3c5f0deb4
+    talosImageURL: factory.talos.dev/metal-installer-secureboot/12175c047e8ec8d0febdc45bdc10f2f4e6286e8171bb68f7699357bcc1acf9c1
     controlPlane: true
     networkInterfaces:
       # Explicit NIC names instead of deviceSelectors: talhelper 3.1.x splits
@@ -130,7 +130,7 @@ nodes:
     installDisk: "/dev/nvme0n1"
     machineSpec:
       secureboot: true
-    talosImageURL: factory.talos.dev/installer-secureboot/5456009e429379979faf6c8c7c4791309a0b125f3caafc728e8f90c3c5f0deb4
+    talosImageURL: factory.talos.dev/metal-installer-secureboot/12175c047e8ec8d0febdc45bdc10f2f4e6286e8171bb68f7699357bcc1acf9c1
     controlPlane: true
     networkInterfaces:
       # Explicit NIC names instead of deviceSelectors: talhelper 3.1.x splits
@@ -184,6 +184,7 @@ patches:
   - "@./patches/global/machine-registries.yaml"
   - "@./patches/global/machine-sysctls.yaml"
   - "@./patches/global/machine-time.yaml"
+  - "@./patches/global/machine-thunderbolt.yaml"
 
 # Controller patches
 controlPlane:

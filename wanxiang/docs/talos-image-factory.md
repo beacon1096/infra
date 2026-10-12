@@ -15,15 +15,17 @@ The repo manages multiple clusters with different factory strategies:
 
 # talos-ii
 
-## Active schematic — `5456009e429379979faf6c8c7c4791309a0b125f3caafc728e8f90c3c5f0deb4`
+## Active schematic — `12175c047e8ec8d0febdc45bdc10f2f4e6286e8171bb68f7699357bcc1acf9c1`
 
-**Status:** active again (rolled back 2026-05-05)
-**Supersedes:** `012427dcde4d2c4eff11f55adf2f20679292fcdffb76b5700dd022c813908b07` (same-day Tailscale host-extension attempt; see Historical section below)
+**Status:** active 2026-10-12; all three nodes verified after rolling installation
+**Supersedes:** `5456009e429379979faf6c8c7c4791309a0b125f3caafc728e8f90c3c5f0deb4`
 **Used by:** `ms01-a`, `ms01-b`, `ms01-c`
 **Talos version:** v1.13.10
 **Bootloader:** `sd-boot` (systemd-boot — required for Secure Boot)
 **Secure Boot:** **enabled** — see [ADR talos-ii/0005](decisions/talos-ii/0005-secure-boot.md)
-**Image factory URL pattern:** `https://factory.talos.dev/image/5456009e429379979faf6c8c7c4791309a0b125f3caafc728e8f90c3c5f0deb4/v1.13.10/metal-amd64.iso` (or `.raw.xz` / `.installer.tar.gz`)
+**Installer:** `factory.talos.dev/metal-installer-secureboot/12175c047e8ec8d0febdc45bdc10f2f4e6286e8171bb68f7699357bcc1acf9c1:v1.13.10`
+**Verified amd64 manifest:** `sha256:23ee25824b952bf27c21f5fd2f06f06e93ea3556619503dbbac34c7a8b909bc3`
+**Secure Boot ISO:** `https://factory.talos.dev/image/12175c047e8ec8d0febdc45bdc10f2f4e6286e8171bb68f7699357bcc1acf9c1/v1.13.10/metal-amd64-secureboot.iso`
 
 ### Schematic YAML
 
@@ -34,10 +36,13 @@ customization:
       - siderolabs/intel-ucode
       - siderolabs/iscsi-tools
       - siderolabs/util-linux-tools
-# Note: secureboot=true + bootloader=sd-boot are set as factory parameters,
-# not YAML fields. They are reflected in the schematic ID hash (changing
-# them produces a different ID).
+      - siderolabs/thunderbolt
+  bootloader: sd-boot
 ```
+
+Secure Boot is selected by the installer/image variant. The trigger is a three-node USB4 host-to-host networking pilot; it keeps Kubernetes control and storage traffic on the existing X710 bond. Load `thunderbolt` and `thunderbolt_net` through `talos/patches/global/machine-thunderbolt.yaml`. Initial PCI inspection found the NHI controllers present but without drivers, so cable and throughput tests required this extension first.
+
+Before regenerating with makejinja, set each node's `schematic_id` in the local `nodes.yaml` to the active ID above. Both Talos templates use the `metal-installer` variant; the local generation inputs are not included in this repository.
 
 ### Why each extension
 
@@ -46,6 +51,7 @@ customization:
 | `siderolabs/iscsi-tools` | Longhorn replicas mount via iSCSI; without this, no PVCs work | never (as long as Longhorn is the CSI) |
 | `siderolabs/util-linux-tools` | Longhorn `mountpoint` / standard util-linux helpers | never |
 | `siderolabs/intel-ucode` | Intel CPU microcode updates | when CPU vendor changes |
+| `siderolabs/thunderbolt` | Thunderbolt/USB4 controllers and host-to-host network driver | when the USB4 networking pilot is retired |
 
 ### What is NOT in this schematic, and why
 
@@ -100,7 +106,6 @@ Categorized for skim-reading. The full sidero catalog is at [github.com/siderola
 | candidate | rejected reason |
 |---|---|
 | `siderolabs/joydev`, `siderolabs/uhid`, `siderolabs/uinput`, `siderolabs/usb-audio-drivers`, `siderolabs/usb-modem-drivers`, `siderolabs/v4l-uvc-drivers` | No game streaming / USB peripherals attached |
-| `siderolabs/thunderbolt` | No Thunderbolt-attached storage / NICs |
 | `siderolabs/hailort`, `siderolabs/gasket-driver`, `siderolabs/tenstorrent`, `siderolabs/xdma-driver` | No AI accelerator cards (Hailo / Coral TPU / Tenstorrent / Xilinx FPGA) |
 
 #### Possibly useful in the future — not added until concrete trigger
@@ -145,6 +150,15 @@ handles per-Service tailnet exposure. Additional egress integration is
 maintained in the private infrastructure repository.
 
 ## Historical schematics — talos-ii
+
+### `5456009e429379979faf6c8c7c4791309a0b125f3caafc728e8f90c3c5f0deb4`
+
+**Status:** previous baseline, replaced by the Thunderbolt rollout
+**Extensions:** `siderolabs/intel-ucode`, `siderolabs/iscsi-tools`, `siderolabs/util-linux-tools`
+**Bootloader:** `sd-boot`, Secure Boot enabled
+**Last verified Talos version:** `v1.13.10`
+
+This was the active baseline restored after the 2026-05-05 Tailscale host-extension rollback. The Thunderbolt image retains all three extensions and adds only `siderolabs/thunderbolt`.
 
 ### `012427dcde4d2c4eff11f55adf2f20679292fcdffb76b5700dd022c813908b07`
 
