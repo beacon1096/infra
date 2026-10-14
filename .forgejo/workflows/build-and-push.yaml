@@ -692,51 +692,10 @@ jobs:
           echo "::error::coding-agent-oci build failed (partial closure pushed to attic)"
           exit 1
 
-      - name: Setup containers policy
-        run: |
-          set -euo pipefail
-          mkdir -p "$HOME/.config/containers"
-          echo '{"default": [{"type": "insecureAcceptAnything"}]}' > "$HOME/.config/containers/policy.json"
-
-      - name: Push to Forgejo Registry
-        env:
-          IMAGE_PATH: infrastructure/nix-fleet/coding-agent
-          REGISTRY_USER: ${{ secrets.REPO_TOKEN_OWNER }}
-          REGISTRY_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          set -euo pipefail
-          test -n "$REGISTRY_ENDPOINT" || {
-            echo "REGISTRY_ENDPOINT action variable is required" >&2
-            exit 1
-          }
-          test -n "$REGISTRY_USER"
-          test -n "$REGISTRY_TOKEN"
-
-          registry_host="${REGISTRY_ENDPOINT#http://}"
-          registry_host="${registry_host#https://}"
-          skopeo_args=(--retry-times 5 --retry-delay 10s)
-          login_args=(--username "$REGISTRY_USER" --password-stdin)
-          auth_file="$PWD/.skopeo-auth.json"
-          trap 'rm -f "$auth_file"' EXIT
-          mkdir -p "$PWD/.skopeo-tmp"
-
-          printf '%s' "$REGISTRY_TOKEN" | nix shell nixpkgs#skopeo -c \
-            skopeo login --authfile "$auth_file" "${login_args[@]}" "$registry_host"
-
-          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
-            "${skopeo_args[@]}" \
-            --dest-authfile "$auth_file" \
-            docker-archive:result \
-            docker://$registry_host/$IMAGE_PATH:latest
-
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            tag=${GITHUB_REF#refs/tags/}
-            nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
-              "${skopeo_args[@]}" \
-              --dest-authfile "$auth_file" \
-              docker-archive:result \
-              docker://$registry_host/$IMAGE_PATH:$tag
-          fi
+      # The public flake only builds/inspects images. Production publishing of
+      # infrastructure/nix-fleet/coding-agent:latest is owned solely by
+      # infra-private (BEACO-140), so this job has no registry push step and
+      # holds no registry write credentials.
 
       - name: Summary
         run: |
