@@ -54,26 +54,25 @@ infra-private/main ── 完整验证 ── n8n 审批
 
 | 事件 | 静态检查与策略检查 | OCI 归档构建 | Registry 发布 | 凭据 |
 | --- | --- | --- | --- | --- |
-| 拉取请求 | Flake 求值、n8n 策略测试，以及 `skopeo` 命令回归检查 | 构建 `coding-agent-oci` 和 `multica-backend-oci` | 无 | 无 Attic 或 Registry 写入凭据 |
-| 推送到 `main` 或 `prod` 以外的分支 | 与拉取请求相同的检查 | 构建两个 OCI 归档 | 覆盖两个 `ci-scratch` 标签 | 仅有软件包权限的 `CI_REGISTRY_*` 凭据 |
-| 推送到 `main` | 验证工作流及完整的 `build-and-push.yaml` 作业图 | 完整的发布构建作业图 | 发布常规镜像标签 | 生产凭据，仅供发布步骤使用 |
-| 推送标签 | 完整的 `build-and-push.yaml` 作业图 | 完整的发布构建作业图 | 发布常规标签和发布标签 | 生产凭据，仅供发布步骤使用 |
-| 手动触发完整构建 | 运维人员通过 `build-and-push.yaml` 选择引用 | 完整的发布构建作业图 | 发布常规镜像标签 | 使用生产凭据的特权运维操作 |
+| 拉取请求 | Flake 求值、n8n 策略测试 | 构建 `coding-agent-oci`、`multica-backend-oci`、`coder-server-oci` | 无 | 无 Attic 或 Registry 写入凭据 |
+| 推送到 `main` 或 `prod` 以外的分支 | 与拉取请求相同的检查 | 构建三个 OCI 归档 | 无 | 无 Attic 或 Registry 写入凭据 |
+| 推送到 `main` | 验证工作流及完整的 `build-and-push.yaml` 作业图 | 完整的发布构建作业图（仅构建/检查） | 无 | 无 Registry 写凭据 |
+| 推送标签 | 完整的 `build-and-push.yaml` 作业图 | 完整的发布构建作业图（仅构建/检查） | 无 | 无 Registry 写凭据 |
+| 手动触发完整构建 | 运维人员通过 `build-and-push.yaml` 选择引用 | 完整的发布构建作业图（仅构建/检查） | 无 | 无 Registry 写凭据（仅 Attic 缓存读/写） |
 
-容器发布回归检查会拒绝无效的 `skopeo --authfile ... copy` 参数顺序，并验证已安装的 `skopeo copy` 支持 `--dest-authfile`。这样可以在涉及凭据或大型镜像归档之前发现命令行错误。
+必需检查 `Nix Validation / nix-evaluation (pull_request)` 会构建 `coding-agent-oci`、`multica-backend-oci` 和 `coder-server-oci`。拉取请求作业既拿不到 Attic 写入凭据，也拿不到 Registry 凭据：它们只能证明 OCI 归档可以求值和构建，不能发布任何产物。
 
-必需检查 `Nix Validation / nix-evaluation (pull_request)` 会构建 `coding-agent-oci` 和 `multica-backend-oci`。拉取请求作业既拿不到 Attic 写入凭据，也拿不到 Registry 凭据：它们只能证明 OCI 归档可以求值和构建，不能发布任何产物。
+公开仓 `check-nix.yaml` 与 `build-and-push.yaml` 只对 OCI 归档执行 `nix build`（没有单独的制品 inspection 步骤），不执行任何 `skopeo copy`，也不引用任何 registry 写凭据。此前公开仓 workflow 的 `ci-scratch` 试发布步骤及其 `CI_REGISTRY_*` 引用已移除（已执行）；`ci-publisher` 账号与对应 Actions Secret 的停用属于管理员操作，尚未执行。
 
-直接推送到 `main` 或 `prod` 以外的分支时，会重复这些构建，然后实际登录 Forgejo Registry 并执行 `skopeo copy`。它会覆盖以下共用、可随时丢弃的标签：
+求值成功并不意味着拉取请求可以合并。OCI 构建在现有的必需检查上下文 `Nix Validation / nix-evaluation (pull_request)` 中运行，因此任一归档构建失败，受保护分支的该项检查都会失败。
 
-- `ci-publisher/nix-fleet/coding-agent:ci-scratch`
-- `ci-publisher/nix-fleet/multica-backend:ci-scratch`
+## 镜像发布权
 
-这些标签不保证保留，生产环境或晋级自动化绝不能使用它们。共用标签省去了定时清理任务；并发运行时，以最后一次写入为准，但每个成功作业仍能证明自身上传已完成。只有 `refs/heads/*` 推送事件可以执行此项试发布，因此标签事件不能写入临时标签。`main`、发布标签和手动授权的完整构建仍只通过 `build-and-push.yaml` 发布。
+生产镜像 `infrastructure/nix-fleet/{coding-agent,multica-backend,coder,forgejo-runner-nix}` 的唯一 publisher 是 `infra-private`。公开 flake 保留这些镜像的 derivation（可复用的公开定义），但不再发布镜像；`infra-private` 通过锁定的 `infra` input 复用这些定义。`coding-agent` 在私有侧仍叠加私有组合（substituter cache、Paseo relay/TLS、entrypoint），并不等同于公开 derivation。`sing-box`（`k8s-sing-box-oci`）是 `infra-private` 的 private-only 输出，公开 flake 没有对应 derivation。
 
-求值成功并不意味着拉取请求可以合并。OCI 构建在现有的必需检查上下文 `Nix Validation / nix-evaluation (pull_request)` 中运行，因此任一归档构建失败，受保护分支的该项检查都会失败。分支推送检查还能区分 Registry 认证或传输故障与拉取请求构建故障，同时不会向拉取请求事件暴露其凭据。
+每次发布时，`infra-private` 先推由私有发布器修订（实际 `git rev-parse HEAD` 的完整 40 位 SHA）与锁定的公开修订（flake.lock 的完整 40 位 SHA）派生的不可变 tag（`private-<private-rev>-infra-<infra-rev>`，总长 95，符合 OCI 标签长度上限），从 registry 读取并记录 digest 后，才移动 `latest`、下游版本 tag 与发布 tag。在任何 registry 写入前，会先校验全部待推 tag（不可变 tag、别名与发布 tag）的形状，任一不合法即整体失败且不写入。构建摘要与 digest 记录写入镜像路径、flake attr、Nix store path、两个修订、不可变 tag 与最终 digest，并作为 artifact 保存，供回滚与审计使用。Coder 生产模板消费已确认的不可变 digest（`coding-agent` 已 pin；`nixos-dev` 的 `:latest`、runner 主容器与 seed initContainer 仍待收敛/核对）。
 
-分支推送工作流会执行由分支控制的代码，因此只有已获信任、能够直接推送到此仓库的主体才能获得临时发布者凭据。该凭据仍受隔离：`ci-publisher` 仅在自己的命名空间内拥有软件包写入权限，无权访问仓库或 `infrastructure` 组织。拉取请求事件绝不会获得该凭据。
+历史公开仓 `nix-fleet` 处于观察期：本项不修改、不归档该仓库，其残留的 workflow 与写 secret 在禁用前不作为「唯一 publisher」验收的例外计入，待观察期结束单独处理。
 
 ## 信任与回滚
 

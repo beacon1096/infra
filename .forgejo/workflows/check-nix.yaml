@@ -10,24 +10,11 @@ jobs:
     runs-on: nix-check
     timeout-minutes: 720
     env:
-      # The smoke-push step runs on the in-cluster nix-check runner, so push
-      # via the cluster Service (plain HTTP) instead of the Cloudflare-fronted
-      # public host — the latter hangs on large chunked uploads and blocked the
-      # runner.
-      REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT_INTERNAL || 'http://forgejo-http.development.svc.cluster.local:3000' }}
       NIX_CONFIG: |
         eval-cache = false
       NIX_CURL_FLAGS: --ipv4
     steps:
       - uses: actions/checkout@v4
-      - name: Validate container publication commands
-        run: |
-          if grep -En 'skopeo[[:space:]]+--authfile.*[[:space:]]copy' .forgejo/workflows/*.yaml; then
-            echo '::error::skopeo copy authentication must use copy --dest-authfile' >&2
-            exit 1
-          fi
-          nix shell nixpkgs#skopeo --command sh -c \
-            'skopeo copy --help | grep -q -- --dest-authfile'
       - name: Evaluate flake outputs
         run: nix flake show --all-systems --no-write-lock-file
       - name: Check talosctl version matches fleet Talos
@@ -46,46 +33,7 @@ jobs:
             .#multica-backend-oci | tee multica-store-path.txt
           nix build --print-out-paths --out-link result-ci-coder-server \
             .#coder-server-oci | tee coder-server-store-path.txt
-      - name: Push OCI smoke-test images
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/prod'
-        env:
-          REGISTRY_USER: ${{ secrets.CI_REGISTRY_USER }}
-          REGISTRY_TOKEN: ${{ secrets.CI_REGISTRY_TOKEN }}
-        run: |
-          set -euo pipefail
-          test -n "$REGISTRY_USER"
-          test -n "$REGISTRY_TOKEN"
-
-          registry_host="${REGISTRY_ENDPOINT#http://}"
-          registry_host="${registry_host#https://}"
-          skopeo_args=(--retry-times 5 --retry-delay 10s)
-          login_args=(--username "$REGISTRY_USER" --password-stdin)
-          # In-cluster Service is plain HTTP; skopeo defaults to HTTPS.
-          if [[ "$registry_host" == *"svc.cluster.local"* ]]; then
-            skopeo_args+=(--dest-tls-verify=false)
-            login_args+=(--tls-verify=false)
-          fi
-          auth_file="$PWD/.skopeo-ci-auth.json"
-          trap 'rm -f "$auth_file"' EXIT
-          mkdir -p "$PWD/.skopeo-ci-tmp" "$HOME/.config/containers"
-          echo '{"default": [{"type": "insecureAcceptAnything"}]}' \
-            > "$HOME/.config/containers/policy.json"
-
-          printf '%s' "$REGISTRY_TOKEN" | nix shell nixpkgs#skopeo -c \
-            skopeo login --authfile "$auth_file" "${login_args[@]}" "$registry_host"
-
-          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-ci-tmp" copy \
-            "${skopeo_args[@]}" \
-            --dest-authfile "$auth_file" \
-            docker-archive:result-ci-coding-agent \
-            "docker://$registry_host/ci-publisher/nix-fleet/coding-agent:ci-scratch"
-          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-ci-tmp" copy \
-            "${skopeo_args[@]}" \
-            --dest-authfile "$auth_file" \
-            docker-archive:result-ci-multica \
-            "docker://$registry_host/ci-publisher/nix-fleet/multica-backend:ci-scratch"
-          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-ci-tmp" copy \
-            "${skopeo_args[@]}" \
-            --dest-authfile "$auth_file" \
-            docker-archive:result-ci-coder-server \
-            "docker://$registry_host/ci-publisher/nix-fleet/coder:ci-scratch"
+      # The public repo only builds/inspects OCI archives. Publishing the
+      # production images (and the disposable ci-scratch tags they used to
+      # cover) is owned solely by infra-private (BEACO-140/BEACO-219); this
+      # workflow holds no registry write credentials.

@@ -24,7 +24,6 @@ env:
   # Read-only by default. The write token is injected only into the push
   # steps below (step-level env) so build/eval steps never hold write.
   ATTIC_READ_TOKEN: ${{ secrets.ATTIC_READ_TOKEN }}
-  REGISTRY_ENDPOINT: ${{ vars.REGISTRY_ENDPOINT || 'https://forgejo.beaco.works' }}
   # Runner GC can delete derivations referenced only by a persistent eval cache.
   NIX_CONFIG: |
     eval-cache = false
@@ -580,18 +579,16 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Store path: \`$(cat store-path.txt)\`" >> "$GITHUB_STEP_SUMMARY"
 
-  # ── OCI image publish (Forgejo registry) ─────────────────
+  # ── OCI image build/inspect (no publication) ─────────────
   #
-  # Publish self-built images to the Forgejo registry from an in-cluster
-  # builder. Large workstation uploads through the public edge may time out.
+  # The public flake defines these images, but publishing them is owned solely
+  # by infra-private (BEACO-140/BEACO-219). These jobs only build and inspect
+  # the archives so a broken derivation fails public CI; none of them holds
+  # registry write credentials.
   build-and-push-coding-agent-oci:
     needs: warm-cache
     runs-on: nix-collector
     timeout-minutes: 720
-    # forgejo.beaco.works is served by the self-hosted Caddy edge (spec
-    # 009-caddy-edge-ingress). In-cluster the runner resolves it to
-    # envoy-internal via hostAliases, so pushes stay on the LAN with a valid
-    # certificate and never traverse Cloudflare.
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -707,8 +704,9 @@ jobs:
     needs: warm-cache
     runs-on: nix-collector
     timeout-minutes: 120
-    # See build-and-push-coding-agent-oci: the edge-served hostname resolves to
-    # envoy-internal in-cluster, so the push bypasses Cloudflare.
+    # Build-only: the public flake keeps the image derivation, but publishing
+    # infrastructure/nix-fleet/multica-backend is owned solely by infra-private
+    # (BEACO-140/BEACO-219), which holds the registry write credentials.
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -727,41 +725,19 @@ jobs:
           attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "${{ secrets.ATTIC_TOKEN }}"
           attic push "$ATTIC_CACHE" "$(cat multica-store-path.txt)"
 
-      - name: Push to Forgejo Registry
-        env:
-          IMAGE_PATH: infrastructure/nix-fleet/multica-backend
-          IMAGE_TAG: 0.6.0-beacon.1
-          REGISTRY_USER: ${{ secrets.REPO_TOKEN_OWNER }}
-          REGISTRY_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          set -euo pipefail
-          registry_host="${REGISTRY_ENDPOINT#http://}"
-          registry_host="${registry_host#https://}"
-          test -n "$REGISTRY_USER"
-          test -n "$REGISTRY_TOKEN"
-          skopeo_args=(--retry-times 5 --retry-delay 10s)
-          login_args=(--username "$REGISTRY_USER" --password-stdin)
-          auth_file="$PWD/.skopeo-auth.json"
-          trap 'rm -f "$auth_file"' EXIT
-          mkdir -p "$PWD/.skopeo-tmp"
-          printf '%s' "$REGISTRY_TOKEN" | nix shell nixpkgs#skopeo -c \
-            skopeo login --authfile "$auth_file" "${login_args[@]}" "$registry_host"
-          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
-            "${skopeo_args[@]}" \
-            --dest-authfile "$auth_file" \
-            docker-archive:result-multica \
-            "docker://$registry_host/$IMAGE_PATH:$IMAGE_TAG"
-
       - name: Summary
         run: |
           echo "### multica-backend-oci" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Image: \`forgejo.beaco.works/infrastructure/nix-fleet/multica-backend:0.6.0-beacon.1\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Store path: \`$(cat multica-store-path.txt)\`" >> "$GITHUB_STEP_SUMMARY"
 
   build-and-push-coder-server-oci:
     needs: warm-cache
     runs-on: nix-collector
     timeout-minutes: 120
+    # Build-only: the public flake keeps the image derivation, but publishing
+    # infrastructure/nix-fleet/coder is owned solely by infra-private
+    # (BEACO-140/BEACO-219), which holds the registry write credentials.
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -780,45 +756,20 @@ jobs:
           attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "${{ secrets.ATTIC_TOKEN }}"
           attic push "$ATTIC_CACHE" "$(cat coder-store-path.txt)"
 
-      - name: Push to Forgejo Registry
-        env:
-          IMAGE_PATH: infrastructure/nix-fleet/coder
-          IMAGE_TAG: 2.36.5-beacon.2
-          REGISTRY_USER: ${{ secrets.REPO_TOKEN_OWNER }}
-          REGISTRY_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          set -euo pipefail
-          registry_host="${REGISTRY_ENDPOINT#http://}"
-          registry_host="${registry_host#https://}"
-          test -n "$REGISTRY_USER"
-          test -n "$REGISTRY_TOKEN"
-          skopeo_args=(--retry-times 5 --retry-delay 10s)
-          login_args=(--username "$REGISTRY_USER" --password-stdin)
-          auth_file="$PWD/.skopeo-auth.json"
-          trap 'rm -f "$auth_file"' EXIT
-          mkdir -p "$PWD/.skopeo-tmp"
-          printf '%s' "$REGISTRY_TOKEN" | nix shell nixpkgs#skopeo -c \
-            skopeo login --authfile "$auth_file" "${login_args[@]}" "$registry_host"
-          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
-            "${skopeo_args[@]}" \
-            --dest-authfile "$auth_file" \
-            docker-archive:result-coder \
-            "docker://$registry_host/$IMAGE_PATH:$IMAGE_TAG"
-
       - name: Summary
         run: |
           echo "### coder-server-oci" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Image: \`forgejo.beaco.works/infrastructure/nix-fleet/coder:2.36.5-beacon.2\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Store path: \`$(cat coder-store-path.txt)\`" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Collector runner image (Forgejo runner + Nix, host mode) ──
   build-and-push-nix-collector-oci:
     needs: warm-cache
     runs-on: nix-collector
     timeout-minutes: 120
-    # Runs in-cluster: the edge-served hostname resolves to envoy-internal via
-    # hostAliases, so the push bypasses Cloudflare (which 413s the ~130 MiB
-    # image) and keeps a valid certificate.
+    # Build-only: the public flake keeps the image derivation, but publishing
+    # infrastructure/nix-fleet/forgejo-runner-nix is owned solely by
+    # infra-private (BEACO-140/BEACO-219), which holds the write credentials.
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -837,43 +788,11 @@ jobs:
           attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "${{ secrets.ATTIC_TOKEN }}"
           attic push "$ATTIC_CACHE" "$(cat nix-collector-store-path.txt)"
 
-      - name: Push to Forgejo Registry
-        env:
-          IMAGE_PATH: infrastructure/nix-fleet/forgejo-runner-nix
-          REGISTRY_USER: ${{ secrets.REPO_TOKEN_OWNER }}
-          REGISTRY_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          set -euo pipefail
-          registry_host="${REGISTRY_ENDPOINT#http://}"
-          registry_host="${registry_host#https://}"
-          test -n "$REGISTRY_USER"
-          test -n "$REGISTRY_TOKEN"
-          skopeo_args=(--retry-times 5 --retry-delay 10s)
-          login_args=(--username "$REGISTRY_USER" --password-stdin)
-          auth_file="$PWD/.skopeo-auth.json"
-          trap 'rm -f "$auth_file"' EXIT
-          mkdir -p "$PWD/.skopeo-tmp"
-          printf '%s' "$REGISTRY_TOKEN" | nix shell nixpkgs#skopeo -c \
-            skopeo login --authfile "$auth_file" "${login_args[@]}" "$registry_host"
-          nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
-            "${skopeo_args[@]}" \
-            --dest-authfile "$auth_file" \
-            docker-archive:result-nix-collector \
-            "docker://$registry_host/$IMAGE_PATH:latest"
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            tag="${GITHUB_REF#refs/tags/}"
-            nix shell nixpkgs#skopeo -c skopeo --tmpdir "$PWD/.skopeo-tmp" copy \
-              "${skopeo_args[@]}" \
-              --dest-authfile "$auth_file" \
-              docker-archive:result-nix-collector \
-              "docker://$registry_host/$IMAGE_PATH:$tag"
-          fi
-
       - name: Summary
         run: |
           echo "### forgejo-runner-nix" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Image: \`forgejo.beaco.works/infrastructure/nix-fleet/forgejo-runner-nix:latest\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Store path: \`$(cat nix-collector-store-path.txt)\`" >> "$GITHUB_STEP_SUMMARY"
 
   update-prod-branch:
     if: startsWith(github.ref, 'refs/tags/')

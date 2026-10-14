@@ -16,7 +16,8 @@ variable "namespace" {
 
 variable "image" {
   type = string
-  # Published by CI to the Forgejo registry, not the plain-HTTP zot LB:
+  # Published by infra-private CI to the Forgejo registry, not the
+  # plain-HTTP zot LB:
   # cluster nodes reach forgejo.beaco.works over envoy-internal with a real
   # cert (machineconfig extraHostEntries), whereas 172.16.87.51:5000 is only
   # reachable via a mirror that Spegel shadows, so zot-only images fail to

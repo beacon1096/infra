@@ -13,18 +13,21 @@ as `workspaces.id` and `t.id` and adds focused SQL compiler tests.
 ## Build and publication
 
 `coder-server-oci` builds the upstream enterprise Coder command, embedded Web
-UI, and Terraform runtime as a reproducible OCI archive. Pull requests build
-the archive without publication credentials. Trusted branch pushes may publish
-only the disposable `ci-scratch` tag. The release workflow publishes the
-immutable production tag:
+UI, and Terraform runtime as a reproducible OCI archive. The derivation lives
+in the public flake; public CI only builds and inspects the archive and holds
+no registry write credentials. The image is published solely by
+`infra-private`, which pins the public flake and pushes the moving `latest`,
+an immutable `private-<private-rev>-infra-<infra-rev>` tag (full 40-char
+private and pinned public SHAs), and the downstream release tag:
 
 ```text
 forgejo.beaco.works/infrastructure/nix-fleet/coder:2.36.5-beacon.2
 ```
 
-The production tag must be anonymously pullable before the HelmRelease image
-override is merged. The Coder chart remains the unmodified 2.36.5 chart mirrored
-in the in-cluster Zot registry.
+The publisher records the resolved digest. The production image must be
+anonymously pullable before the HelmRelease image override is merged. The Coder
+chart remains the unmodified 2.36.5 chart mirrored in the in-cluster Zot
+registry.
 
 ## Verification
 

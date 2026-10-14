@@ -62,7 +62,7 @@ Paseo `v0.9.2` 原生列出 `forgejo`、`gitea` 与 `codeberg`（`packages/proto
 1. `packages/multica-backend` 升到 `v0.6.0`（版本 `0.6.0-beacon.1`）。v0.6.0 的 `go.mod` 要求 `go >= 1.26.6`，而本 flake 的 nixos-26.05 只有 1.26.5，故在 `flake.nix` 用 nixpkgs-unstable 的 go 1.26.7 构建该包。
 2. 下游补丁 `multica-webhook-issue-dedup.patch` 对 v0.6.0 **干净套用**，无需重切。
 3. chart `charts/multica:0.6.0` 从 `ghcr.io/multica-ai/charts` 拉到 in-cluster zot：`helm pull` + `helm push … oci://172.16.87.51:5000/charts --plain-http`（用 SOPS 里的 `zot-secret` admin 凭据）。
-4. 后端镜像由 CI `build-and-push` 发布到 `forgejo.beaco.works/infrastructure/nix-fleet/multica-backend:0.6.0-beacon.1`。发布前该流水线被 home-manager 的 tea 版本冲突卡在 `warm-cache`（`modules/home/forgejo.nix` 的 `pkgs.tea` 0.14.0 与 `coding-agent.nix` 的 unstable 0.15.1 进同一 `buildEnv`），已在 `forgejo.nix` 统一用 unstable tea 修复。
+4. 后端镜像由 CI `build-and-push` 发布到 `forgejo.beaco.works/infrastructure/nix-fleet/multica-backend:0.6.0-beacon.1`（历史记录；公开定义 / 私有发布收敛后，该镜像改由 `infra-private` 作为唯一 publisher 发布，公开仓 CI 只构建/检查）。发布前该流水线被 home-manager 的 tea 版本冲突卡在 `warm-cache`（`modules/home/forgejo.nix` 的 `pkgs.tea` 0.14.0 与 `coding-agent.nix` 的 unstable 0.15.1 进同一 `buildEnv`），已在 `forgejo.nix` 统一用 unstable tea 修复。
 5. 合并 chart/镜像 tag 变更后 Flux 协调、迁移应用 `491..563`；随后 `DROP COLUMN reference_only`（`issue_pull_request` 与 `issue_vcs_pull_request`）。验证 `GET /api/issues/{id}/pull-requests` 返回 200。
 
 **仍然保留**：`multica-webhook-issue-dedup.patch` —— v0.6.0 的 `dispatchCreateIssue` 仍无条件调用 `LockAndFindRecentAutopilotDuplicate`（标题级去重），而 `AdmitAutopilotWebhookDelivery`/`webhook_delivery_id` 已存在；上游未修，故继续由下游镜像携带，并待提交上游（见 [`TODO.md`](../../../../TODO.md) §Multica 上游）。

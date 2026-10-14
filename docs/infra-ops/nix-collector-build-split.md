@@ -19,7 +19,8 @@ runner，太初只剩 `ssh-ng` 远程构建身份。评审记录（ChatGPT 审�
   （同标签，另承担 OSPF / Tailscale subnet router / exit-node / relay 等）、
   `beacon-mac-mini-m4`（`nix-builder-aarch64-darwin:host`）。
 - 工作流在构建机本机执行：checkout → `attic login` → `nix build --keep-going`
-  （输入从 Attic substitute）→ best-effort `attic push` → registry/ISO 发布。
+  （输入从 Attic substitute）→ best-effort `attic push` → ISO 发布。
+  （镜像发布已收敛到 `infra-private`，公开仓 CI 只 build/inspect，见[生产发布](../agentic/workflow/infra-ops/production-release-and-rollout.md)。）
   见 `.forgejo/workflows/build-and-push.yaml`、`.forgejo/workflows/check-nix.yaml`。
 - 构建机因此同时是 runner、求值器、nix-daemon、本地 store、Attic 客户端，并持有
   Forgejo token、SOPS 主机密钥与 Attic 读写凭据。
@@ -60,7 +61,7 @@ runner，太初只剩 `ssh-ng` 远程构建身份。评审记录（ChatGPT 审�
     ├─ build-machines = 太初三台 (ssh-ng, maxJobs = 1)
     ├─ Attic: http://attic.nix.svc.cluster.local:8080/nix-fleet
     │         read 常驻 / write 仅 seed step
-    └─ registry write 仅 publish step
+    └─ 无 registry write（镜像发布由 infra-private 负责）
 太初 nixbuilder-01/02/03
     ├─ nix-daemon + nixremote SSH（接受 collector key, trusted-users）
     ├─ 保留 Forgejo runner（Phase 1a 期间 PR 仍走这里）
