@@ -30,6 +30,8 @@ jobs:
             'skopeo copy --help | grep -q -- --dest-authfile'
       - name: Evaluate flake outputs
         run: nix flake show --all-systems --no-write-lock-file
+      - name: Check talosctl version matches fleet Talos
+        run: nix build --no-link .#checks.x86_64-linux.talosctl-version-sync
       - name: Test n8n CI policy
         run: |
           nix shell nixpkgs#nodejs_24 --command node utils/test-n8n-infra-ci.mjs

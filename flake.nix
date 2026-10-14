@@ -343,8 +343,12 @@
           config.allowUnfree = true;
         };
         paseoPackages = import ./lib/paseo { inherit inputs pkgs; };
+        # Single fleet-wide definition, also consumed by infra-private's
+        # coding-agent image via inputs.infra.packages.x86_64-linux.talosctl.
+        talosctl = pkgs.callPackage ./packages/talosctl { };
       in {
       inherit (pkgs) tailscale;
+      inherit talosctl;
       # nix build .#installer-iso
       installer-iso = self.nixosConfigurations.installer.config.system.build.isoImage;
 
@@ -634,7 +638,7 @@
             pkgs.openssh
             pkgs.procps
             pkgs.sops
-            pkgs.talosctl
+            talosctl
             pkgs.tailscale
             paseoPackage
           ];
@@ -694,8 +698,31 @@
         inherit (inputs.pi-nixpkgs.legacyPackages.x86_64-linux) pi-coding-agent;
       };
 
+    # Keep the pinned talosctl client exactly in step with the fleet Talos
+    # version. `wanxiang/talos/talenv.yaml` is bumped by Renovate on node
+    # upgrades; without this check the Nix package version and its four
+    # platform hashes would silently drift (BEACO-140).
+    checks.x86_64-linux.talosctl-version-sync =
+      let
+        pkgs = fleetPkgs "x86_64-linux";
+      in
+      pkgs.runCommand "talosctl-version-sync" {
+        nativeBuildInputs = with pkgs; [ gnugrep gnused ];
+        talenv = ./wanxiang/talos/talenv.yaml;
+        expected = "v${self.packages.x86_64-linux.talosctl.version}";
+      } ''
+        actual="$(grep -E '^[[:space:]]*talosVersion:' "$talenv" | head -n1 | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d '[:space:]')"
+        if [ "$actual" != "$expected" ]; then
+          echo "talosctl-version-sync: package $expected != talenv.yaml talosVersion $actual" >&2
+          exit 1
+        fi
+        echo "talosctl-version-sync OK: $expected" > "$out"
+      '';
+
     packages.aarch64-linux = {
       inherit (fleetPkgs "aarch64-linux") tailscale;
+
+      talosctl = (fleetPkgs "aarch64-linux").callPackage ./packages/talosctl { };
 
       r8127-mac-diagnostics =
         self.nixosConfigurations.thor.config.boot.kernelPackages.callPackage ./packages/r8127 {
@@ -722,6 +749,8 @@
 
     packages.aarch64-darwin.tailscale = (fleetPkgs "aarch64-darwin").tailscale;
     packages.aarch64-darwin.omlx = (fleetPkgs "aarch64-darwin").callPackage ./packages/omlx { };
+    packages.aarch64-darwin.talosctl = (fleetPkgs "aarch64-darwin").callPackage ./packages/talosctl { };
+    packages.x86_64-darwin.talosctl = (fleetPkgs "x86_64-darwin").callPackage ./packages/talosctl { };
 
     packages.aarch64-darwin.common-darwin-closure =
       (nix-darwin.lib.darwinSystem {
