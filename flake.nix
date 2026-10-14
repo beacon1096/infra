@@ -343,8 +343,12 @@
           config.allowUnfree = true;
         };
         paseoPackages = import ./lib/paseo { inherit inputs pkgs; };
+        # Single fleet-wide definition, also consumed by infra-private's
+        # coding-agent image via inputs.infra.packages.x86_64-linux.talosctl.
+        talosctl = pkgs.callPackage ./packages/talosctl { };
       in {
       inherit (pkgs) tailscale;
+      inherit talosctl;
       # nix build .#installer-iso
       installer-iso = self.nixosConfigurations.installer.config.system.build.isoImage;
 
@@ -422,39 +426,6 @@
             zlib zstd stdenv.cc.cc curl openssl attr libssh bzip2 libxml2 acl
             libsodium util-linux xz systemd
           ]);
-          # Pin talosctl to the fleet's Talos version (wanxiang/talos/talenv.yaml
-          # talosVersion) instead of pkgs.talosctl, whose nixpkgs pin lags the
-          # nodes (1.13.5 client vs 1.13.10 servers, BEACO-140). The official
-          # release binaries carry the matching SHA build.
-          talosctlVersion = "1.13.10";
-          talosctlTargets = {
-            x86_64-linux = {
-              platform = "linux-amd64";
-              hash = "sha256-KOnM2a69aQ+gPYzyWCIh2H6jiyoXBPQR11oDWJxY8qo=";
-            };
-            aarch64-linux = {
-              platform = "linux-arm64";
-              hash = "sha256-OGnJ+0EfNoCXbMCGs0LlF7z0vHIPflNxYR8+SdlfGZQ=";
-            };
-          };
-          talosctlTarget =
-            talosctlTargets.${pkgs.stdenv.hostPlatform.system}
-              or (throw "talosctl: unsupported platform ${pkgs.stdenv.hostPlatform.system}");
-          talosctl = pkgs.stdenvNoCC.mkDerivation {
-            pname = "talosctl";
-            version = talosctlVersion;
-            src = pkgs.fetchurl {
-              url = "https://github.com/siderolabs/talos/releases/download/v${talosctlVersion}/talosctl-${talosctlTarget.platform}";
-              inherit (talosctlTarget) hash;
-            };
-            dontUnpack = true;
-            installPhase = ''
-              runHook preInstall
-              mkdir -p $out/bin
-              install -m 0755 $src $out/bin/talosctl
-              runHook postInstall
-            '';
-          };
           rootFiles = pkgs.runCommand "coding-agent-root-files" { } ''
             mkdir -p $out/etc/nix $out/home/coder $out/root/.ssh $out/workspace
             ln -s /home/coder/.ssh/config $out/root/.ssh/config
@@ -729,6 +700,8 @@
 
     packages.aarch64-linux = {
       inherit (fleetPkgs "aarch64-linux") tailscale;
+
+      talosctl = (fleetPkgs "aarch64-linux").callPackage ./packages/talosctl { };
 
       r8127-mac-diagnostics =
         self.nixosConfigurations.thor.config.boot.kernelPackages.callPackage ./packages/r8127 {
