@@ -54,13 +54,11 @@ infra-private/main ── 完整验证 ── n8n 审批
 
 | 事件 | 静态检查与策略检查 | OCI 归档构建 | Registry 发布 | 凭据 |
 | --- | --- | --- | --- | --- |
-| 拉取请求 | Flake 求值、n8n 策略测试，以及 `skopeo` 命令回归检查 | 构建 `coding-agent-oci`、`multica-backend-oci`、`coder-server-oci` | 无 | 无 Attic 或 Registry 写入凭据 |
-| 推送到 `main` 以外的分支 | 与拉取请求相同的检查 | 构建三个 OCI 归档 | 无 | 无 Attic 或 Registry 写入凭据 |
+| 拉取请求 | Flake 求值、n8n 策略测试 | 构建 `coding-agent-oci`、`multica-backend-oci`、`coder-server-oci` | 无 | 无 Attic 或 Registry 写入凭据 |
+| 推送到 `main` 或 `prod` 以外的分支 | 与拉取请求相同的检查 | 构建三个 OCI 归档 | 无 | 无 Attic 或 Registry 写入凭据 |
 | 推送到 `main` | 验证工作流及完整的 `build-and-push.yaml` 作业图 | 完整的发布构建作业图（仅构建/检查） | 无 | 无 Registry 写凭据 |
 | 推送标签 | 完整的 `build-and-push.yaml` 作业图 | 完整的发布构建作业图（仅构建/检查） | 无 | 无 Registry 写凭据 |
 | 手动触发完整构建 | 运维人员通过 `build-and-push.yaml` 选择引用 | 完整的发布构建作业图（仅构建/检查） | 无 | 无 Registry 写凭据（仅 Attic 缓存读/写） |
-
-容器发布回归检查会拒绝无效的 `skopeo --authfile ... copy` 参数顺序，并验证已安装的 `skopeo copy` 支持 `--dest-authfile`。这样可以在涉及凭据或大型镜像归档之前发现命令行错误。
 
 必需检查 `Nix Validation / nix-evaluation (pull_request)` 会构建 `coding-agent-oci`、`multica-backend-oci` 和 `coder-server-oci`。拉取请求作业既拿不到 Attic 写入凭据，也拿不到 Registry 凭据：它们只能证明 OCI 归档可以求值和构建，不能发布任何产物。
 
@@ -70,9 +68,9 @@ infra-private/main ── 完整验证 ── n8n 审批
 
 ## 镜像发布权
 
-生产镜像 `infrastructure/nix-fleet/{coding-agent,multica-backend,coder,forgejo-runner-nix,sing-box}` 的唯一 publisher 是 `infra-private`。公开仓保留这些镜像的包与 derivation（作为可复用的公开定义），但不再发布镜像；`infra-private` 通过锁定的 `infra` input 引用公开定义构建并推送，不复制镜像定义。
+生产镜像 `infrastructure/nix-fleet/{coding-agent,multica-backend,coder,forgejo-runner-nix}` 的唯一 publisher 是 `infra-private`。公开 flake 保留这些镜像的 derivation（可复用的公开定义），但不再发布镜像；`infra-private` 通过锁定的 `infra` input 复用这些定义。`coding-agent` 在私有侧仍叠加私有组合（substituter cache、Paseo relay/TLS、entrypoint），并不等同于公开 derivation。`sing-box`（`k8s-sing-box-oci`）是 `infra-private` 的 private-only 输出，公开 flake 没有对应 derivation。
 
-每次发布时，`infra-private` 先推由私有发布器修订与锁定的公开修订派生的不可变 tag（`private-<private-rev>-infra-<infra-rev>`），从 registry 读取并记录 digest 后，才移动 `latest`、下游版本 tag 与发布 tag；构建摘要与 digest 记录写入镜像路径、flake attr、Nix store path、两个修订、不可变 tag 与最终 digest，并作为 artifact 保存，供回滚与审计使用。Coder 生产模板消费已确认的不可变 digest（`coding-agent` 已 pin；`nixos-dev` 的 `:latest`、runner 主容器与 seed initContainer 仍待收敛/核对）。
+每次发布时，`infra-private` 先推由私有发布器修订（实际 `git rev-parse HEAD` 的完整 40 位 SHA）与锁定的公开修订（flake.lock 的完整 40 位 SHA）派生的不可变 tag（`private-<private-rev>-infra-<infra-rev>`，总长 95，符合 OCI 标签长度上限），从 registry 读取并记录 digest 后，才移动 `latest`、下游版本 tag 与发布 tag。在任何 registry 写入前，会先校验全部待推 tag（不可变 tag、别名与发布 tag）的形状，任一不合法即整体失败且不写入。构建摘要与 digest 记录写入镜像路径、flake attr、Nix store path、两个修订、不可变 tag 与最终 digest，并作为 artifact 保存，供回滚与审计使用。Coder 生产模板消费已确认的不可变 digest（`coding-agent` 已 pin；`nixos-dev` 的 `:latest`、runner 主容器与 seed initContainer 仍待收敛/核对）。
 
 历史公开仓 `nix-fleet` 处于观察期：本项不修改、不归档该仓库，其残留的 workflow 与写 secret 在禁用前不作为「唯一 publisher」验收的例外计入，待观察期结束单独处理。
 

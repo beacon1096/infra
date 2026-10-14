@@ -17,8 +17,8 @@ UI, and Terraform runtime as a reproducible OCI archive. The derivation lives
 in the public flake; public CI only builds and inspects the archive and holds
 no registry write credentials. The image is published solely by
 `infra-private`, which pins the public flake and pushes the moving `latest`,
-an immutable `sha-<rev>` tag derived from the publisher revision, and the
-downstream release tag:
+an immutable `private-<private-rev>-infra-<infra-rev>` tag (full 40-char
+private and pinned public SHAs), and the downstream release tag:
 
 ```text
 forgejo.beaco.works/infrastructure/nix-fleet/coder:2.36.5-beacon.2
