@@ -9,14 +9,14 @@
 | `multica-merger` | `multica-merger.no-reply@beacoworks.xyz` | 满足受保护分支要求后合并 PR | 两个基础设施仓库的写入协作者 |
 | `multica-gitops` | `multica-gitops.no-reply@beacoworks.xyz` | GitOps + 运维主 Agent 编码、推送分支和创建 PR | 两个基础设施仓库的写入协作者；无合并白名单权限 |
 | `multica-nix-packager` | `multica-nix-packager.no-reply@beacoworks.xyz` | Nix 打包维护者编码、推送自有 fork 和创建 PR | `infrastructure/infra` 可读协作者；仅自有 fork 可写；无合并白名单权限 |
-| `ci-publisher` | `ci-publisher.no-reply@beacoworks.xyz` | 发布可丢弃的 OCI 冒烟测试镜像 | 不属于仓库或组织；只拥有 `ci-publisher/` 下的软件包 |
+| `ci-publisher` | `ci-publisher.no-reply@beacoworks.xyz` | （已停用）曾发布公开仓分支 CI 的可丢弃 OCI 冒烟测试镜像 | 不属于仓库或组织；只拥有 `ci-publisher/` 下的软件包 |
 | `multica` | `multica@noreply.forgejo.beaco.works` | Multica Forgejo VCS 集成的连接凭据（校验与只读） | 只读；webhook 由管理员在仓库上创建，不依赖该账号的仓库权限 |
 
 `multica-gate` 不能通过自动化流程合并 PR。其 PAT 只有 `write:repository` 和 `read:issue` 权限，保存在加密的 n8n SOPS Secret 中。`read:issue` 用于重新读取与 SHA 绑定的作者确认评论；不能仅信任 webhook 内容。Multica Agent 只获得向 n8n 提交审查结果的凭据，不持有 Forgejo PAT。
 
 `multica-merger` 的 `write:repository` PAT 作为独立的 n8n 凭据 `Forgejo Multica Merger Token` 保存，仅供固定的 Forgejo 合并请求节点使用；它不会通过环境变量暴露，也不会提供给 Renovate、Multica Agent 或普通审查节点。
 
-`ci-publisher` 只有 `write:package` PAT，以 `CI_REGISTRY_USER` 和 `CI_REGISTRY_TOKEN` 保存在 Forgejo Actions 中。该账号刻意不加入 `infrastructure` 组织，使分支 CI 能覆盖其临时软件包，却不能发布生产镜像或修改仓库。
+`ci-publisher` 只有 `write:package` PAT，曾以 `CI_REGISTRY_USER` 和 `CI_REGISTRY_TOKEN` 保存在 Forgejo Actions 中，供公开仓分支 CI 覆盖 `ci-publisher/` 下的临时软件包。该账号刻意不加入 `infrastructure` 组织，不能发布生产镜像或修改仓库。自「公开定义 / 私有发布」收敛（BEACO-140、BEACO-219）后，公开仓不再持有任何 registry 写凭据，`CI_REGISTRY_USER`/`CI_REGISTRY_TOKEN` 引用已从 workflow 移除；该账号及其 Actions Secret 可在 Forgejo 中停用/删除（管理员操作，尚未执行）。
 
 ## 受保护分支
 

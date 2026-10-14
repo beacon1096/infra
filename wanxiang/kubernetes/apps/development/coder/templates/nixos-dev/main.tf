@@ -16,8 +16,8 @@ variable "namespace" {
 
 variable "image" {
   type = string
-  # Same NixOS image as the coding-agent template, published by CI to the
-  # Forgejo registry (nodes can't pull the plain-HTTP zot LB). It bakes
+  # Same NixOS image as the coding-agent template, published by infra-private
+  # CI to the Forgejo registry (nodes can't pull the plain-HTTP zot LB). It bakes
   # code-server (nix-native, patchelf'd) plus nix-ld for foreign binaries.
   #
   # NOTE: Spegel serves cached tag->digest mappings peer-to-peer, so a
