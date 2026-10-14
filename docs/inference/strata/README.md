@@ -206,6 +206,51 @@ A2000 10,793 MiB，温度峰值分别为 84°C 和 74°C，未触发预设的 86
 - 这些实验验证的是直接 loopback 后端、单请求 FIFO 和关闭 thinking 的路径。尚未验证 LiteLLM/Tailnet/OpenCode 的 128K 元数据、生产默认 low thinking、多客户端并发或服务重启后的长期运维行为。
 - 若进入产品试用，可先声明 context 131,072、输入预算 122,880、输出预算 4,096，保留约 4K 给模板、工具和 token 估算误差；正式模型仍应在产品路径门禁通过后再切换。
 
+## SC117 abliterated IQ3_XXS 试用
+
+2026-10-10 以 [SC117/Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF](https://huggingface.co/SC117/Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF) 的 `IQ3_XXS` 做同机替换检查，固定 revision 为 `eec4e10a2c29b440a2ae85591fa11569ce752963`。修改后的 shard 1 为 47,342,144,896 bytes，SHA-256 为 `03b11926b41a3d7f7a008882b1bc7a6330a3c9c43d3cad4598d31dc73042fdc5`；shard 2 与原模型逐字节相同，继续复用上文已校验的 PLE 文件。
+
+该模型必须从新 GGUF 生成独立 native pack，不能复用原 pack 的 tensor offsets。MTP runtime 仍来自原始 Qwen 检查点，并未随主模型做 abliteration。测试保持 Titan 主卡、A2000 expert helper、32K context、int8 KV、相同 expert profile 和推测解码参数，不使用 layer split。
+
+新旧模型各运行一次相同 harness；每组包含三次短提示、三次约 26.3K 提示和两道质量 sanity。下表为三次性能样本的中位数：
+
+| 模型 | 短提示 TTFT（s） | 26K TTFT（s） | 26K prefill（tok/s） | 26K decode（tok/s） |
+| --- | ---: | ---: | ---: | ---: |
+| 原始 IQ3_XXS | 1.413 | 24.157 | 1,099.7 | 85.9 |
+| SC117 abliterated IQ3_XXS | 1.443 | 24.237 | 1,095.7 | 81.9 |
+
+SC117 的 26K prefill 低约 0.4%、TTFT 高约 0.3%，本轮长输出 decode 中位数低约 4.7%。只有三次输出且 MTP 接受率随生成内容变化，不能把这组 decode 差异当作稳定回归比例。所有流均正常结束，无错误或截断；中文材料摘要和 Python 小函数题均满足原 sanity 要求。另做的严格 JSON schema、强制工具调用和明确标为虚构的反乌托邦写作请求也均通过。
+
+这只证明该权重能沿现有 Strata expert-helper 路径加载并通过初步功能门槛。Abliteration 旨在减少拒答，不代表通用能力提升，也不证明所有类别都不会拒答；本轮没有重跑长期 soak、大规模质量评测或公开服务安全边界。对外暴露仍需独立访问控制和工具权限隔离。
+
+### SC117 128K
+
+随后用相同 SC117 权重将 context 改为 131,072、追加 `--kv-resident 32768`，在 52 GiB cgroup 与禁用 swap 下重跑原版 128K 的容量矩阵。60K、96K、120K 输入分别覆盖 10%、50%、90% needle 深度各两次，126K 的 50% 深度两次，共 20/20 次正确且 `cache_n=0`：
+
+| 目标输入 | 样本数 | TTFT 范围（s） | TTFT 平均（s） | Prefill 范围（tok/s） |
+| ---: | ---: | ---: | ---: | ---: |
+| 60K | 6 | 56.07–56.77 | 56.52 | 1,063.3–1,075.5 |
+| 96K | 6 | 92.20–92.35 | 92.29 | 1,044.2–1,045.7 |
+| 120K | 6 | 119.94–120.10 | 120.02 | 1,003.1–1,004.9 |
+| 126K | 2 | 128.36–128.57 | 128.47 | 984.3–986.1 |
+
+约 120K 输入后的 512、2048、4096 token 输出均收到 `[DONE]`，以 `finish_reason=length` 达到请求上限；4096-token 组总耗时 161.70 秒、decode 98.0 tok/s。矩阵期间无 OOM/OOM kill；cgroup 达到 52 GiB 上限，`memory.events.max` 最高 307。Engine RSS 峰值约 45.46 GiB，主机最低 `MemAvailable` 约 13.49 GiB；Titan/A2000 显存峰值分别为 23,656/10,791 MiB，温度峰值分别为 85/74°C，未触发 86°C 停止线。
+
+相同短提示/约 26K harness 的 SC117 32K 与 128K 对照如下：
+
+| 配置 | 短提示 TTFT（s） | 26K TTFT（s） | 26K prefill（tok/s） | 26K decode（tok/s） |
+| --- | ---: | ---: | ---: | ---: |
+| SC117 32K | 1.443 | 24.237 | 1,095.7 | 81.9 |
+| SC117 128K | 1.500 | 26.139 | 1,015.5 | 81.9 |
+
+128K 相对 32K 的短提示 TTFT 高约 4.0%、26K TTFT 高约 7.8%，26K prefill 低约 7.3%。
+
+主机重启后的冷启动环境随后运行 14 个循环，每轮依次为短请求、60K passkey、短请求、120K passkey和 60 秒空闲，共 55.8 分钟、56 个请求。全部响应有效且答案正确；前后半程 TTFT 平均值没有持续恶化：短请求为 0.481→0.474 秒、60K 为 56.117→56.178 秒、120K 为 119.888→119.995 秒。
+
+Soak 的 engine RSS 峰值约 45.36 GiB，前后四分之一 RSS 均值增加约 0.19%。cgroup 达到 52 GiB 上限，`memory.events.max` 增加 524，`oom=0`、`oom_kill=0`；主机最低 `MemAvailable` 约 13.67 GiB。Titan/A2000 显存峰值为 23,660/10,791 MiB，温度峰值为 85/63°C，未触发 86°C 停止线。
+
+本轮仍未重跑 SC117 128K 的取消恢复或生产 low-thinking 产品路径。容量、回归和持续运行门槛通过后，直接后端生产实例已切换到该 128K 配置；LiteLLM/OpenCode 的 128K 元数据与声明式重启恢复仍需作为发布步骤验证。
+
 ## 复现实验配置
 
 以下命令在固定 Strata 源码目录、已经准备好的 CUDA/FHS 环境中执行。GPU 编号需先确认 Titan 为 0、A2000 为 1。
@@ -379,7 +424,7 @@ ssh -N -L 18880:127.0.0.1:8080 "$STRATA_SSH_TARGET"
 
 ## LiteLLM 接入准备
 
-准备的客户端 alias 为 `strata/qwen3.8-flash-next`，对应 IQ3 helper、32K 上下文的文本聊天，默认思考 low。共享 [客户端模型表](../../../modules/home/beacoworks-models.nix) 声明 context 32768、output 4096，开放 reasoning 档位，不声明视觉能力；LiteLLM 输入预算为 28672，给输出预留 4096。思考输出也计入回答预算，模板及工具开销应计入总上下文。
+客户端 alias 为 `strata/qwen3.8-flash-next`，对应 SC117 IQ3 helper、128K 上下文的文本聊天，默认思考 low。共享 [客户端模型表](../../../modules/home/beacoworks-models.nix) 声明 context 131072、output 4096，开放 reasoning 档位，不声明视觉能力；LiteLLM 输入预算为 122880，给输出预留 4096，并另留约 4K 给模板、工具和 token 估算误差。思考输出也计入回答预算，模板及工具开销应计入总上下文。
 
 新增 [strata-runtime](../../../packages/strata/runtime.nix) FHS 包只提供已准备 engine/venv 所需的 Python、CUDA runtime/cuBLAS、C++ runtime 和 CA 环境，不下载或打包模型。GGUF、pack、MTP、venv、配置和日志留在运行机器的磁盘上，不能将这些文件直接读入 Nix derivation。
 
