@@ -62,7 +62,7 @@ infra-private/main ── 完整验证 ── n8n 审批
 
 必需检查 `Nix Validation / nix-evaluation (pull_request)` 会构建 `coding-agent-oci`、`multica-backend-oci` 和 `coder-server-oci`。拉取请求作业既拿不到 Attic 写入凭据，也拿不到 Registry 凭据：它们只能证明 OCI 归档可以求值和构建，不能发布任何产物。
 
-公开仓 `check-nix.yaml` 与 `build-and-push.yaml` 只对 OCI 归档执行 `nix build`/inspect，不执行任何 `skopeo copy`，也不引用任何 registry 写凭据。此前公开仓用于分支试发布的 `ci-publisher/nix-fleet/*:ci-scratch` 标签及其 `CI_REGISTRY_*` 凭据已移除；公开 CI 现在完全不具备 registry 写权限。
+公开仓 `check-nix.yaml` 与 `build-and-push.yaml` 只对 OCI 归档执行 `nix build`（没有单独的制品 inspection 步骤），不执行任何 `skopeo copy`，也不引用任何 registry 写凭据。此前公开仓 workflow 的 `ci-scratch` 试发布步骤及其 `CI_REGISTRY_*` 引用已移除（已执行）；`ci-publisher` 账号与对应 Actions Secret 的停用属于管理员操作，尚未执行。
 
 求值成功并不意味着拉取请求可以合并。OCI 构建在现有的必需检查上下文 `Nix Validation / nix-evaluation (pull_request)` 中运行，因此任一归档构建失败，受保护分支的该项检查都会失败。
 
