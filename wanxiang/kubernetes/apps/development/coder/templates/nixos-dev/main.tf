@@ -20,11 +20,10 @@ variable "image" {
   # Forgejo registry (nodes can't pull the plain-HTTP zot LB). It bakes
   # code-server (nix-native, patchelf'd) plus nix-ld for foreign binaries.
   #
-  # NOTE: Spegel serves cached tag->digest mappings peer-to-peer, so a
-  # freshly pushed `:latest` can resolve to a stale digest cluster-wide even
-  # with imagePullPolicy=Always. Pin `@sha256:...` here if you need a
-  # specific build to land deterministically.
-  default = "forgejo.beaco.works/infrastructure/nix-fleet/coding-agent:latest"
+  # Pinned to the digest published by infra-private (BEACO-219). Spegel serves
+  # cached tag->digest mappings peer-to-peer, so a moving `:latest` can resolve
+  # stale cluster-wide; the digest lands deterministically.
+  default = "forgejo.beaco.works/infrastructure/nix-fleet/coding-agent@sha256:f4029062353e487512d42a515332c2bfd90a0376e4987958dfc90c99e5d85d97"
 }
 
 variable "home_disk_size" {

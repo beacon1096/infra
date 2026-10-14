@@ -34,12 +34,14 @@ spec:
     fullnameOverride: forgejo-runner
     replicaCount: 1
 
-    # Published by build-and-push.yaml (skopeo -> Forgejo registry).
-    # `latest` + Always so a rebuilt image is actually picked up on restart.
+    # Published solely by infra-private (BEACO-219). The chart renders
+    # `registry/repository:tag` (no digest field), so pin the immutable
+    # publisher tag; it maps to digest
+    # sha256:70e4f88ee00782f05748669578314da7016a7a4b82502fe5d5b68982eb97a71c.
     image:
       registry: forgejo.beaco.works
       repository: infrastructure/nix-fleet/forgejo-runner-nix
-      tag: "latest"
+      tag: "private-2e3ea585612c8568e27e428dde81b5c15c2bad6a-infra-95c14967c35e4e1467191b81d61b439d1b77469c"
       pullPolicy: Always
 
     # No privileged anywhere: host mode, no DinD.
@@ -184,7 +186,7 @@ spec:
                 path: /spec/template/spec/initContainers/-
                 value:
                   name: seed-nix-store
-                  image: forgejo.beaco.works/infrastructure/nix-fleet/forgejo-runner-nix:latest
+                  image: forgejo.beaco.works/infrastructure/nix-fleet/forgejo-runner-nix@sha256:70e4f88ee00782f05748669578314da7016a7a4b82502fe5d5b68982eb97a71c
                   command:
                     - /bin/sh
                     - -c

@@ -19,9 +19,13 @@ spec:
   values:
     coder:
       # Temporary downstream build for the resource allow-list SQL fix.
+      # The Coder chart renders `repo:tag` (no digest field), so pin the
+      # immutable infra-private publisher tag (BEACO-219) instead of a moving
+      # tag; it maps to digest
+      # sha256:62ff32fd5238f719956e14ffc5f98295e48fd2138833264280169c9bf1f38fa2.
       image:
         repo: forgejo.beaco.works/infrastructure/nix-fleet/coder
-        tag: 2.36.5-beacon.2
+        tag: private-2e3ea585612c8568e27e428dde81b5c15c2bad6a-infra-95c14967c35e4e1467191b81d61b439d1b77469c
       env:
         - name: CODER_ACCESS_URL
           value: "https://code.${SECRET_DOMAIN}"
