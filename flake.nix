@@ -127,6 +127,7 @@
       installer = ./modules/nixos/installer.nix;
       serverBase = ./hosts/server/common/configuration.nix;
       comin = ./modules/nixos/comin.nix;
+      desktopTheme = ./modules/nixos/desktop-theme.nix;
       m920x = ./hosts/personal/fixed/m920x/configuration.nix;
       microserver-gen10plus = ./hosts/personal/fixed/microserver-gen10plus/configuration.nix;
       "ms-r1" = ./hosts/personal/fixed/ms-r1/configuration.nix;
@@ -145,7 +146,10 @@
 
     lib.beacoworksModels = import ./modules/home/beacoworks-models.nix { inherit (nixpkgs) lib; };
 
-    homeManagerModules.pi = ./modules/home/pi.nix;
+    homeManagerModules = {
+      pi = ./modules/home/pi.nix;
+      desktopTheme = ./modules/home/desktop-theme.nix;
+    };
 
     darwinModules.omlx = ./modules/darwin/omlx;
     darwinModules.tailscale-userspace = ./modules/darwin/tailscale-userspace.nix;

@@ -5,6 +5,8 @@
 { pkgs, ... }:
 
 {
+  imports = [ ./desktop-theme.nix ];
+
   wayland.windowManager.hyprland = {
     enable = true;
     configType = "hyprlang";

@@ -9,6 +9,7 @@
     ./security.nix
     ./paseo.nix
     ./compat-binaries.nix
+    ./desktop-theme.nix
   ];
 
   # Boot
