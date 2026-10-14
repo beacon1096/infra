@@ -171,6 +171,10 @@ in
       openspec
       gh
       tea
+      # Cursor Agent CLI. llm-agents.nix ships it as a bare binary, so there is
+      # no Home Manager module (unlike programs.claude-code/opencode) — install
+      # the package directly. MCP config comes from ./mcp.nix (~/.cursor/mcp.json).
+      llm-agents.cursor-agent
       #  llm-agents.kimi-code
     ]
     ++ lib.optionals (unstablePkgs ? happy-coder) [
