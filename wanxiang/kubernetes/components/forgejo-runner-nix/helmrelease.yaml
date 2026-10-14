@@ -33,8 +33,6 @@ spec:
     # Deterministic Deployment name for the postRenderer target.
     fullnameOverride: forgejo-runner
     replicaCount: 1
-    strategy:
-      type: Recreate
 
     # Published by build-and-push.yaml (skopeo -> Forgejo registry).
     # `latest` + Always so a rebuilt image is actually picked up on restart.
@@ -92,6 +90,11 @@ spec:
               kind: Deployment
               name: forgejo-runner
             patch: |
+              # Seeding replaces the shared store; stop the old runner first.
+              - op: add
+                path: /spec/strategy
+                value:
+                  type: Recreate
               # Drop the DinD sidecar.
               - op: remove
                 path: /spec/template/spec/containers/1
