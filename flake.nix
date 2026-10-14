@@ -422,6 +422,39 @@
             zlib zstd stdenv.cc.cc curl openssl attr libssh bzip2 libxml2 acl
             libsodium util-linux xz systemd
           ]);
+          # Pin talosctl to the fleet's Talos version (wanxiang/talos/talenv.yaml
+          # talosVersion) instead of pkgs.talosctl, whose nixpkgs pin lags the
+          # nodes (1.13.5 client vs 1.13.10 servers, BEACO-140). The official
+          # release binaries carry the matching SHA build.
+          talosctlVersion = "1.13.10";
+          talosctlTargets = {
+            x86_64-linux = {
+              platform = "linux-amd64";
+              hash = "sha256-KOnM2a69aQ+gPYzyWCIh2H6jiyoXBPQR11oDWJxY8qo=";
+            };
+            aarch64-linux = {
+              platform = "linux-arm64";
+              hash = "sha256-OGnJ+0EfNoCXbMCGs0LlF7z0vHIPflNxYR8+SdlfGZQ=";
+            };
+          };
+          talosctlTarget =
+            talosctlTargets.${pkgs.stdenv.hostPlatform.system}
+              or (throw "talosctl: unsupported platform ${pkgs.stdenv.hostPlatform.system}");
+          talosctl = pkgs.stdenvNoCC.mkDerivation {
+            pname = "talosctl";
+            version = talosctlVersion;
+            src = pkgs.fetchurl {
+              url = "https://github.com/siderolabs/talos/releases/download/v${talosctlVersion}/talosctl-${talosctlTarget.platform}";
+              inherit (talosctlTarget) hash;
+            };
+            dontUnpack = true;
+            installPhase = ''
+              runHook preInstall
+              mkdir -p $out/bin
+              install -m 0755 $src $out/bin/talosctl
+              runHook postInstall
+            '';
+          };
           rootFiles = pkgs.runCommand "coding-agent-root-files" { } ''
             mkdir -p $out/etc/nix $out/home/coder $out/root/.ssh $out/workspace
             ln -s /home/coder/.ssh/config $out/root/.ssh/config
@@ -634,7 +667,7 @@
             pkgs.openssh
             pkgs.procps
             pkgs.sops
-            pkgs.talosctl
+            talosctl
             pkgs.tailscale
             paseoPackage
           ];
