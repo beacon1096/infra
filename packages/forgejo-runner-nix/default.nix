@@ -76,19 +76,24 @@ let
     # has none, which makes ssh fail with "No user exists for uid 0".
     printf 'root:x:0:0:root:/root:/bin/bash\n' > $out/etc/passwd
     printf 'root:x:0:\n' > $out/etc/group
-    # Sentinel for the persistent-store seed step: changes whenever the
-    # toolchain closure changes, forcing a re-seed of the PVC.
-    printf '%s\n' "${env}" > $out/etc/forgejo-runner-nix-version
   '';
-in
-dockerTools.buildLayeredImage {
-  name = "forgejo-runner-nix";
-  tag = "latest";
-  contents = [
+
+  imageContents = [
     env
     cacert
     rootFiles
   ];
+in
+dockerTools.buildLayeredImage {
+  name = "forgejo-runner-nix";
+  tag = "latest";
+  contents = imageContents;
+  extraCommands = ''
+    # The persistent /nix mount can hide image store paths before re-seeding.
+    cp --remove-destination ${rootFiles}/etc/passwd etc/passwd
+    cp --remove-destination ${rootFiles}/etc/group etc/group
+    printf '%s\n' ${lib.escapeShellArgs (map toString imageContents)} > etc/forgejo-runner-nix-version
+  '';
   config = {
     Env = [
       "PATH=/bin"
