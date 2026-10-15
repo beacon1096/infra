@@ -8,6 +8,14 @@ state_file="${REPLICA_STATE_FILE:-}"
 expected_sha256="${EXPECTED_REPLICA_STATE_SHA256:-}"
 writers=(
   openstatus-server
+  openstatus-dashboard
+  openstatus-workflows
+  openstatus-checker
+  openstatus-private-location
+  openstatus-probe-wanxiang
+)
+legacy_writers=(
+  openstatus-server
   openstatus-workflows
   openstatus-checker
   openstatus-private-location
@@ -22,19 +30,52 @@ case "$mode" in
     ;;
   *) echo "OpenStatus quiesce: unknown mode $mode" >&2; exit 2 ;;
 esac
-for command in kubectl jq sha256sum; do
+for command in jq sha256sum timeout date head; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "OpenStatus quiesce: $command is required" >&2
     exit 2
   }
 done
+kubectl_path="${OPENSTATUS_KUBECTL_BIN:-$(command -v kubectl || true)}"
+[[ -n "$kubectl_path" && -r "$kubectl_path" ]] || {
+  echo "OpenStatus quiesce: kubectl is required" >&2
+  exit 2
+}
+kubectl_command=("$kubectl_path")
+# CI fixtures live on a noexec workspace. Invoke shell stubs through bash so a
+# failed test can never fall through PATH to a real cluster client.
+if [[ "$(head -c 2 -- "$kubectl_path")" == '#!' ]]; then
+  kubectl_command=(bash "$kubectl_path")
+fi
+
+bounded() {
+  local deadline="$1"
+  local maximum="$2"
+  shift 2
+  local now remaining seconds
+  now="$(date -u +%s)"
+  remaining=$((deadline - now))
+  if (( remaining <= 0 )); then
+    echo "OpenStatus quiesce: operation deadline expired" >&2
+    return 124
+  fi
+  seconds="$remaining"
+  (( seconds > maximum )) && seconds="$maximum"
+  timeout --foreground --kill-after=5s "${seconds}s" "$@"
+}
+
+read_only() {
+  local deadline
+  deadline=$(( $(date -u +%s) + 30 ))
+  bounded "$deadline" 30 "$@"
+}
 
 if [[ "$mode" == "--plan" ]]; then
   [[ "$run_id" =~ ^[a-z0-9]([a-z0-9-]{0,18}[a-z0-9])?$ ]] || {
     echo "OpenStatus quiesce: RUN_ID must be 1-20 lowercase alphanumeric/hyphen characters" >&2
     exit 2
   }
-  flux_json="$(kubectl -n "$namespace" get kustomization.kustomize.toolkit.fluxcd.io openstatus -o json)"
+  flux_json="$(read_only "${kubectl_command[@]}" -n "$namespace" get kustomization.kustomize.toolkit.fluxcd.io openstatus -o json)"
   jq -e '
     (.spec.suspend // false) == false and
     any(.status.conditions[]?; .type == "Ready" and .status == "True") and
@@ -45,14 +86,22 @@ if [[ "$mode" == "--plan" ]]; then
   }
   replicas='[]'
   for deployment in "${writers[@]}"; do
-    deployment_json="$(kubectl -n "$namespace" get deployment "$deployment" -o json)" || {
+    deployment_json="$(read_only "${kubectl_command[@]}" -n "$namespace" get deployment "$deployment" -o json)" || {
       echo "OpenStatus quiesce: Deployment/$deployment is missing" >&2
+      exit 1
+    }
+    jq -e --arg name "$deployment" '
+      .metadata.name == $name and
+      .spec.selector.matchLabels["app.kubernetes.io/name"] == $name and
+      .spec.template.metadata.labels["app.kubernetes.io/name"] == $name
+    ' <<<"$deployment_json" >/dev/null || {
+      echo "OpenStatus quiesce: Deployment/$deployment does not have the expected pod selector" >&2
       exit 1
     }
     replicas="$(jq -c --arg name "$deployment" --argjson replicas "$(jq -r '.spec.replicas // 1' <<<"$deployment_json")" \
       '. + [{name:$name,replicas:$replicas}]' <<<"$replicas")"
   done
-  workflows_pods="$(kubectl -n "$namespace" get pod \
+  workflows_pods="$(read_only "${kubectl_command[@]}" -n "$namespace" get pod \
     -l app.kubernetes.io/name=openstatus-workflows -o json)"
   workflows_image_id="$(jq -r '
     [.items[] | select(.status.phase == "Running") |
@@ -64,10 +113,11 @@ if [[ "$mode" == "--plan" ]]; then
     exit 1
   }
   holder_name="openstatus-backup-holder-$run_id"
-  if kubectl -n "$namespace" get pod "$holder_name" >/dev/null 2>&1; then
+  existing_holder="$(read_only "${kubectl_command[@]}" -n "$namespace" get pod "$holder_name" --ignore-not-found -o name)"
+  [[ -z "$existing_holder" ]] || {
     echo "OpenStatus quiesce: Pod/$holder_name already exists" >&2
     exit 1
-  fi
+  }
   jq -n --arg namespace "$namespace" \
     --arg run_id "$run_id" \
     --arg revision "$(jq -r '.status.lastAppliedRevision' <<<"$flux_json")" \
@@ -90,12 +140,13 @@ state_sha256="$(sha256sum "$state_file" | awk '{print $1}')"
   echo "OpenStatus quiesce: EXPECTED_REPLICA_STATE_SHA256 does not match" >&2
   exit 1
 }
-jq -e --arg namespace "$namespace" --argjson expected "$(printf '%s\n' "${writers[@]}" | jq -R . | jq -s .)" '
+current_names="$(printf '%s\n' "${writers[@]}" | jq -R . | jq -s -c .)"
+legacy_names="$(printf '%s\n' "${legacy_writers[@]}" | jq -R . | jq -s -c .)"
+jq -e --arg namespace "$namespace" '
   .schema_version == 1 and .namespace == $namespace and
   (.run_id | test("^[a-z0-9]([a-z0-9-]{0,18}[a-z0-9])?$")) and
   .flux.name == "openstatus" and .flux.suspend == false and
   .maintenance_window_seconds == 600 and
-  ([.writers[].name] == $expected) and
   all(.writers[]; (.replicas | type == "number") and .replicas >= 0) and
   .holder.name == ("openstatus-backup-holder-" + .run_id) and
   (.holder.image | test("@sha256:[0-9a-f]{64}$")) and
@@ -105,16 +156,30 @@ jq -e --arg namespace "$namespace" --argjson expected "$(printf '%s\n' "${writer
   echo "OpenStatus quiesce: replica state file is invalid or incomplete" >&2
   exit 1
 }
+state_names="$(jq -c '[.writers[].name]' "$state_file")"
+if [[ "$mode" == "--stop" ]]; then
+  [[ "$state_names" == "$current_names" ]] || {
+    echo "OpenStatus quiesce: stop requires a new plan containing all six writers" >&2
+    exit 1
+  }
+elif [[ "$state_names" != "$current_names" && "$state_names" != "$legacy_names" ]]; then
+  echo "OpenStatus quiesce: resume state contains an unexpected writer set" >&2
+  exit 1
+fi
 
 holder_name="$(jq -r '.holder.name' "$state_file")"
 holder_image="$(jq -r '.holder.image' "$state_file")"
 state_run_id="$(jq -r '.run_id' "$state_file")"
+mapfile -t state_writers < <(jq -r '.writers[].name' "$state_file")
 
 delete_holder() {
+  local deadline="$1"
   local holder_json
-  if ! holder_json="$(kubectl -n "$namespace" get pod "$holder_name" -o json 2>/dev/null)"; then
-    return 0
-  fi
+  holder_json="$(bounded "$deadline" 30 "${kubectl_command[@]}" -n "$namespace" get pod "$holder_name" --ignore-not-found -o json)" || {
+    echo "OpenStatus quiesce: could not inspect Pod/$holder_name; preserving it" >&2
+    return 1
+  }
+  [[ -n "$holder_json" ]] || return 0
   jq -e --arg run "$state_run_id" '
     .metadata.labels["openstatus.beaco.works/baseline-run"] == $run and
     .spec.volumes == [{name:"workflows",persistentVolumeClaim:{claimName:"openstatus-workflows-data",readOnly:true}}]
@@ -122,25 +187,64 @@ delete_holder() {
     echo "OpenStatus quiesce: refusing to delete unexpected Pod/$holder_name" >&2
     return 1
   }
-  kubectl -n "$namespace" delete pod "$holder_name" --wait=true >/dev/null
+  bounded "$deadline" 60 "${kubectl_command[@]}" -n "$namespace" delete pod "$holder_name" --wait=true >/dev/null
 }
 
-restore_after_failed_stop() {
-  local rc=$?
-  trap - EXIT
-  echo "OpenStatus quiesce: stop failed; restoring recorded state" >&2
-  delete_holder || true
-  for deployment in "${writers[@]}"; do
+restore_recorded_state() {
+  local recovery_seconds="${OPENSTATUS_RECOVERY_MAX_SECONDS:-300}"
+  [[ "$recovery_seconds" =~ ^[0-9]+$ ]] && (( recovery_seconds >= 30 && recovery_seconds <= 600 )) || {
+    echo "OpenStatus quiesce: OPENSTATUS_RECOVERY_MAX_SECONDS must be 30-600" >&2
+    return 2
+  }
+  local deadline rc deployment replicas wait_seconds
+  deadline=$(( $(date -u +%s) + recovery_seconds ))
+  rc=0
+
+  # A foreign or malformed holder is deliberately preserved, but it must not
+  # prevent replica restoration or Flux resume.
+  delete_holder "$deadline" || rc=1
+  for deployment in "${state_writers[@]}"; do
     replicas="$(jq -r --arg name "$deployment" '.writers[] | select(.name == $name) | .replicas' "$state_file")"
-    kubectl -n "$namespace" scale deployment "$deployment" --replicas="$replicas" >/dev/null 2>&1 || true
+    bounded "$deadline" 30 "${kubectl_command[@]}" -n "$namespace" scale deployment "$deployment" \
+      --replicas="$replicas" >/dev/null || rc=1
   done
-  kubectl -n "$namespace" patch kustomization.kustomize.toolkit.fluxcd.io openstatus \
-    --type=merge -p '{"spec":{"suspend":false}}' >/dev/null 2>&1 || true
-  exit "$rc"
+  bounded "$deadline" 30 "${kubectl_command[@]}" -n "$namespace" patch \
+    kustomization.kustomize.toolkit.fluxcd.io openstatus \
+    --type=merge -p '{"spec":{"suspend":false}}' >/dev/null || rc=1
+
+  wait_seconds=$((deadline - $(date -u +%s)))
+  if (( wait_seconds > 0 )); then
+    bounded "$deadline" "$wait_seconds" "${kubectl_command[@]}" -n "$namespace" wait --for=condition=Ready \
+      kustomization.kustomize.toolkit.fluxcd.io/openstatus \
+      --timeout="${wait_seconds}s" >/dev/null || rc=1
+  else
+    rc=1
+  fi
+  for deployment in "${state_writers[@]}"; do
+    replicas="$(jq -r --arg name "$deployment" '.writers[] | select(.name == $name) | .replicas' "$state_file")"
+    if (( replicas > 0 )); then
+      wait_seconds=$((deadline - $(date -u +%s)))
+      if (( wait_seconds <= 0 )); then
+        rc=1
+        continue
+      fi
+      bounded "$deadline" "$wait_seconds" "${kubectl_command[@]}" -n "$namespace" rollout status \
+        deployment/"$deployment" --timeout="${wait_seconds}s" >/dev/null || rc=1
+    fi
+  done
+  return "$rc"
 }
 
 if [[ "$mode" == "--stop" ]]; then
-  flux_json="$(kubectl -n "$namespace" get kustomization.kustomize.toolkit.fluxcd.io openstatus -o json)"
+  window_deadline="${QUIESCE_DEADLINE_EPOCH:-}"
+  now="$(date -u +%s)"
+  [[ "$window_deadline" =~ ^[0-9]+$ ]] &&
+    (( window_deadline > now && window_deadline <= now + 600 )) || {
+    echo "OpenStatus quiesce: QUIESCE_DEADLINE_EPOCH must be set before stop and be at most 600 seconds away" >&2
+    exit 2
+  }
+  flux_json="$(bounded "$window_deadline" 30 "${kubectl_command[@]}" -n "$namespace" get \
+    kustomization.kustomize.toolkit.fluxcd.io openstatus -o json)"
   jq -e --arg revision "$(jq -r '.flux.revision' "$state_file")" '
     (.spec.suspend // false) == false and .status.lastAppliedRevision == $revision and
     any(.status.conditions[]?; .type == "Ready" and .status == "True")
@@ -149,35 +253,63 @@ if [[ "$mode" == "--stop" ]]; then
     exit 1
   }
   for deployment in "${writers[@]}"; do
-    current="$(kubectl -n "$namespace" get deployment "$deployment" -o jsonpath='{.spec.replicas}')"
+    current="$(bounded "$window_deadline" 30 "${kubectl_command[@]}" -n "$namespace" get deployment \
+      "$deployment" -o jsonpath='{.spec.replicas}')"
     expected="$(jq -r --arg name "$deployment" '.writers[] | select(.name == $name) | .replicas' "$state_file")"
     [[ "$current" == "$expected" ]] || {
       echo "OpenStatus quiesce: Deployment/$deployment replicas changed since the plan" >&2
       exit 1
     }
   done
-  current_workflows_image="$(kubectl -n "$namespace" get pod \
+  current_workflows_image="$(bounded "$window_deadline" 30 "${kubectl_command[@]}" -n "$namespace" get pod \
     -l app.kubernetes.io/name=openstatus-workflows \
     -o jsonpath='{.items[0].status.containerStatuses[?(@.name=="workflows")].imageID}')"
   [[ "$current_workflows_image" == "$holder_image" ]] || {
     echo "OpenStatus quiesce: workflows image digest changed since the plan" >&2
     exit 1
   }
-  if kubectl -n "$namespace" get pod "$holder_name" >/dev/null 2>&1; then
+  existing_holder="$(bounded "$window_deadline" 30 "${kubectl_command[@]}" -n "$namespace" get pod \
+    "$holder_name" --ignore-not-found -o name)"
+  [[ -z "$existing_holder" ]] || {
     echo "OpenStatus quiesce: Pod/$holder_name now exists" >&2
     exit 1
-  fi
+  }
+
+  stop_needs_restore=true
+  restore_after_failed_stop() {
+    local rc=$?
+    trap - EXIT INT TERM
+    if [[ "$stop_needs_restore" == "true" ]]; then
+      echo "OpenStatus quiesce: stop failed or was interrupted; restoring recorded state" >&2
+      restore_recorded_state || true
+    fi
+    exit "$rc"
+  }
   trap restore_after_failed_stop EXIT
-  kubectl -n "$namespace" patch kustomization.kustomize.toolkit.fluxcd.io openstatus \
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  bounded "$window_deadline" 30 "${kubectl_command[@]}" -n "$namespace" patch \
+    kustomization.kustomize.toolkit.fluxcd.io openstatus \
     --type=merge -p '{"spec":{"suspend":true}}' >/dev/null
   for deployment in "${writers[@]}"; do
-    kubectl -n "$namespace" scale deployment "$deployment" --replicas=0 >/dev/null
+    bounded "$window_deadline" 30 "${kubectl_command[@]}" -n "$namespace" scale deployment "$deployment" \
+      --replicas=0 >/dev/null
   done
-  for deployment in "${writers[@]}"; do
-    kubectl -n "$namespace" wait --for=jsonpath='{.status.availableReplicas}'=0 \
-      deployment/"$deployment" --timeout=120s >/dev/null 2>&1 ||
-      kubectl -n "$namespace" wait --for=delete pod -l "app.kubernetes.io/name=$deployment" --timeout=120s >/dev/null
+
+  while true; do
+    all_gone=true
+    for deployment in "${writers[@]}"; do
+      pods_json="$(bounded "$window_deadline" 15 "${kubectl_command[@]}" -n "$namespace" get pod \
+        -l "app.kubernetes.io/name=$deployment" -o json)"
+      if ! jq -e '.items | length == 0' <<<"$pods_json" >/dev/null; then
+        all_gone=false
+      fi
+    done
+    [[ "$all_gone" == "true" ]] && break
+    bounded "$window_deadline" 2 sleep 1
   done
+
   holder_json="$(jq -n --arg name "$holder_name" --arg namespace "$namespace" \
     --arg run "$state_run_id" --arg image "$holder_image" '
     {
@@ -194,40 +326,37 @@ if [[ "$mode" == "--stop" ]]; then
         volumes:[{name:"workflows",persistentVolumeClaim:{claimName:"openstatus-workflows-data",readOnly:true}}]
       }
     }')"
-  kubectl create -f - <<<"$holder_json" >/dev/null
-  kubectl -n "$namespace" wait --for=condition=Ready "pod/$holder_name" --timeout=120s >/dev/null
-  trap - EXIT
-  echo "OpenStatus quiesce: five writers stopped; read-only workflows holder ready; start the 600-second timer"
+  bounded "$window_deadline" 30 "${kubectl_command[@]}" create -f - <<<"$holder_json" >/dev/null
+  wait_seconds=$((window_deadline - $(date -u +%s)))
+  bounded "$window_deadline" "$wait_seconds" "${kubectl_command[@]}" -n "$namespace" wait \
+    --for=condition=Ready "pod/$holder_name" --timeout="${wait_seconds}s" >/dev/null
+  stop_needs_restore=false
+  trap - EXIT INT TERM
+  echo "OpenStatus quiesce: six writers stopped and all writer Pods exited; read-only workflows holder ready"
   exit 0
 fi
 
-delete_holder
-resume_complete=false
-ensure_flux_resumed() {
+resume_finished=false
+restore_on_resume_exit() {
   local rc=$?
-  trap - EXIT
-  if [[ "$resume_complete" != "true" ]]; then
-    echo "OpenStatus quiesce: resume incomplete; forcing Flux suspend=false" >&2
-    kubectl -n "$namespace" patch kustomization.kustomize.toolkit.fluxcd.io openstatus \
-      --type=merge -p '{"spec":{"suspend":false}}' >/dev/null 2>&1 || true
+  trap - EXIT INT TERM
+  if [[ "$resume_finished" != "true" ]]; then
+    echo "OpenStatus quiesce: resume interrupted; retrying replica and Flux restoration" >&2
+    restore_recorded_state || true
   fi
   exit "$rc"
 }
-trap ensure_flux_resumed EXIT
-for deployment in "${writers[@]}"; do
-  replicas="$(jq -r --arg name "$deployment" '.writers[] | select(.name == $name) | .replicas' "$state_file")"
-  kubectl -n "$namespace" scale deployment "$deployment" --replicas="$replicas" >/dev/null
-done
-kubectl -n "$namespace" patch kustomization.kustomize.toolkit.fluxcd.io openstatus \
-  --type=merge -p '{"spec":{"suspend":false}}' >/dev/null
-kubectl -n "$namespace" wait --for=condition=Ready \
-  kustomization.kustomize.toolkit.fluxcd.io/openstatus --timeout=300s >/dev/null
-for deployment in "${writers[@]}"; do
-  replicas="$(jq -r --arg name "$deployment" '.writers[] | select(.name == $name) | .replicas' "$state_file")"
-  if (( replicas > 0 )); then
-    kubectl -n "$namespace" rollout status deployment/"$deployment" --timeout=300s >/dev/null
-  fi
-done
-resume_complete=true
-trap - EXIT
+trap restore_on_resume_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+set +e
+restore_recorded_state
+restore_rc=$?
+set -e
+resume_finished=true
+trap - EXIT INT TERM
+if (( restore_rc != 0 )); then
+  echo "OpenStatus quiesce: restoration was attempted for every writer and Flux, but one or more checks failed" >&2
+  exit "$restore_rc"
+fi
 echo "OpenStatus quiesce: original replicas restored and Flux resumed"

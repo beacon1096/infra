@@ -86,31 +86,31 @@ exit 1
 EOF
 chmod +x "$tmp_dir/kubectl"
 
-plan="$(PATH="$tmp_dir:$PATH" REAL_KUBECTL="$real_kubectl" RUN_ID=fixture \
+plan="$(OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" RUN_ID=fixture \
   BACKUP_MANIFEST="$tmp_dir/backup.yaml" \
   bash "$script_dir/check-openstatus-baseline-backup.sh" plan)"
 jq -e '.selector.selected_volume_count == 3 and (.bindings | length) == 3' <<<"$plan" >/dev/null
 scope_sha256="$(jq -r .scope_sha256 <<<"$plan")"
 
-cleanup_plan="$(PATH="$tmp_dir:$PATH" REAL_KUBECTL="$real_kubectl" PARTIAL_LABEL=1 \
+cleanup_plan="$(OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" PARTIAL_LABEL=1 \
   RUN_ID=fixture BACKUP_MANIFEST="$tmp_dir/backup.yaml" \
   EXPECTED_SCOPE_SHA256="$scope_sha256" \
   bash "$script_dir/check-openstatus-baseline-backup.sh" cleanup-plan)"
 grep -q 'Preserve all Backup, Snapshot, PV, PVC' <<<"$cleanup_plan"
 
-if PATH="$tmp_dir:$PATH" REAL_KUBECTL="$real_kubectl" EXTRA_LABEL=1 RUN_ID=fixture \
+if OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" EXTRA_LABEL=1 RUN_ID=fixture \
   BACKUP_MANIFEST="$tmp_dir/backup.yaml" \
   bash "$script_dir/check-openstatus-baseline-backup.sh" plan >/dev/null 2>&1; then
   echo "initialization/backup fixture: extra selected volume unexpectedly passed" >&2
   exit 1
 fi
-if PATH="$tmp_dir:$PATH" REAL_KUBECTL="$real_kubectl" EXTRA_LABEL=1 RUN_ID=fixture \
+if OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" EXTRA_LABEL=1 RUN_ID=fixture \
   BACKUP_MANIFEST="$tmp_dir/backup.yaml" EXPECTED_SCOPE_SHA256="$scope_sha256" \
   bash "$script_dir/check-openstatus-baseline-backup.sh" cleanup-plan >/dev/null 2>&1; then
   echo "initialization/backup fixture: cleanup accepted an extra selected volume" >&2
   exit 1
 fi
-if PATH="$tmp_dir:$PATH" REAL_KUBECTL="$real_kubectl" BAD_BINDING=1 RUN_ID=fixture \
+if OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" BAD_BINDING=1 RUN_ID=fixture \
   BACKUP_MANIFEST="$tmp_dir/backup.yaml" \
   bash "$script_dir/check-openstatus-baseline-backup.sh" plan >/dev/null 2>&1; then
   echo "initialization/backup fixture: changed binding unexpectedly passed" >&2

@@ -9,6 +9,7 @@ datasource_sha256="ebee697a5b25d3808d2e931d3b0ef77ef2d666e273931099ecabffcf96e96
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "$script_dir/.." && pwd)"
 datasource_file="$repo_dir/wanxiang/kubernetes/apps/monitoring/openstatus/bootstrap/tinybird/ping_response__v8.datasource"
+runtime_patch_file="$repo_dir/wanxiang/kubernetes/apps/monitoring/openstatus/app/tinybird-runtime-pin.patch.json"
 
 usage() {
   cat >&2 <<'EOF'
@@ -42,6 +43,19 @@ actual_sha256="$(sha256sum "$datasource_file" | awk '{print $1}')"
   echo "tinybird initialization: pinned datasource checksum mismatch" >&2
   exit 1
 }
+runtime_patch_image="$(jq -er '
+  if length == 1 and .[0].op == "replace" and
+    .[0].path == "/spec/template/spec/containers/0/image"
+  then .[0].value else error("unexpected runtime patch") end
+' "$runtime_patch_file")" || {
+  echo "tinybird initialization: staged runtime pin patch is invalid" >&2
+  exit 1
+}
+[[ "$runtime_patch_image" == *@"$runtime_digest" ]] || {
+  echo "tinybird initialization: staged runtime pin patch has the wrong digest" >&2
+  exit 1
+}
+runtime_patch_sha256="$(sha256sum "$runtime_patch_file" | awk '{print $1}')"
 
 deployment_image="$(kubectl -n "$openstatus_namespace" get deployment openstatus-tinybird \
   -o jsonpath='{.spec.template.spec.containers[?(@.name=="tinybird")].image}')"
@@ -56,7 +70,10 @@ if [[ "$mode" == "--plan" ]]; then
     --arg datasource_sha256 "$datasource_sha256" \
     --arg runtime_image "$deployment_image" \
     --arg running_image_id "$pod_image_id" \
-    --arg required_digest "$runtime_digest" '
+    --arg required_digest "$runtime_digest" \
+    --arg runtime_patch "wanxiang/kubernetes/apps/monitoring/openstatus/app/tinybird-runtime-pin.patch.json" \
+    --arg runtime_patch_sha256 "$runtime_patch_sha256" \
+    --arg runtime_patch_image "$runtime_patch_image" '
     {
       operation: "initialize-openstatus-tinybird",
       mutation: "create ping_response__v8 only when absent",
@@ -69,6 +86,13 @@ if [[ "$mode" == "--plan" ]]; then
         required_digest: $required_digest,
         deployment_pinned: ($runtime_image | endswith("@" + $required_digest)),
         running_digest_matches: ($running_image_id | endswith("@" + $required_digest))
+      },
+      staged_gitops_patch: {
+        path: $runtime_patch,
+        sha256: $runtime_patch_sha256,
+        image: $runtime_patch_image,
+        active_in_kustomization: false,
+        gate: "add only in the approved runtime commit after the pre-initialization backup"
       },
       credentials: {
         create: "ephemeral token with DATASOURCES:CREATE only",

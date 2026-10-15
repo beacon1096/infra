@@ -161,11 +161,14 @@ copy is kept at
 `kubernetes/apps/monitoring/openstatus/bootstrap/tinybird/ping_response__v8.datasource`
 with SHA-256
 `ebee697a5b25d3808d2e931d3b0ef77ef2d666e273931099ecabffcf96e96207`.
-The Tinybird Local runtime is pinned to
+The validated Tinybird Local runtime digest is
 `sha256:107829e9143df641e81c7339b0fd7bf9ed97bcea8841f1bb7e9b2fc966049b20`;
 its embedded CLI prints only a placeholder version and is not accepted as a
-version pin. The initialization helper uses the fixed Data Source API fields
-instead.
+version pin. This preparation change deliberately leaves the live Deployment
+on its existing tag: adding the digest changes the Pod template and the
+`Recreate` Deployment would restart. The exact inactive JSON patch is staged
+as `app/tinybird-runtime-pin.patch.json` for a separately approved runtime
+commit after the pre-initialization backup.
 
 First classify the workspace without mutation:
 
@@ -181,17 +184,23 @@ unclassified query failure with exit 1. Never treat authentication failure as
 an absent datasource. Initialization requires two ephemeral credentials from
 the approved channel: `DATASOURCES:CREATE` and a separate
 `DATASOURCES:READ:ping_response__v8`; neither belongs in a Kubernetes Secret or
-Git. The exact approved mutation is:
+Git. The command below remains blocked until the pre-initialization backup
+succeeds and a separately reviewed GitOps commit adds
+`tinybird-runtime-pin.patch.json` to `app/kustomization.yaml`. Reconcile that
+commit and verify both the Deployment image and running `imageID` end in the
+required digest before supplying these exact stage-2 payload settings:
 
 ```bash
-CONFIRM_TINYBIRD_INITIALIZE=ping_response__v8@ef7691ad \
-TINYBIRD_CREATE_TOKEN='<DATASOURCES:CREATE token>' \
-TINYBIRD_READ_TOKEN='<DATASOURCES:READ:ping_response__v8 token>' \
-  bash utils/initialize-openstatus-tinybird.sh --execute
+export BASELINE_PURPOSE=post-init
+export INITIALIZE_TINYBIRD=execute
+export CONFIRM_TINYBIRD_INITIALIZE=ping_response__v8@ef7691ad
+# Supply TINYBIRD_CREATE_TOKEN and TINYBIRD_READ_TOKEN only to the bounded
+# with-openstatus-quiesced.sh invocation documented below.
 ```
 
-It creates only an absent `ping_response__v8`, refuses populated or ambiguous
-states, and verifies `initialized-empty`. On a transport/API failure, resume
+The pin commit is an intentional `Recreate` rollout and is not part of this
+preparation PR. The initializer creates only an absent `ping_response__v8`,
+refuses populated or ambiguous states, and verifies `initialized-empty`. On a transport/API failure, resume
 writers first and rerun `--check`: `uninitialized` may be resubmitted only with
 approval, `initialized-empty` is an idempotent success, and `ingested` or an
 authentication failure is a hard stop. Do not delete a partially observed
@@ -220,96 +229,57 @@ bash utils/quiesce-openstatus-writers.sh --plan >"$REPLICA_STATE_FILE"
 export EXPECTED_REPLICA_STATE_SHA256="$(sha256sum "$REPLICA_STATE_FILE" | awk '{print $1}')"
 ```
 
-The five writers are `openstatus-server`, `openstatus-workflows`,
-`openstatus-checker`, `openstatus-private-location`, and
-`openstatus-probe-wanxiang`. libSQL and Tinybird remain available. Because the
-cluster setting `allow-recurring-job-while-volume-detached` is `false`, the plan
-also pins the running workflows image digest and names one temporary holder Pod.
-The stop phase mounts only `openstatus-workflows-data` read-only in that Pod;
-its command is `sleep 900`, so it cannot extend attachment indefinitely. After
-approval, suspend only Flux `Kustomization/monitoring/openstatus`, stop those
-five deployments, create the reviewed holder, and start a 600-second
-maintenance timer:
+The six writers are `openstatus-server`, `openstatus-dashboard`,
+`openstatus-workflows`, `openstatus-checker`, `openstatus-private-location`,
+and `openstatus-probe-wanxiang`. The dashboard is included because the fixed
+revision's tRPC monitor service writes directly to libSQL. libSQL and Tinybird
+remain available. Because the cluster setting
+`allow-recurring-job-while-volume-detached` is `false`, the plan also pins the
+running workflows image digest and names one temporary holder Pod. The stop
+phase mounts only `openstatus-workflows-data` read-only in that Pod; its command
+is `sleep 900`, so it cannot extend attachment indefinitely.
 
-```bash
-REPLICA_STATE_FILE="$REPLICA_STATE_FILE" \
-EXPECTED_REPLICA_STATE_SHA256="$EXPECTED_REPLICA_STATE_SHA256" \
-  bash utils/quiesce-openstatus-writers.sh --stop
-```
-
-Capture the baseline while stopped. A pre-initialization protection run must
-produce `uninitialized` and exit 4; a post-initialization or later ingest run
-must exit 0 with `initialized-empty` or `ingested`:
+After approval, use the wrapper below rather than calling `--stop` directly.
+It installs recovery handling and starts one 600-second deadline before the
+first mutation. It suspends only Flux `Kustomization/monitoring/openstatus`,
+stops all six Deployments, proves every selected writer Pod exited, creates the
+reviewed holder, captures the baseline and starts only the exact three-volume
+backup. A pre-initialization run must classify `uninitialized`; a later run
+must classify `initialized-empty` or `ingested`:
 
 ```bash
 export BASELINE_FILE="./openstatus-baseline-${RUN_ID}.json"
-set +e
-TINYBIRD_READ_TOKEN='<from approved secret channel>' \
-  bash utils/capture-openstatus-restore-baseline.sh >"$BASELINE_FILE"
-baseline_rc=$?
-set -e
-# Require 4 only for BASELINE_PURPOSE=pre-init; require 0 otherwise.
-sha256sum "$BASELINE_FILE"
-
-BASELINE_PURPOSE=pre-init RUN_ID="$RUN_ID" BASELINE_FILE="$BASELINE_FILE" \
-  bash utils/render-openstatus-baseline-backup.sh >"./openstatus-backup-${RUN_ID}.yaml"
 export BACKUP_MANIFEST="./openstatus-backup-${RUN_ID}.yaml"
-RUN_ID="$RUN_ID" BACKUP_MANIFEST="$BACKUP_MANIFEST" \
-  bash utils/check-openstatus-baseline-backup.sh plan \
-  >"./openstatus-backup-scope-${RUN_ID}.json"
-export EXPECTED_SCOPE_SHA256="$(jq -r .scope_sha256 "./openstatus-backup-scope-${RUN_ID}.json")"
+export BACKUP_SCOPE_FILE="./openstatus-backup-scope-${RUN_ID}.json"
+export BASELINE_PURPOSE=pre-init
+TINYBIRD_READ_TOKEN='<from approved secret channel>' \
+REPLICA_STATE_FILE="$REPLICA_STATE_FILE" \
+EXPECTED_REPLICA_STATE_SHA256="$EXPECTED_REPLICA_STATE_SHA256" \
+  bash utils/with-openstatus-quiesced.sh -- \
+    bash utils/start-openstatus-baseline-backup.sh
 ```
 
-The plan is read-only and is the authoritative three-volume scope. Apply its
-exact manifest, label only its three resolved Volumes, verify the selector,
-and start only the generated temporary CronJob:
+`with-openstatus-quiesced.sh` owns the EXIT/INT/TERM recovery trap from before
+the first mutation. Its child and every blocking `kubectl` call are limited by
+the same absolute deadline. Baseline failure, manifest or Job creation
+failure, timeout, or interruption therefore enters replica and Flux recovery.
+Resume preserves an unexpected holder but still attempts every recorded
+replica restore and `suspend=false`; it exits non-zero so the unknown object is
+investigated rather than deleted.
+
+The payload writes the baseline, manifest and authoritative scope file,
+re-resolves all three PVC→PV→Volume bindings, applies only the temporary
+`groups: []` RecurringJob and its three direct labels, and starts only the
+generated CronJob. It returns after exactly three new snapshots and their
+Backup CRs are registered without errors. The wrapper then restores writers
+and Flux immediately. Backup upload continues afterward, so no 51-volume
+operation can extend the stop-write window. Verify completion separately:
 
 ```bash
 export JOB_NAME="osb-${RUN_ID}"
-kubectl apply -f "$BACKUP_MANIFEST"
-jq -r '.bindings[].volume' "./openstatus-backup-scope-${RUN_ID}.json" |
-  while read -r volume; do
-    kubectl -n storage label volumes.longhorn.io "$volume" \
-      "recurring-job.longhorn.io/${JOB_NAME}=enabled"
-  done
-RUN_ID="$RUN_ID" BACKUP_MANIFEST="$BACKUP_MANIFEST" \
-EXPECTED_SCOPE_SHA256="$EXPECTED_SCOPE_SHA256" \
-  bash utils/check-openstatus-baseline-backup.sh labels
-kubectl -n storage wait --for=create "cronjob/${JOB_NAME}" --timeout=60s
-kubectl -n storage create job --from="cronjob/${JOB_NAME}" "$JOB_NAME"
-```
-
-Poll `check-openstatus-baseline-backup.sh snapshots` only until the earlier of
-success or 600 seconds. Success requires exactly three ready snapshots newer
-than the baseline and their three Backup CRs registered with no error. Resume
-deletes the verified holder first, restores the saved replicas, and resumes
-Flux. Run it immediately at success and from the shell's EXIT trap on every
-failure path. Backup upload continues after writers resume, so no 51-volume
-operation can extend the stop-write window:
-
-```bash
-resume_openstatus() {
-  REPLICA_STATE_FILE="$REPLICA_STATE_FILE" \
-  EXPECTED_REPLICA_STATE_SHA256="$EXPECTED_REPLICA_STATE_SHA256" \
-    bash utils/quiesce-openstatus-writers.sh --resume
-}
-trap resume_openstatus EXIT
-deadline=$(( $(date -u +%s) + 600 ))
-snapshot_ready=false
-while (( $(date -u +%s) < deadline )); do
-  if RUN_ID="$RUN_ID" BACKUP_MANIFEST="$BACKUP_MANIFEST" BASELINE_FILE="$BASELINE_FILE" \
-    EXPECTED_SCOPE_SHA256="$EXPECTED_SCOPE_SHA256" \
-      bash utils/check-openstatus-baseline-backup.sh snapshots; then
-    snapshot_ready=true
-    break
-  fi
-  sleep 5
-done
-resume_openstatus
-trap - EXIT
-[[ "$snapshot_ready" == true ]] || exit 1
-
-kubectl -n storage wait --for=condition=complete "job/${JOB_NAME}" --timeout=2h
+export EXPECTED_SCOPE_SHA256="$(jq -r .scope_sha256 "$BACKUP_SCOPE_FILE")"
+timeout --foreground --kill-after=5s 2h \
+  kubectl -n storage wait --for=condition=complete "job/${JOB_NAME}" --timeout=2h
 RUN_ID="$RUN_ID" BACKUP_MANIFEST="$BACKUP_MANIFEST" BASELINE_FILE="$BASELINE_FILE" \
 EXPECTED_SCOPE_SHA256="$EXPECTED_SCOPE_SHA256" \
   bash utils/check-openstatus-baseline-backup.sh backups
@@ -325,7 +295,7 @@ RUN_ID="$RUN_ID" BACKUP_MANIFEST="$BACKUP_MANIFEST" \
 EXPECTED_SCOPE_SHA256="$EXPECTED_SCOPE_SHA256" \
   bash utils/check-openstatus-baseline-backup.sh cleanup-plan
 
-jq -r '.bindings[].volume' "./openstatus-backup-scope-${RUN_ID}.json" |
+jq -r '.bindings[].volume' "$BACKUP_SCOPE_FILE" |
   while read -r volume; do
     kubectl -n storage label volumes.longhorn.io "$volume" \
       "recurring-job.longhorn.io/${JOB_NAME}-" --overwrite
@@ -341,10 +311,28 @@ accepts any subset of the three expected direct labels but refuses an extra
 selection; remove only names printed by the plan after investigation.
 
 Run this procedure twice: first with `BASELINE_PURPOSE=pre-init` to protect the
-uninitialized source, then—after the separately approved initialization—in the
-same bounded maintenance session with `BASELINE_PURPOSE=post-init` to create an
-`initialized-empty` baseline and recovery point. Later ingest recovery requires
-a third, new `ingested` baseline and new backups.
+uninitialized source, then—after the separately approved digest rollout—with
+`BASELINE_PURPOSE=post-init` to initialize and create an `initialized-empty`
+baseline and recovery point in the same bounded maintenance session. Later
+ingest recovery requires a third, new `ingested` baseline and new backups.
+
+For stage 2, generate a fresh replica plan and fresh output paths, set the
+three exported initialization values shown above, and invoke the same wrapper
+with both ephemeral tokens on its environment:
+
+```bash
+TINYBIRD_CREATE_TOKEN='<DATASOURCES:CREATE token>' \
+TINYBIRD_READ_TOKEN='<DATASOURCES:READ:ping_response__v8 token>' \
+REPLICA_STATE_FILE="$REPLICA_STATE_FILE" \
+EXPECTED_REPLICA_STATE_SHA256="$EXPECTED_REPLICA_STATE_SHA256" \
+  bash utils/with-openstatus-quiesced.sh -- \
+    bash utils/start-openstatus-baseline-backup.sh
+```
+
+The payload invokes `initialize-openstatus-tinybird.sh --execute` only after
+all six writer Pods have exited, then captures the `initialized-empty` baseline
+and starts the linked three-volume backup before the same deadline. Any
+initialization error enters the same replica and Flux recovery path.
 
 Submit approvals in three bounded stages, not as a general storage or rollout
 approval:
@@ -354,11 +342,13 @@ approval:
    `uninitialized` baseline, 600-second stop-write limit, exact read-only holder
    name/image/PVC plus its 900-second self-stop, temporary storage resource
    names, and the cleanup plan.
-2. **Initialize and protect the empty datasource:** datasource SHA-256, required
-   Tinybird image digest, the two token scopes, exact confirmation string,
-   refusal/failure handling, then a new `initialized-empty` baseline and new
-   three-volume scope/cleanup evidence. This stage does not authorize changing
-   the application Secret or enabling the receiver/probe.
+2. **Pin, initialize and protect the empty datasource:** datasource SHA-256,
+   inactive runtime-patch SHA-256, required Tinybird image digest, explicit
+   approval for the `Recreate` rollout after stage 1, the two token scopes,
+   exact confirmation string and refusal/failure handling, then a new
+   `initialized-empty` baseline and three-volume scope/cleanup evidence. This
+   stage does not authorize changing the application Secret or enabling the
+   receiver/probe.
 3. **Isolated restore:** completed per-volume Backup evidence, baseline and
    restore-manifest SHA-256 values, 20 GiB nominal clone size, at least 24 GiB
    schedulable Longhorn headroom, exact namespace/PV/Volume names, read-only
