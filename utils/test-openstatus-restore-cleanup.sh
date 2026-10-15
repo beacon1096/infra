@@ -10,7 +10,7 @@ cat >"$test_tmp_dir/kubectl" <<'EOF'
 #!/bin/bash
 set -euo pipefail
 
-if [[ "${1:-}" == "apply" ]]; then
+if [[ "${1:-}" == "create" ]]; then
   exec "$REAL_KUBECTL" "$@"
 fi
 if [[ "$*" == "get namespace openstatus-restore-fixture -o json" ]]; then

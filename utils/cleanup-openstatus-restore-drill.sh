@@ -60,7 +60,7 @@ if [[ "$execute" == true && ! "$expected_manifest_sha256" =~ ^[0-9a-f]{64}$ ]]; 
   exit 2
 fi
 
-manifest_json="$(kubectl apply --dry-run=client -f "$restore_manifest" -o json)"
+manifest_json="$(kubectl create --dry-run=client -f "$restore_manifest" -o json | jq -s '{items: .}')"
 jq -e --arg namespace "$restore_namespace" --arg key "$restore_label" --arg run "$run_id" '
   ([.items[] | select(.kind == "Namespace" and .metadata.name == $namespace and .metadata.labels[$key] == $run)] | length) == 1 and
   ([.items[] | select(.kind == "PersistentVolume" and .metadata.labels[$key] == $run)] | length) == 3 and
