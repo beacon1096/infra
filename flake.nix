@@ -366,6 +366,8 @@
 
       coder-server-oci = pkgs.callPackage ./packages/coder-server { };
 
+      openstatus-private-probe-oci = pkgs.callPackage ./packages/openstatus-private-probe { };
+
       # Forgejo runner + Nix image for the Wanxiang nix-collector (see
       # docs/infra-ops/nix-collector-build-split.md).
       forgejo-runner-nix-oci = pkgs.callPackage ./packages/forgejo-runner-nix { };

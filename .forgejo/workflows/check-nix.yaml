@@ -23,6 +23,8 @@ jobs:
         run: |
           nix shell nixpkgs#nodejs_24 --command node utils/test-n8n-infra-ci.mjs
           nix shell nixpkgs#nodejs_24 --command node utils/test-renovate-merge-queue.mjs
+      - name: Check OpenStatus receiver and probe wiring
+        run: bash utils/check-openstatus-wiring.sh
       - name: Build OCI images
         if: github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/prod')
         run: |
@@ -33,6 +35,8 @@ jobs:
             .#multica-backend-oci | tee multica-store-path.txt
           nix build --print-out-paths --out-link result-ci-coder-server \
             .#coder-server-oci | tee coder-server-store-path.txt
+          nix build --print-out-paths --out-link result-ci-openstatus-private-probe \
+            .#openstatus-private-probe-oci | tee openstatus-private-probe-store-path.txt
       # The public repo only builds/inspects OCI archives. Publishing the
       # production images (and the disposable ci-scratch tags they used to
       # cover) is owned solely by infra-private (BEACO-140/BEACO-219); this

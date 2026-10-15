@@ -13,6 +13,7 @@ resources:
   - ./dashboard.yaml
   - ./status-page.yaml
   - ./private-location.yaml
+  - ./probe.yaml
   - ./httproute-dashboard.yaml
   - ./httproute-status-page.yaml
   - ./dnsendpoint.yaml

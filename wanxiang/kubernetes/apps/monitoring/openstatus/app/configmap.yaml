@@ -18,7 +18,7 @@ data:
   NEXTAUTH_URL: https://openstatus.${SECRET_DOMAIN}
   NEXT_PUBLIC_URL: https://openstatus.${SECRET_DOMAIN}
   NODE_ENV: production
-  OPENSTATUS_INGEST_URL: http://openstatus-server:3000
+  OPENSTATUS_INGEST_URL: http://openstatus-private-location:8080
   PROJECT_ID_VERCEL: ""
   RESEND_API_KEY: unused-self-host-oauth
   SELF_HOST: "true"

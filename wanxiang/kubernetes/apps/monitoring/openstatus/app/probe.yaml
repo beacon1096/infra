@@ -1,0 +1,44 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openstatus-probe-wanxiang
+  labels:
+    app.kubernetes.io/name: openstatus-probe-wanxiang
+    app.kubernetes.io/component: probe
+spec:
+  # Roll out together with the receiver after its Tinybird ingest smoke test
+  # passes and this image is published at an immutable digest.
+  replicas: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openstatus-probe-wanxiang
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openstatus-probe-wanxiang
+        app.kubernetes.io/component: probe
+    spec:
+      containers:
+        - name: probe
+          # Built reproducibly by packages/openstatus-private-probe from the
+          # same fixed upstream revision as the self-hosted stack.
+          image: forgejo.beaco.works/infrastructure/nix-fleet/openstatus-private-probe:ef7691a
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: OPENSTATUS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openstatus-secret
+                  key: OPENSTATUS_KEY
+            - name: OPENSTATUS_INGEST_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: openstatus-config
+                  key: OPENSTATUS_INGEST_URL
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
