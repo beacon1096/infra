@@ -127,7 +127,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "description": "Required metric families missing from any covered domain make this panel Unknown.",
+      "description": "Missing metric families are Unknown; per-target metric loss with healthy peers is Critical.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -135,7 +135,8 @@
             {
               "options": {
                 "0": { "color": "green", "index": 0, "text": "Present" },
-                "3": { "color": "orange", "index": 1, "text": "Unknown" }
+                "2": { "color": "red", "index": 1, "text": "Critical" },
+                "3": { "color": "orange", "index": 2, "text": "Unknown" }
               },
               "type": "value"
             }
@@ -145,6 +146,7 @@
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
+              { "color": "red", "value": 2 },
               { "color": "orange", "value": 3 }
             ]
           }

@@ -61,8 +61,9 @@ BEACO-203 规则；它为 0 时仍必须检查前三个证据面板。
    再看相同 Pod/Service 的 endpoint 与 scrape error。不要先改 selector。
 2. **Discovery state=Critical**：查 Ready Pod 与其 ServiceMonitor/PodMonitor selector、
    EndpointSlice 和最终 job label。此状态表示对象仍在运行但没有被 Prometheus 发现。
-3. **Metric evidence state=Unknown**：依次执行下列存在性查询，确定缺少的域；如果该域
-   的其它实例仍正常，也不能把缺失实例记为健康。
+3. **Metric evidence state=Unknown**：依次执行下列存在性查询，确定缺少的域。
+   **Critical** 表示 node-exporter、Longhorn 卷或 CNPG 实例的部分关键指标丢失；
+   按 `job/instance/namespace/pod` 或 `volume` 对账，健康 peer 不能替代缺失实例。
 
 ```promql
 node_uname_info

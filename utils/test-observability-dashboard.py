@@ -108,10 +108,25 @@ def validate_dashboard(dashboard, panels):
     if 'longhorn_volume_robustness == 3' in joined:
         raise AssertionError("Longhorn 1.12.1 faulted robustness is a state label with value 1")
 
-    collection_mappings = panels["Collection state"]["fieldConfig"]["defaults"]["mappings"]
-    mapping_values = collection_mappings[0]["options"]
-    if mapping_values["0"]["text"] != "Healthy" or mapping_values["3"]["text"] != "Unknown":
-        raise AssertionError("collection state must distinguish healthy from unknown")
+    for title, normal_text in (
+        ("Collection state", "Healthy"),
+        ("Discovery state", "Healthy"),
+        ("Metric evidence state", "Present"),
+    ):
+        mappings = panels[title]["fieldConfig"]["defaults"]["mappings"]
+        values = {
+            key: value
+            for mapping in mappings if mapping["type"] == "value"
+            for key, value in mapping["options"].items()
+        }
+        for state, text, color in (
+            ("0", normal_text, "green"),
+            ("2", "Critical", "red"),
+            ("3", "Unknown", "orange"),
+        ):
+            mapped = values.get(state, {})
+            if mapped.get("text") != text or mapped.get("color") != color:
+                raise AssertionError(f"{title}: query state {state} must display {text} in {color}")
 
     release = yaml.safe_load(HELM_RELEASE.read_text(encoding="utf-8"))
     if release["spec"]["values"]["grafana"]["enabled"] is not False:
