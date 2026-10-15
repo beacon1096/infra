@@ -221,9 +221,11 @@ to exactly these current PVC→PV→Volume mappings:
 The validator resolves the mappings at every phase and rejects a fourth label,
 a changed binding, an unhealthy/detached volume, or a manifest with a group.
 Before preparing or executing a window, save the read-only conflict check. It
-rejects an active `daily-backup` or `osb-*` Job, an in-progress Backup for any
-of the three volumes, and a stale `osb-*` direct label. It never cancels or
-cleans the conflicting work:
+rejects any nonterminal `daily-backup` or `osb-*` Job (including queued Jobs
+and gaps between retries), an in-progress Backup for any of the three volumes,
+and a stale `osb-*` direct label. Only Jobs with `Complete=True` or
+`Failed=True` are historical terminal Jobs. The check never cancels or cleans
+the conflicting work:
 
 ```bash
 export RUN_ID=20261015-preinit
@@ -291,9 +293,13 @@ an `acquired` marker and its exact replica-state file for incident recovery;
 never replace it with a new plan or remove it until the original state is
 verified. A completed or refused run needs a new plan before another window.
 
-The payload repeats the conflict check before baseline capture and immediately
-before its first storage mutation. A conflict therefore restores writers and
-Flux without starting the three-volume job. It then writes the baseline,
+The payload begins only after the wrapper has quiesced all writers, so its first
+conflict check is after quiesce; the saved pre-window command above avoids a
+known conflict before stopping writers. The payload repeats the check before
+baseline capture and immediately before its first storage mutation. A conflict
+therefore restores writers and Flux without starting the three-volume job. The
+check is a fail-closed preflight, not an atomic lock: the approved window must
+still exclude other backup starts. The payload then writes the baseline,
 manifest and authoritative scope file,
 re-resolves all three PVC→PV→Volume bindings, applies only the temporary
 `groups: []` RecurringJob and its three direct labels, and starts only the

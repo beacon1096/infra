@@ -74,8 +74,15 @@ active_jobs="$(jq -c --arg daily "$daily_job_name" --arg prefix 'osb-' '
     ((.metadata.ownerReferences // []) |
       map(select(.kind == "CronJob")) | .[0].name // "") as $owner |
     select($owner == $daily or ($owner | startswith($prefix))) |
-    select((.status.active // 0) > 0) |
-    {name:.metadata.name,owner:$owner,active:.status.active,
+    [(.status.conditions // [])[] |
+      select((.type == "Complete" or .type == "Failed") and .status == "True")] as $terminal |
+    select(($terminal | length) == 0) |
+    {name:.metadata.name,owner:$owner,
+     phase:(if (.status.active // 0) > 0 then "active"
+       elif (.status.failed // 0) > 0 then "retrying-or-awaiting-terminal"
+       else "queued" end),
+     active:(.status.active // 0),failed:(.status.failed // 0),
+     succeeded:(.status.succeeded // 0),backoffLimit:(.spec.backoffLimit // null),
      startTime:(.status.startTime // "")}]
 ' <<<"$jobs_json")"
 
@@ -105,8 +112,8 @@ jq -e '
   (.active_target_backups | length) == 0 and
   (.stale_direct_labels | length) == 0
 ' <<<"$result" >/dev/null || {
-  echo "OpenStatus backup conflict check: active or stale backup work blocks the three-volume run" >&2
+  echo "OpenStatus backup conflict check: nonterminal or stale backup work blocks the three-volume run" >&2
   exit 1
 }
 
-echo "OpenStatus backup conflict check: no active daily/three-volume job, target backup, or stale direct label" >&2
+echo "OpenStatus backup conflict check: no nonterminal daily/three-volume job, target backup, or stale direct label" >&2

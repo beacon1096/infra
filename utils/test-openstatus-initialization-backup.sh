@@ -87,11 +87,29 @@ if [[ "$*" == "-n storage get recurringjobs.longhorn.io osb-fixture" || "$*" == 
   exit 1
 fi
 if [[ "$*" == "-n storage get jobs -o json" ]]; then
-  if [[ "${ACTIVE_DAILY_JOB:-0}" == "1" ]]; then
-    printf '%s\n' '{"items":[{"metadata":{"name":"daily-backup-1","ownerReferences":[{"kind":"CronJob","name":"daily-backup"}]},"status":{"active":1,"startTime":"2026-10-15T18:00:00Z"}}]}'
-  else
-    printf '%s\n' '{"items":[]}'
-  fi
+  case "${DAILY_JOB_STATE:-none}" in
+    active)
+      printf '%s\n' '{"items":[{"metadata":{"name":"daily-backup-active","ownerReferences":[{"kind":"CronJob","name":"daily-backup"}]},"spec":{"backoffLimit":3},"status":{"active":1,"startTime":"2026-10-15T18:00:00Z","conditions":[]}}]}'
+      ;;
+    queued)
+      printf '%s\n' '{"items":[{"metadata":{"name":"daily-backup-queued","ownerReferences":[{"kind":"CronJob","name":"daily-backup"}]},"spec":{"backoffLimit":3},"status":{"conditions":[]}}]}'
+      ;;
+    retrying)
+      printf '%s\n' '{"items":[{"metadata":{"name":"daily-backup-retrying","ownerReferences":[{"kind":"CronJob","name":"daily-backup"}]},"spec":{"backoffLimit":3},"status":{"active":0,"failed":1,"startTime":"2026-10-15T18:00:00Z","conditions":[]}}]}'
+      ;;
+    complete)
+      printf '%s\n' '{"items":[{"metadata":{"name":"daily-backup-complete","ownerReferences":[{"kind":"CronJob","name":"daily-backup"}]},"spec":{"backoffLimit":3},"status":{"active":0,"succeeded":1,"conditions":[{"type":"Complete","status":"True"}]}}]}'
+      ;;
+    failed)
+      printf '%s\n' '{"items":[{"metadata":{"name":"daily-backup-failed","ownerReferences":[{"kind":"CronJob","name":"daily-backup"}]},"spec":{"backoffLimit":3},"status":{"active":0,"failed":4,"conditions":[{"type":"Failed","status":"True"}]}}]}'
+      ;;
+    none)
+      printf '%s\n' '{"items":[]}'
+      ;;
+    *)
+      exit 2
+      ;;
+  esac
   exit 0
 fi
 if [[ "$*" == "-n storage get backups.longhorn.io -o json" ]]; then
@@ -121,11 +139,20 @@ jq -e '
   (.stale_direct_labels | length) == 0
 ' <<<"$conflicts" >/dev/null
 
-if OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" ACTIVE_DAILY_JOB=1 \
-  bash "$script_dir/check-openstatus-backup-conflicts.sh" >/dev/null 2>&1; then
-  echo "initialization/backup fixture: active daily backup unexpectedly passed" >&2
-  exit 1
-fi
+for job_state in active queued retrying; do
+  if OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" \
+    DAILY_JOB_STATE="$job_state" \
+    bash "$script_dir/check-openstatus-backup-conflicts.sh" >/dev/null 2>&1; then
+    echo "initialization/backup fixture: $job_state daily backup unexpectedly passed" >&2
+    exit 1
+  fi
+done
+for job_state in complete failed; do
+  terminal_jobs="$(OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" \
+    DAILY_JOB_STATE="$job_state" \
+    bash "$script_dir/check-openstatus-backup-conflicts.sh")"
+  jq -e '(.active_conflicting_jobs | length) == 0' <<<"$terminal_jobs" >/dev/null
+done
 if OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" ACTIVE_TARGET_BACKUP=1 \
   bash "$script_dir/check-openstatus-backup-conflicts.sh" >/dev/null 2>&1; then
   echo "initialization/backup fixture: active target backup unexpectedly passed" >&2
