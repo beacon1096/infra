@@ -1,139 +1,221 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "snapshot": {
     "repository": "infrastructure/infra-private",
     "sha": "2222222222222222222222222222222222222222",
     "generated_at": "2026-10-15T22:30:00Z"
+  },
+  "attestation": {
+    "method": "nix-eval-and-human-review",
+    "reviewed_by": "fixture-reviewer",
+    "reviewed_at": "2026-10-15T22:31:00Z",
+    "source_paths": ["flake.nix", "hosts/personal/common/nixos-configuration.nix"],
+    "diff_base_sha": "0000000000000000000000000000000000000000",
+    "changed_paths_sha256": "sha256:5857c3c97d4e9970daf5c41d10e5bc89d3de207d04e792eb1cba92df22b4fdee",
+    "scope_sha256": "sha256:371cd925a664e46c0a8000fd849730f05205ca011503e5ee8d9dd0657ef9206f"
   },
   "hosts": [
     {
       "name": "m920x",
       "platform": "nixos",
       "required_evidence": [
-        { "kind": "host-health", "source": "prometheus/nixos-host" },
-        { "kind": "service-health", "source": "prometheus/comin" }
+        { "kind": "host-health", "source": "prometheus/nixos-host", "revision_role": "known-good" },
+        { "kind": "service-health", "source": "prometheus/comin", "revision_role": "known-good" }
       ],
-      "independent_recovery": {
-        "channel": "local console or previously verified SSH session",
-        "steps": [
-          "list /nix/var/nix/profiles/system generations",
-          "run the selected known-good system generation switch-to-configuration script",
-          "verify host and affected services before releasing the stop"
-        ]
+      "recovery_channels": [
+        {
+          "id": "local-console",
+          "kind": "local-console",
+          "independent_of": ["comin", "forgejo", "n8n", "production-network"],
+          "verified_at": "2026-10-15T22:25:00Z",
+          "available": true
+        }
+      ],
+      "staged_delivery": {
+        "mechanism": "comin-service-hold",
+        "service": "comin.service",
+        "known_good_revision": "1111111111111111111111111111111111111111",
+        "verified_at": "2026-10-15T22:25:00Z",
+        "state": "active"
       }
     },
     {
       "name": "microserver-gen10plus",
       "platform": "nixos",
       "required_evidence": [
-        { "kind": "host-health", "source": "prometheus/nixos-host" },
-        { "kind": "service-health", "source": "prometheus/comin" }
+        { "kind": "host-health", "source": "prometheus/nixos-host", "revision_role": "known-good" },
+        { "kind": "service-health", "source": "prometheus/comin", "revision_role": "known-good" }
       ],
-      "independent_recovery": {
-        "channel": "local console or previously verified SSH session",
-        "steps": [
-          "list /nix/var/nix/profiles/system generations",
-          "run the selected known-good system generation switch-to-configuration script",
-          "verify host and affected services before releasing the stop"
-        ]
+      "recovery_channels": [
+        {
+          "id": "local-console",
+          "kind": "local-console",
+          "independent_of": ["comin", "forgejo", "n8n", "production-network"],
+          "verified_at": "2026-10-15T22:25:00Z",
+          "available": true
+        }
+      ],
+      "staged_delivery": {
+        "mechanism": "comin-service-hold",
+        "service": "comin.service",
+        "known_good_revision": "1111111111111111111111111111111111111111",
+        "verified_at": "2026-10-15T22:25:00Z",
+        "state": "active"
       }
     },
     {
       "name": "msi-claw",
       "platform": "nixos",
       "required_evidence": [
-        { "kind": "host-health", "source": "prometheus/nixos-host" },
-        { "kind": "service-health", "source": "prometheus/comin" }
+        { "kind": "host-health", "source": "prometheus/nixos-host", "revision_role": "known-good" },
+        { "kind": "service-health", "source": "prometheus/comin", "revision_role": "known-good" }
       ],
-      "independent_recovery": {
-        "channel": "local console or previously verified SSH session",
-        "steps": [
-          "list /nix/var/nix/profiles/system generations",
-          "run the selected known-good system generation switch-to-configuration script",
-          "verify host and affected services before releasing the stop"
-        ]
+      "recovery_channels": [
+        {
+          "id": "local-console",
+          "kind": "local-console",
+          "independent_of": ["comin", "forgejo", "n8n", "production-network"],
+          "verified_at": "2026-10-15T22:25:00Z",
+          "available": true
+        }
+      ],
+      "staged_delivery": {
+        "mechanism": "comin-service-hold",
+        "service": "comin.service",
+        "known_good_revision": "1111111111111111111111111111111111111111",
+        "verified_at": "2026-10-15T22:25:00Z",
+        "state": "active"
       }
     },
     {
       "name": "surface-pro-8",
       "platform": "nixos",
       "required_evidence": [
-        { "kind": "host-health", "source": "prometheus/nixos-host" },
-        { "kind": "service-health", "source": "prometheus/comin" }
+        { "kind": "host-health", "source": "prometheus/nixos-host", "revision_role": "known-good" },
+        { "kind": "service-health", "source": "prometheus/comin", "revision_role": "known-good" }
       ],
-      "independent_recovery": {
-        "channel": "local console or previously verified SSH session",
-        "steps": [
-          "list /nix/var/nix/profiles/system generations",
-          "run the selected known-good system generation switch-to-configuration script",
-          "verify host and affected services before releasing the stop"
-        ]
+      "recovery_channels": [
+        {
+          "id": "local-console",
+          "kind": "local-console",
+          "independent_of": ["comin", "forgejo", "n8n", "production-network"],
+          "verified_at": "2026-10-15T22:25:00Z",
+          "available": true
+        }
+      ],
+      "staged_delivery": {
+        "mechanism": "comin-service-hold",
+        "service": "comin.service",
+        "known_good_revision": "1111111111111111111111111111111111111111",
+        "verified_at": "2026-10-15T22:25:00Z",
+        "state": "active"
       }
     },
     {
       "name": "thinkbook-plus-hybrid",
       "platform": "nixos",
       "required_evidence": [
-        { "kind": "host-health", "source": "prometheus/nixos-host" },
-        { "kind": "service-health", "source": "prometheus/comin" }
+        { "kind": "host-health", "source": "prometheus/nixos-host", "revision_role": "known-good" },
+        { "kind": "service-health", "source": "prometheus/comin", "revision_role": "known-good" }
       ],
-      "independent_recovery": {
-        "channel": "local console or previously verified SSH session",
-        "steps": [
-          "list /nix/var/nix/profiles/system generations",
-          "run the selected known-good system generation switch-to-configuration script",
-          "verify host and affected services before releasing the stop"
-        ]
-      }
-    },
-    {
-      "name": "beacon-mac-mini-m4",
-      "platform": "darwin",
-      "required_evidence": [
-        { "kind": "host-health", "source": "prometheus/darwin-host" },
-        { "kind": "service-health", "source": "prometheus/comin-darwin" }
+      "recovery_channels": [
+        {
+          "id": "local-console",
+          "kind": "local-console",
+          "independent_of": ["comin", "forgejo", "n8n", "production-network"],
+          "verified_at": "2026-10-15T22:25:00Z",
+          "available": true
+        }
       ],
-      "independent_recovery": {
-        "channel": "local macOS console",
-        "steps": [
-          "select the reviewed known-good nix-darwin system generation",
-          "run that generation's activate program without fetching the release repository",
-          "verify host and affected services before releasing the stop"
-        ]
+      "staged_delivery": {
+        "mechanism": "comin-service-hold",
+        "service": "comin.service",
+        "known_good_revision": "1111111111111111111111111111111111111111",
+        "verified_at": "2026-10-15T22:25:00Z",
+        "state": "active"
       }
     }
   ],
   "path_rules": [
     {
+      "match_kind": "directory",
       "prefix": "hosts/personal/fixed/m920x/",
       "hosts": ["m920x"],
-      "services": ["nixos-system", "comin"],
-      "risk_domain": "application"
+      "services": ["nixos-system"],
+      "risk_domain": "unclassified",
+      "runtime_impact": true,
+      "shared": false,
+      "consumer_basis": {
+        "method": "nix-import-closure",
+        "revision": "2222222222222222222222222222222222222222",
+        "complete": true,
+        "source_paths": ["flake.nix", "hosts/personal/fixed/m920x/configuration.nix"],
+        "consumer_set_sha256": "sha256:6f4d13e9171b8e550c97a294c808a3a3d461ae56caa3adb1f4968f0702b6e97d"
+      }
     },
     {
+      "match_kind": "directory",
       "prefix": "hosts/personal/fixed/microserver-gen10plus/",
       "hosts": ["microserver-gen10plus"],
-      "services": ["nixos-system", "comin"],
-      "risk_domain": "application"
+      "services": ["nixos-system"],
+      "risk_domain": "unclassified",
+      "runtime_impact": true,
+      "shared": false,
+      "consumer_basis": {
+        "method": "nix-import-closure",
+        "revision": "2222222222222222222222222222222222222222",
+        "complete": true,
+        "source_paths": ["flake.nix", "hosts/personal/fixed/microserver-gen10plus/configuration.nix"],
+        "consumer_set_sha256": "sha256:756a9bb7f0e38caefb5e3efebcb95db363d87592fc4b12b65606b26431e06f0d"
+      }
     },
     {
-      "prefix": "hosts/personal/beacon-mac-mini-m4/",
-      "hosts": ["beacon-mac-mini-m4"],
-      "services": ["darwin-system", "comin-darwin"],
-      "risk_domain": "application"
-    },
-    {
+      "match_kind": "file",
       "prefix": "hosts/personal/common/nixos-configuration.nix",
       "hosts": ["m920x", "microserver-gen10plus", "msi-claw", "surface-pro-8", "thinkbook-plus-hybrid"],
       "services": ["nixos-system", "system-packages"],
       "risk_domain": "application",
-      "shared": true
+      "runtime_impact": true,
+      "shared": true,
+      "consumer_basis": {
+        "method": "nix-import-closure",
+        "revision": "2222222222222222222222222222222222222222",
+        "complete": true,
+        "source_paths": ["flake.nix", "hosts/personal/common/nixos-configuration.nix"],
+        "consumer_set_sha256": "sha256:946694bd649f92ab568a6f625888b8b044ab9989c3c5342f8a7c41748a08c5cd"
+      }
     },
     {
+      "match_kind": "file",
+      "prefix": "hosts/personal/fixed/m920x/disko.nix",
+      "hosts": ["m920x"],
+      "services": ["disk-layout", "nixos-system"],
+      "risk_domain": "storage",
+      "runtime_impact": true,
+      "shared": false,
+      "consumer_basis": {
+        "method": "nix-import-closure",
+        "revision": "2222222222222222222222222222222222222222",
+        "complete": true,
+        "source_paths": ["flake.nix", "hosts/personal/fixed/m920x/disko.nix"],
+        "consumer_set_sha256": "sha256:6f4d13e9171b8e550c97a294c808a3a3d461ae56caa3adb1f4968f0702b6e97d"
+      }
+    },
+    {
+      "match_kind": "file",
       "prefix": "hosts/personal/fixed/microserver-gen10plus/disko.nix",
       "hosts": ["microserver-gen10plus"],
       "services": ["disk-layout", "nixos-system"],
-      "risk_domain": "storage"
+      "risk_domain": "storage",
+      "runtime_impact": true,
+      "shared": false,
+      "consumer_basis": {
+        "method": "nix-import-closure",
+        "revision": "2222222222222222222222222222222222222222",
+        "complete": true,
+        "source_paths": ["flake.nix", "hosts/personal/fixed/microserver-gen10plus/disko.nix"],
+        "consumer_set_sha256": "sha256:756a9bb7f0e38caefb5e3efebcb95db363d87592fc4b12b65606b26431e06f0d"
+      }
     }
   ]
 }

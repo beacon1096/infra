@@ -1,114 +1,84 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "repository": "infrastructure/infra-private",
+  "base_source_sha": "0000000000000000000000000000000000000000",
   "candidate_sha": "2222222222222222222222222222222222222222",
   "known_good_sha": "1111111111111111111111111111111111111111",
   "evaluated_at": "2026-10-15T22:35:00Z",
   "maximum_evidence_age_seconds": 900,
+  "maximum_recovery_age_seconds": 86400,
   "maximum_future_skew_seconds": 120,
-  "changed_paths": [
-    "hosts/personal/common/nixos-configuration.nix"
-  ],
+  "changed_paths": ["hosts/personal/common/nixos-configuration.nix"],
   "evidence": [
-    {
-      "host": "m920x",
-      "kind": "host-health",
-      "source": "prometheus/nixos-host",
-      "repository": "infrastructure/infra-private",
-      "sha": "2222222222222222222222222222222222222222",
-      "status": "healthy",
-      "observed_at": "2026-10-15T22:34:00Z"
-    },
-    {
-      "host": "m920x",
-      "kind": "service-health",
-      "source": "prometheus/comin",
-      "repository": "infrastructure/infra-private",
-      "sha": "2222222222222222222222222222222222222222",
-      "status": "healthy",
-      "observed_at": "2026-10-15T22:34:00Z"
-    },
-    {
-      "host": "microserver-gen10plus",
-      "kind": "host-health",
-      "source": "prometheus/nixos-host",
-      "repository": "infrastructure/infra-private",
-      "sha": "2222222222222222222222222222222222222222",
-      "status": "healthy",
-      "observed_at": "2026-10-15T22:34:00Z"
-    },
-    {
-      "host": "microserver-gen10plus",
-      "kind": "service-health",
-      "source": "prometheus/comin",
-      "repository": "infrastructure/infra-private",
-      "sha": "2222222222222222222222222222222222222222",
-      "status": "healthy",
-      "observed_at": "2026-10-15T22:34:00Z"
-    },
-    {
-      "host": "msi-claw",
-      "kind": "host-health",
-      "source": "prometheus/nixos-host",
-      "repository": "infrastructure/infra-private",
-      "sha": "2222222222222222222222222222222222222222",
-      "status": "healthy",
-      "observed_at": "2026-10-15T22:34:00Z"
-    },
-    {
-      "host": "msi-claw",
-      "kind": "service-health",
-      "source": "prometheus/comin",
-      "repository": "infrastructure/infra-private",
-      "sha": "2222222222222222222222222222222222222222",
-      "status": "healthy",
-      "observed_at": "2026-10-15T22:34:00Z"
-    },
-    {
-      "host": "surface-pro-8",
-      "kind": "host-health",
-      "source": "prometheus/nixos-host",
-      "repository": "infrastructure/infra-private",
-      "sha": "2222222222222222222222222222222222222222",
-      "status": "healthy",
-      "observed_at": "2026-10-15T22:34:00Z"
-    },
-    {
-      "host": "surface-pro-8",
-      "kind": "service-health",
-      "source": "prometheus/comin",
-      "repository": "infrastructure/infra-private",
-      "sha": "2222222222222222222222222222222222222222",
-      "status": "healthy",
-      "observed_at": "2026-10-15T22:34:00Z"
-    },
-    {
-      "host": "thinkbook-plus-hybrid",
-      "kind": "host-health",
-      "source": "prometheus/nixos-host",
-      "repository": "infrastructure/infra-private",
-      "sha": "2222222222222222222222222222222222222222",
-      "status": "healthy",
-      "observed_at": "2026-10-15T22:34:00Z"
-    },
-    {
-      "host": "thinkbook-plus-hybrid",
-      "kind": "service-health",
-      "source": "prometheus/comin",
-      "repository": "infrastructure/infra-private",
-      "sha": "2222222222222222222222222222222222222222",
-      "status": "healthy",
-      "observed_at": "2026-10-15T22:34:00Z"
-    }
+    { "host": "m920x", "kind": "host-health", "source": "prometheus/nixos-host", "repository": "infrastructure/infra-private", "sha": "1111111111111111111111111111111111111111", "status": "healthy", "observed_at": "2026-10-15T22:34:00Z" },
+    { "host": "m920x", "kind": "service-health", "source": "prometheus/comin", "repository": "infrastructure/infra-private", "sha": "1111111111111111111111111111111111111111", "status": "healthy", "observed_at": "2026-10-15T22:34:00Z" },
+    { "host": "microserver-gen10plus", "kind": "host-health", "source": "prometheus/nixos-host", "repository": "infrastructure/infra-private", "sha": "1111111111111111111111111111111111111111", "status": "healthy", "observed_at": "2026-10-15T22:34:00Z" },
+    { "host": "microserver-gen10plus", "kind": "service-health", "source": "prometheus/comin", "repository": "infrastructure/infra-private", "sha": "1111111111111111111111111111111111111111", "status": "healthy", "observed_at": "2026-10-15T22:34:00Z" },
+    { "host": "msi-claw", "kind": "host-health", "source": "prometheus/nixos-host", "repository": "infrastructure/infra-private", "sha": "1111111111111111111111111111111111111111", "status": "healthy", "observed_at": "2026-10-15T22:34:00Z" },
+    { "host": "msi-claw", "kind": "service-health", "source": "prometheus/comin", "repository": "infrastructure/infra-private", "sha": "1111111111111111111111111111111111111111", "status": "healthy", "observed_at": "2026-10-15T22:34:00Z" },
+    { "host": "surface-pro-8", "kind": "host-health", "source": "prometheus/nixos-host", "repository": "infrastructure/infra-private", "sha": "1111111111111111111111111111111111111111", "status": "healthy", "observed_at": "2026-10-15T22:34:00Z" },
+    { "host": "surface-pro-8", "kind": "service-health", "source": "prometheus/comin", "repository": "infrastructure/infra-private", "sha": "1111111111111111111111111111111111111111", "status": "healthy", "observed_at": "2026-10-15T22:34:00Z" },
+    { "host": "thinkbook-plus-hybrid", "kind": "host-health", "source": "prometheus/nixos-host", "repository": "infrastructure/infra-private", "sha": "1111111111111111111111111111111111111111", "status": "healthy", "observed_at": "2026-10-15T22:34:00Z" },
+    { "host": "thinkbook-plus-hybrid", "kind": "service-health", "source": "prometheus/comin", "repository": "infrastructure/infra-private", "sha": "1111111111111111111111111111111111111111", "status": "healthy", "observed_at": "2026-10-15T22:34:00Z" }
   ],
   "batches": [
-    { "name": "canary", "hosts": ["m920x"] },
-    { "name": "remaining", "hosts": ["microserver-gen10plus", "msi-claw", "surface-pro-8", "thinkbook-plus-hybrid"] }
+    { "name": "canary", "hosts": ["m920x"], "minimum_observation_seconds": 900 },
+    { "name": "remaining", "hosts": ["microserver-gen10plus", "msi-claw", "surface-pro-8", "thinkbook-plus-hybrid"], "minimum_observation_seconds": 1800 }
   ],
-  "stop_conditions": [
-    "candidate-revision-drift",
-    "control-channel-unavailable",
-    "evidence-unhealthy-or-missing",
-    "host-or-service-regression"
-  ]
+  "stop_conditions": ["candidate-revision-drift", "control-channel-unavailable", "evidence-unhealthy-or-missing", "host-or-service-regression"],
+  "recovery": [
+    {
+      "host": "m920x",
+      "known_good_sha": "1111111111111111111111111111111111111111",
+      "channel_id": "local-console",
+      "stop_service": { "executable": "/run/current-system/sw/bin/systemctl", "args": ["stop", "comin.service"] },
+      "generation": { "number": 101, "revision": "1111111111111111111111111111111111111111", "store_path": "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-nixos-system-m920x-25.11", "executable": "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-nixos-system-m920x-25.11/bin/switch-to-configuration", "args": ["switch"] },
+      "verified_at": "2026-10-15T22:25:00Z",
+      "available": true
+    },
+    {
+      "host": "microserver-gen10plus",
+      "known_good_sha": "1111111111111111111111111111111111111111",
+      "channel_id": "local-console",
+      "stop_service": { "executable": "/run/current-system/sw/bin/systemctl", "args": ["stop", "comin.service"] },
+      "generation": { "number": 102, "revision": "1111111111111111111111111111111111111111", "store_path": "/nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-nixos-system-microserver-gen10plus-25.11", "executable": "/nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-nixos-system-microserver-gen10plus-25.11/bin/switch-to-configuration", "args": ["switch"] },
+      "verified_at": "2026-10-15T22:25:00Z",
+      "available": true
+    },
+    {
+      "host": "msi-claw",
+      "known_good_sha": "1111111111111111111111111111111111111111",
+      "channel_id": "local-console",
+      "stop_service": { "executable": "/run/current-system/sw/bin/systemctl", "args": ["stop", "comin.service"] },
+      "generation": { "number": 103, "revision": "1111111111111111111111111111111111111111", "store_path": "/nix/store/cccccccccccccccccccccccccccccccc-nixos-system-msi-claw-25.11", "executable": "/nix/store/cccccccccccccccccccccccccccccccc-nixos-system-msi-claw-25.11/bin/switch-to-configuration", "args": ["switch"] },
+      "verified_at": "2026-10-15T22:25:00Z",
+      "available": true
+    },
+    {
+      "host": "surface-pro-8",
+      "known_good_sha": "1111111111111111111111111111111111111111",
+      "channel_id": "local-console",
+      "stop_service": { "executable": "/run/current-system/sw/bin/systemctl", "args": ["stop", "comin.service"] },
+      "generation": { "number": 104, "revision": "1111111111111111111111111111111111111111", "store_path": "/nix/store/dddddddddddddddddddddddddddddddd-nixos-system-surface-pro-8-25.11", "executable": "/nix/store/dddddddddddddddddddddddddddddddd-nixos-system-surface-pro-8-25.11/bin/switch-to-configuration", "args": ["switch"] },
+      "verified_at": "2026-10-15T22:25:00Z",
+      "available": true
+    },
+    {
+      "host": "thinkbook-plus-hybrid",
+      "known_good_sha": "1111111111111111111111111111111111111111",
+      "channel_id": "local-console",
+      "stop_service": { "executable": "/run/current-system/sw/bin/systemctl", "args": ["stop", "comin.service"] },
+      "generation": { "number": 105, "revision": "1111111111111111111111111111111111111111", "store_path": "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-nixos-system-thinkbook-plus-hybrid-25.11", "executable": "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-nixos-system-thinkbook-plus-hybrid-25.11/bin/switch-to-configuration", "args": ["switch"] },
+      "verified_at": "2026-10-15T22:25:00Z",
+      "available": true
+    }
+  ],
+  "rollout": {
+    "mechanism": "comin-service-hold",
+    "main_branch": "prod",
+    "control_channel_status": "available",
+    "candidate_prod_sha": null,
+    "promotion_source_sha": null,
+    "promotion_observed_at": null
+  }
 }
