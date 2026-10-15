@@ -28,6 +28,7 @@ jobs:
           nix shell nixpkgs#kubectl --command bash utils/check-openstatus-wiring.sh
           scripts=(
             utils/check-openstatus-acceptance.sh
+            utils/check-openstatus-backup-conflicts.sh
             utils/check-openstatus-backups.sh
             utils/check-openstatus-mcp-readonly.sh
             utils/check-openstatus-restore-drill.sh

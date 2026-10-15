@@ -64,7 +64,11 @@ if [[ "$*" == "-n storage get volumes.longhorn.io vol-"*" -o json" ]]; then
   suffix="${volume#vol-}"
   pvc="openstatus-${suffix}-data"
   pv="pv-$suffix"
-  printf '{"metadata":{"name":"%s","labels":{"recurring-job-group.longhorn.io/default":"enabled"}},"status":{"robustness":"healthy","state":"attached","kubernetesStatus":{"namespace":"monitoring","pvcName":"%s","pvName":"%s"}}}\n' "$volume" "$pvc" "$pv"
+  labels='{"recurring-job-group.longhorn.io/default":"enabled"}'
+  if [[ "${STALE_OSB_LABEL:-0}" == "1" && "$suffix" == "libsql" ]]; then
+    labels='{"recurring-job-group.longhorn.io/default":"enabled","recurring-job.longhorn.io/osb-old":"enabled"}'
+  fi
+  printf '{"metadata":{"name":"%s","labels":%s},"status":{"robustness":"healthy","state":"attached","kubernetesStatus":{"namespace":"monitoring","pvcName":"%s","pvName":"%s"}}}\n' "$volume" "$labels" "$pvc" "$pv"
   exit 0
 fi
 if [[ "$*" == "-n storage get volumes.longhorn.io -o json" ]]; then
@@ -82,6 +86,22 @@ fi
 if [[ "$*" == "-n storage get recurringjobs.longhorn.io osb-fixture" || "$*" == "-n storage get job osb-fixture" ]]; then
   exit 1
 fi
+if [[ "$*" == "-n storage get jobs -o json" ]]; then
+  if [[ "${ACTIVE_DAILY_JOB:-0}" == "1" ]]; then
+    printf '%s\n' '{"items":[{"metadata":{"name":"daily-backup-1","ownerReferences":[{"kind":"CronJob","name":"daily-backup"}]},"status":{"active":1,"startTime":"2026-10-15T18:00:00Z"}}]}'
+  else
+    printf '%s\n' '{"items":[]}'
+  fi
+  exit 0
+fi
+if [[ "$*" == "-n storage get backups.longhorn.io -o json" ]]; then
+  if [[ "${ACTIVE_TARGET_BACKUP:-0}" == "1" ]]; then
+    printf '%s\n' '{"items":[{"metadata":{"name":"backup-active","labels":{"backup-volume":"vol-tinybird"}},"spec":{"snapshotName":"snapshot-active"},"status":{"state":"InProgress","progress":42}}]}'
+  else
+    printf '%s\n' '{"items":[]}'
+  fi
+  exit 0
+fi
 exit 1
 EOF
 chmod +x "$tmp_dir/kubectl"
@@ -91,6 +111,31 @@ plan="$(OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" R
   bash "$script_dir/check-openstatus-baseline-backup.sh" plan)"
 jq -e '.selector.selected_volume_count == 3 and (.bindings | length) == 3' <<<"$plan" >/dev/null
 scope_sha256="$(jq -r .scope_sha256 <<<"$plan")"
+
+conflicts="$(OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" \
+  bash "$script_dir/check-openstatus-backup-conflicts.sh")"
+jq -e '
+  (.target_bindings | length) == 3 and
+  (.active_conflicting_jobs | length) == 0 and
+  (.active_target_backups | length) == 0 and
+  (.stale_direct_labels | length) == 0
+' <<<"$conflicts" >/dev/null
+
+if OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" ACTIVE_DAILY_JOB=1 \
+  bash "$script_dir/check-openstatus-backup-conflicts.sh" >/dev/null 2>&1; then
+  echo "initialization/backup fixture: active daily backup unexpectedly passed" >&2
+  exit 1
+fi
+if OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" ACTIVE_TARGET_BACKUP=1 \
+  bash "$script_dir/check-openstatus-backup-conflicts.sh" >/dev/null 2>&1; then
+  echo "initialization/backup fixture: active target backup unexpectedly passed" >&2
+  exit 1
+fi
+if OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" STALE_OSB_LABEL=1 \
+  bash "$script_dir/check-openstatus-backup-conflicts.sh" >/dev/null 2>&1; then
+  echo "initialization/backup fixture: stale direct label unexpectedly passed" >&2
+  exit 1
+fi
 
 cleanup_plan="$(OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" PARTIAL_LABEL=1 \
   RUN_ID=fixture BACKUP_MANIFEST="$tmp_dir/backup.yaml" \
@@ -117,4 +162,4 @@ if OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" REAL_KUBECTL="$real_kubectl" BAD_BI
   exit 1
 fi
 
-echo "initialization/backup fixtures: states, pinned resource, exact scope and refusal paths passed"
+echo "initialization/backup fixtures: states, pinned resource, exact scope, conflict and refusal paths passed"

@@ -209,8 +209,8 @@ recovery point.
 
 ### Exact three-volume baseline backup
 
-Never clone `CronJob/daily-backup`: it selects the Longhorn `default` group,
-currently 51 volumes. Each baseline run instead renders a temporary
+Never clone `CronJob/daily-backup`: it selects the entire mutable Longhorn
+`default` group, not only the three OpenStatus volumes. Each baseline run instead renders a temporary
 `backup-force-create` RecurringJob with `groups: []` and binds its direct label
 to exactly these current PVC→PV→Volume mappings:
 
@@ -220,10 +220,20 @@ to exactly these current PVC→PV→Volume mappings:
 
 The validator resolves the mappings at every phase and rejects a fourth label,
 a changed binding, an unhealthy/detached volume, or a manifest with a group.
-Prepare the original writer replicas and Flux revision before approval:
+Before preparing or executing a window, save the read-only conflict check. It
+rejects an active `daily-backup` or `osb-*` Job, an in-progress Backup for any
+of the three volumes, and a stale `osb-*` direct label. It never cancels or
+cleans the conflicting work:
 
 ```bash
 export RUN_ID=20261015-preinit
+bash utils/check-openstatus-backup-conflicts.sh \
+  >"./openstatus-backup-conflicts-${RUN_ID}.json"
+```
+
+Prepare the original writer replicas and Flux revision before approval:
+
+```bash
 export REPLICA_STATE_FILE="./openstatus-replicas-${RUN_ID}.json"
 bash utils/quiesce-openstatus-writers.sh --plan >"$REPLICA_STATE_FILE"
 export EXPECTED_REPLICA_STATE_SHA256="$(sha256sum "$REPLICA_STATE_FILE" | awk '{print $1}')"
@@ -281,7 +291,10 @@ an `acquired` marker and its exact replica-state file for incident recovery;
 never replace it with a new plan or remove it until the original state is
 verified. A completed or refused run needs a new plan before another window.
 
-The payload writes the baseline, manifest and authoritative scope file,
+The payload repeats the conflict check before baseline capture and immediately
+before its first storage mutation. A conflict therefore restores writers and
+Flux without starting the three-volume job. It then writes the baseline,
+manifest and authoritative scope file,
 re-resolves all three PVC→PV→Volume bindings, applies only the temporary
 `groups: []` RecurringJob and its three direct labels, and starts only the
 generated CronJob. It returns after exactly three new snapshots and their

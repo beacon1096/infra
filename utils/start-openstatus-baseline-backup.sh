@@ -9,8 +9,10 @@ baseline_file="${BASELINE_FILE:-}"
 backup_manifest="${BACKUP_MANIFEST:-}"
 scope_file="${BACKUP_SCOPE_FILE:-}"
 deadline="${QUIESCE_DEADLINE_EPOCH:-}"
+openstatus_namespace="${OPENSTATUS_NAMESPACE:-monitoring}"
 longhorn_namespace="${LONGHORN_NAMESPACE:-storage}"
 job_name="osb-$run_id"
+conflict_check="$script_dir/check-openstatus-backup-conflicts.sh"
 
 usage() {
   cat >&2 <<'EOF'
@@ -71,12 +73,16 @@ for output_file in "$baseline_file" "$backup_manifest" "$scope_file"; do
     exit 1
   }
 done
-for command in bash jq timeout date sha256sum head; do
+for command in bash env jq timeout date sha256sum head; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "OpenStatus baseline backup: $command is required" >&2
     exit 2
   }
 done
+[[ -r "$conflict_check" ]] || {
+  echo "OpenStatus baseline backup: conflict checker is missing" >&2
+  exit 2
+}
 kubectl_path="${OPENSTATUS_KUBECTL_BIN:-$(command -v kubectl || true)}"
 [[ -n "$kubectl_path" && -r "$kubectl_path" ]] || {
   echo "OpenStatus baseline backup: kubectl is required" >&2
@@ -97,7 +103,15 @@ bounded() {
   timeout --foreground --kill-after=5s "${remaining}s" "$@"
 }
 
+check_backup_conflicts() {
+  bounded env OPENSTATUS_KUBECTL_BIN="$kubectl_path" \
+    OPENSTATUS_NAMESPACE="$openstatus_namespace" \
+    LONGHORN_NAMESPACE="$longhorn_namespace" \
+    bash "$conflict_check" >/dev/null
+}
+
 umask 077
+check_backup_conflicts
 if [[ "$initialize_tinybird" == "execute" ]]; then
   bounded bash "$script_dir/initialize-openstatus-tinybird.sh" --execute
 fi
@@ -127,6 +141,10 @@ expected_scope_sha256="$(jq -r '.scope_sha256 // ""' "$scope_file")"
   exit 1
 }
 
+# Recheck immediately before the first storage mutation. The earlier check
+# avoids quiescing into a known conflict; this one closes the baseline-capture
+# interval without trying to lock or modify the shared backup controller.
+check_backup_conflicts
 bounded "${kubectl_command[@]}" apply -f "$backup_manifest" >/dev/null
 mapfile -t volumes < <(jq -r '.bindings[].volume' "$scope_file")
 [[ "${#volumes[@]}" == "3" ]] || {
