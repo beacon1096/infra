@@ -34,8 +34,11 @@ python_version="$($python_path/bin/python3 -c 'import sys; print(f"{sys.version_
 export PATH="$promtool_path/bin:$alertmanager_path/bin:$kubectl_path/bin:$helm_path/bin:$PATH"
 export PYTHONPATH="$pyyaml_path/lib/python$python_version/site-packages${PYTHONPATH:+:$PYTHONPATH}"
 
-test_script="${1:-$root/utils/test-observability-prep.py}"
 if (( $# > 0 )); then
+  test_script="$1"
   shift
+  exec "$python_path/bin/python3" "$test_script" "$@"
 fi
-exec "$python_path/bin/python3" "$test_script" "$@"
+
+"$python_path/bin/python3" "$root/utils/test-observability-prep.py"
+exec "$python_path/bin/python3" "$root/utils/test-observability-dashboard.py"

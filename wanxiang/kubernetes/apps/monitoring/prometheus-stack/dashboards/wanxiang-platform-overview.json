@@ -1,0 +1,572 @@
+{
+  "__inputs": [
+    {
+      "description": "Prometheus datasource for the Wanxiang observability stack",
+      "label": "Prometheus",
+      "name": "DS_PROMETHEUS",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus",
+      "type": "datasource"
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "description": "Import-only BEACO-216 platform overview. Unknown/no-data is never mapped to healthy.",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "0=Healthy, 2=Critical, 3=Unknown. All required scrape targets disappearing is Unknown, not Healthy.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": { "color": "green", "index": 0, "text": "Healthy" },
+                "2": { "color": "red", "index": 1, "text": "Critical" },
+                "3": { "color": "orange", "index": 2, "text": "Unknown" }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "Unknown",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 2 },
+              { "color": "orange", "value": 3 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "3 * absent(up{job=~\"node-exporter|longhorn-backend|monitoring/cnpg-instances|monitoring/cnpg-operator|network/envoy-proxy|cert-manager|cainjector|webhook\"}) or 2 * (sum(up{job=~\"node-exporter|longhorn-backend|monitoring/cnpg-instances|monitoring/cnpg-operator|network/envoy-proxy|cert-manager|cainjector|webhook\"} == bool 0) > bool 0)",
+          "instant": true,
+          "legendFormat": "scrape collection",
+          "refId": "A"
+        }
+      ],
+      "title": "Collection state",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Compares Ready exporter pods with final Prometheus job labels. Missing KSM evidence is Unknown.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "options": {
+                "0": { "color": "green", "index": 0, "text": "Healthy" },
+                "2": { "color": "red", "index": 1, "text": "Critical" },
+                "3": { "color": "orange", "index": 2, "text": "Unknown" }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "Unknown",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 2 },
+              { "color": "orange", "value": 3 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "3 * absent(kube_pod_container_status_ready) or 2 * ((count((kube_pod_container_status_ready{namespace=\"monitoring\",container=\"node-exporter\"} == 1 unless on(namespace,pod) up{job=\"node-exporter\"}) or (kube_pod_container_status_ready{namespace=\"storage\",container=\"longhorn-manager\"} == 1 unless on(namespace,pod) up{job=\"longhorn-backend\"}) or (kube_pod_container_status_ready{container=\"postgres\"} == 1 unless on(namespace,pod) up{job=\"monitoring/cnpg-instances\"}) or (kube_pod_container_status_ready{namespace=\"database\",container=\"manager\"} == 1 unless on(namespace,pod) up{job=\"monitoring/cnpg-operator\"}) or (kube_pod_container_status_ready{namespace=\"network\",container=\"envoy\"} == 1 unless on(namespace,pod) up{job=\"network/envoy-proxy\"}) or (kube_pod_container_status_ready{namespace=\"cert-manager\",container=\"cert-manager-controller\"} == 1 unless on(namespace,pod) up{job=\"cert-manager\"}) or (kube_pod_container_status_ready{namespace=\"cert-manager\",container=\"cert-manager-cainjector\"} == 1 unless on(namespace,pod) up{job=\"cainjector\"}) or (kube_pod_container_status_ready{namespace=\"cert-manager\",container=\"cert-manager-webhook\"} == 1 unless on(namespace,pod) up{job=\"webhook\"})) or vector(0)) > bool 0)",
+          "instant": true,
+          "legendFormat": "service discovery",
+          "refId": "A"
+        }
+      ],
+      "title": "Discovery state",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Required metric families missing from any covered domain make this panel Unknown.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "options": {
+                "0": { "color": "green", "index": 0, "text": "Present" },
+                "3": { "color": "orange", "index": 1, "text": "Unknown" }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "Unknown",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 3 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "3 * absent(node_uname_info) or 3 * absent(kube_node_status_condition) or 3 * absent(longhorn_volume_last_backup_at) or 3 * absent(cnpg_collector_collection_duration_seconds) or 3 * absent(envoy_server_live) or 3 * absent(certmanager_certificate_expiration_timestamp_seconds) or 2 * ((count((up{job=\"node-exporter\"} == 1 unless on(job,instance,namespace,pod) node_uname_info{job=\"node-exporter\"}) or (longhorn_volume_capacity_bytes unless on(volume) longhorn_volume_last_backup_at) or (up{job=\"monitoring/cnpg-instances\"} == 1 unless on(job,instance,namespace,pod) cnpg_collector_collection_duration_seconds{job=\"monitoring/cnpg-instances\"})) or vector(0)) > bool 0)",
+          "instant": true,
+          "legendFormat": "required metric families",
+          "refId": "A"
+        }
+      ],
+      "title": "Metric evidence state",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Count of active BEACO-216/BEACO-203 alerts. -1=Unknown when all required scrape evidence is absent.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "options": {
+                "-1": { "color": "orange", "index": 0, "text": "Unknown" },
+                "0": { "color": "green", "index": 1, "text": "No active alerts" }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "Unknown",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "-1 * absent(up{job=~\"node-exporter|longhorn-backend|monitoring/cnpg-instances|monitoring/cnpg-operator|network/envoy-proxy|cert-manager|cainjector|webhook\"}) or sum(ALERTS{alertstate=\"firing\",alertname=~\"Wanxiang.*|LonghornBackup.*\"}) or vector(0)",
+          "instant": true,
+          "legendFormat": "active alerts",
+          "refId": "A"
+        }
+      ],
+      "title": "Active platform alerts",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "KSM Ready=true values by node. 1=Ready, 0=Not Ready, no series=Unknown.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "0": { "color": "red", "index": 0, "text": "Not Ready" },
+                "1": { "color": "green", "index": 1, "text": "Ready" }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "Unknown",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 5 },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "kube_node_status_condition{condition=\"Ready\",status=\"true\"}",
+          "instant": true,
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Node readiness",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Writable filesystem free percentage by node/mount. No series is Unknown.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unknown",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 15 }, { "color": "green", "value": 25 }] },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 5 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "asc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "100 * node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay|squashfs\",mountpoint!~\"/var/lib/kubelet/pods/.+\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|overlay|squashfs\",mountpoint!~\"/var/lib/kubelet/pods/.+\"}",
+          "legendFormat": "{{instance}} {{mountpoint}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Node filesystem free",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Longhorn 1.12.1 state label. 1=Faulted, 0=not faulted, no series=Unknown.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "0": { "color": "green", "index": 0, "text": "Not faulted" },
+                "1": { "color": "red", "index": 1, "text": "Faulted" }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "Unknown",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 5 },
+      "id": 7,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "longhorn_volume_robustness{state=\"faulted\"}",
+          "instant": true,
+          "legendFormat": "{{volume}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Longhorn volume robustness",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Hours since the last successful backup for every Longhorn volume. Missing volumes are Unknown, never fresh.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unknown",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 24 }, { "color": "red", "value": 48 }] },
+          "unit": "h"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 11 },
+      "id": 8,
+      "options": { "footer": { "enablePagination": true, "fields": "", "reducer": ["lastNotNull"], "show": false }, "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "(time() - longhorn_volume_last_backup_at) / 3600",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{pvc_namespace}}/{{pvc}} ({{volume}})",
+          "refId": "A"
+        }
+      ],
+      "title": "Per-volume backup freshness",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Raw Longhorn backup state; state 4 is Error. No series is Unknown and does not prove success.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "options": { "4": { "color": "red", "index": 0, "text": "Error" } }, "type": "value" }
+          ],
+          "noValue": "Unknown",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 4 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 11 },
+      "id": 9,
+      "options": { "footer": { "enablePagination": true, "fields": "", "reducer": ["lastNotNull"], "show": false }, "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "longhorn_backup_state",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{volume}} {{backup}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Backup execution state",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "CNPG collector result by instance. 1=Error, 0=OK, no series=Unknown.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "0": { "color": "green", "index": 0, "text": "OK" },
+                "1": { "color": "red", "index": 1, "text": "Error" }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "Unknown",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 18 },
+      "id": 10,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "cnpg_collector_last_collection_error",
+          "instant": true,
+          "legendFormat": "{{namespace}}/{{cluster}} {{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "CNPG collector state",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Replication lag in seconds. More than 300 seconds is warning; no series is Unknown.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unknown",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 300 }] },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 18 },
+      "id": 11,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "cnpg_pg_replication_lag",
+          "legendFormat": "{{namespace}}/{{cluster}} {{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "CNPG replication lag",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Envoy server live state. 1=Live, 0=Down, no series=Unknown.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "0": { "color": "red", "index": 0, "text": "Down" },
+                "1": { "color": "green", "index": 1, "text": "Live" }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "Unknown",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 18 },
+      "id": 12,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "envoy_server_live",
+          "instant": true,
+          "legendFormat": "{{namespace}}/{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Gateway live state",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Days until certificate expiration. Less than 14 days is warning; no series is Unknown.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unknown",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 14 }, { "color": "green", "value": 30 }] },
+          "unit": "d"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 24 },
+      "id": 13,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "asc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "(certmanager_certificate_expiration_timestamp_seconds - time()) / 86400",
+          "legendFormat": "{{namespace}}/{{name}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Certificate lifetime remaining",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Final Prometheus job labels for all required targets. 1=Up, 0=Down; a missing row is not proof of health and is covered by Discovery state.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "0": { "color": "red", "index": 0, "text": "Down" },
+                "1": { "color": "green", "index": 1, "text": "Up" }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "Unknown",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 24 },
+      "id": 14,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "up{job=~\"node-exporter|longhorn-backend|monitoring/cnpg-instances|monitoring/cnpg-operator|network/envoy-proxy|cert-manager|cainjector|webhook\"}",
+          "instant": true,
+          "legendFormat": "{{job}} {{namespace}}/{{pod}} {{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Required targets",
+      "type": "stat"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["beaco-216", "wanxiang", "prepared"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Wanxiang Platform Overview",
+  "uid": "wanxiang-platform-overview",
+  "version": 1,
+  "weekStart": ""
+}

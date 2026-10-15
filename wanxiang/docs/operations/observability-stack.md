@@ -107,7 +107,7 @@ CI 会实际渲染 chart 并拒绝 KSM Secret 权限、chart 默认 Operator Clu
 bash utils/run-observability-test.sh
 ```
 
-脚本执行六层检查：
+脚本执行七层检查：
 
 1. 确认 chart digest、selector、保留和 PVC 预算，且父级 Flux 未引用准备包；
 2. 实际渲染 chart `83.7.0`，确认 Operator `v0.90.1`、KSM 仅 nodes/pods 权限、chart
@@ -119,9 +119,15 @@ bash utils/run-observability-test.sh
    都进入选定路由，而不匹配的 info 对照进入 null；
 6. 启动固定版本 Alertmanager 和仅监听 `127.0.0.1` 的临时 webhook stub，实际确认
    三类路径的 `firing` 与 `resolved`，不匹配对照不送达，随后终止进程组并清理。
+7. 解析可导入的 `dashboards/wanxiang-platform-overview.json`，确认 Grafana 未启用、
+   缺失值显式显示 Unknown，并以实际 panel PromQL 验证正常、故障、无数据和恢复状态。
 
 HelmRelease 的默认 receiver 是无外发配置的 `null`。上述 stub 只存在于测试进程，
 不会把测试地址或真实通知目标写进生产配置。
+
+最小仪表盘的导入要求、真实 schema、查询解释、验收证据和独立回滚步骤见
+`observability-dashboard.md`。该 JSON 只作为 import artifact 保存，不在本 PR 中启用
+Grafana 或 dashboard sidecar。
 
 ## 分阶段启用与验收
 
