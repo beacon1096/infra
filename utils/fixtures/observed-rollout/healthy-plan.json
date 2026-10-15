@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "repository": "infrastructure/infra-private",
+  "candidate_sha": "2222222222222222222222222222222222222222",
+  "known_good_sha": "1111111111111111111111111111111111111111",
+  "evaluated_at": "2026-10-15T22:35:00Z",
+  "maximum_evidence_age_seconds": 900,
+  "maximum_future_skew_seconds": 120,
+  "changed_paths": [
+    "hosts/personal/common/nixos-configuration.nix"
+  ],
+  "evidence": [
+    {
+      "host": "m920x",
+      "kind": "host-health",
+      "source": "prometheus/nixos-host",
+      "repository": "infrastructure/infra-private",
+      "sha": "2222222222222222222222222222222222222222",
+      "status": "healthy",
+      "observed_at": "2026-10-15T22:34:00Z"
+    },
+    {
+      "host": "m920x",
+      "kind": "service-health",
+      "source": "prometheus/comin",
+      "repository": "infrastructure/infra-private",
+      "sha": "2222222222222222222222222222222222222222",
+      "status": "healthy",
+      "observed_at": "2026-10-15T22:34:00Z"
+    },
+    {
+      "host": "microserver-gen10plus",
+      "kind": "host-health",
+      "source": "prometheus/nixos-host",
+      "repository": "infrastructure/infra-private",
+      "sha": "2222222222222222222222222222222222222222",
+      "status": "healthy",
+      "observed_at": "2026-10-15T22:34:00Z"
+    },
+    {
+      "host": "microserver-gen10plus",
+      "kind": "service-health",
+      "source": "prometheus/comin",
+      "repository": "infrastructure/infra-private",
+      "sha": "2222222222222222222222222222222222222222",
+      "status": "healthy",
+      "observed_at": "2026-10-15T22:34:00Z"
+    },
+    {
+      "host": "msi-claw",
+      "kind": "host-health",
+      "source": "prometheus/nixos-host",
+      "repository": "infrastructure/infra-private",
+      "sha": "2222222222222222222222222222222222222222",
+      "status": "healthy",
+      "observed_at": "2026-10-15T22:34:00Z"
+    },
+    {
+      "host": "msi-claw",
+      "kind": "service-health",
+      "source": "prometheus/comin",
+      "repository": "infrastructure/infra-private",
+      "sha": "2222222222222222222222222222222222222222",
+      "status": "healthy",
+      "observed_at": "2026-10-15T22:34:00Z"
+    },
+    {
+      "host": "surface-pro-8",
+      "kind": "host-health",
+      "source": "prometheus/nixos-host",
+      "repository": "infrastructure/infra-private",
+      "sha": "2222222222222222222222222222222222222222",
+      "status": "healthy",
+      "observed_at": "2026-10-15T22:34:00Z"
+    },
+    {
+      "host": "surface-pro-8",
+      "kind": "service-health",
+      "source": "prometheus/comin",
+      "repository": "infrastructure/infra-private",
+      "sha": "2222222222222222222222222222222222222222",
+      "status": "healthy",
+      "observed_at": "2026-10-15T22:34:00Z"
+    },
+    {
+      "host": "thinkbook-plus-hybrid",
+      "kind": "host-health",
+      "source": "prometheus/nixos-host",
+      "repository": "infrastructure/infra-private",
+      "sha": "2222222222222222222222222222222222222222",
+      "status": "healthy",
+      "observed_at": "2026-10-15T22:34:00Z"
+    },
+    {
+      "host": "thinkbook-plus-hybrid",
+      "kind": "service-health",
+      "source": "prometheus/comin",
+      "repository": "infrastructure/infra-private",
+      "sha": "2222222222222222222222222222222222222222",
+      "status": "healthy",
+      "observed_at": "2026-10-15T22:34:00Z"
+    }
+  ],
+  "batches": [
+    { "name": "canary", "hosts": ["m920x"] },
+    { "name": "remaining", "hosts": ["microserver-gen10plus", "msi-claw", "surface-pro-8", "thinkbook-plus-hybrid"] }
+  ],
+  "stop_conditions": [
+    "candidate-revision-drift",
+    "control-channel-unavailable",
+    "evidence-unhealthy-or-missing",
+    "host-or-service-regression"
+  ]
+}

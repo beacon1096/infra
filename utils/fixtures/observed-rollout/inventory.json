@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "snapshot": {
+    "repository": "infrastructure/infra-private",
+    "sha": "2222222222222222222222222222222222222222",
+    "generated_at": "2026-10-15T22:30:00Z"
+  },
+  "hosts": [
+    {
+      "name": "m920x",
+      "platform": "nixos",
+      "required_evidence": [
+        { "kind": "host-health", "source": "prometheus/nixos-host" },
+        { "kind": "service-health", "source": "prometheus/comin" }
+      ],
+      "independent_recovery": {
+        "channel": "local console or previously verified SSH session",
+        "steps": [
+          "list /nix/var/nix/profiles/system generations",
+          "run the selected known-good system generation switch-to-configuration script",
+          "verify host and affected services before releasing the stop"
+        ]
+      }
+    },
+    {
+      "name": "microserver-gen10plus",
+      "platform": "nixos",
+      "required_evidence": [
+        { "kind": "host-health", "source": "prometheus/nixos-host" },
+        { "kind": "service-health", "source": "prometheus/comin" }
+      ],
+      "independent_recovery": {
+        "channel": "local console or previously verified SSH session",
+        "steps": [
+          "list /nix/var/nix/profiles/system generations",
+          "run the selected known-good system generation switch-to-configuration script",
+          "verify host and affected services before releasing the stop"
+        ]
+      }
+    },
+    {
+      "name": "msi-claw",
+      "platform": "nixos",
+      "required_evidence": [
+        { "kind": "host-health", "source": "prometheus/nixos-host" },
+        { "kind": "service-health", "source": "prometheus/comin" }
+      ],
+      "independent_recovery": {
+        "channel": "local console or previously verified SSH session",
+        "steps": [
+          "list /nix/var/nix/profiles/system generations",
+          "run the selected known-good system generation switch-to-configuration script",
+          "verify host and affected services before releasing the stop"
+        ]
+      }
+    },
+    {
+      "name": "surface-pro-8",
+      "platform": "nixos",
+      "required_evidence": [
+        { "kind": "host-health", "source": "prometheus/nixos-host" },
+        { "kind": "service-health", "source": "prometheus/comin" }
+      ],
+      "independent_recovery": {
+        "channel": "local console or previously verified SSH session",
+        "steps": [
+          "list /nix/var/nix/profiles/system generations",
+          "run the selected known-good system generation switch-to-configuration script",
+          "verify host and affected services before releasing the stop"
+        ]
+      }
+    },
+    {
+      "name": "thinkbook-plus-hybrid",
+      "platform": "nixos",
+      "required_evidence": [
+        { "kind": "host-health", "source": "prometheus/nixos-host" },
+        { "kind": "service-health", "source": "prometheus/comin" }
+      ],
+      "independent_recovery": {
+        "channel": "local console or previously verified SSH session",
+        "steps": [
+          "list /nix/var/nix/profiles/system generations",
+          "run the selected known-good system generation switch-to-configuration script",
+          "verify host and affected services before releasing the stop"
+        ]
+      }
+    },
+    {
+      "name": "beacon-mac-mini-m4",
+      "platform": "darwin",
+      "required_evidence": [
+        { "kind": "host-health", "source": "prometheus/darwin-host" },
+        { "kind": "service-health", "source": "prometheus/comin-darwin" }
+      ],
+      "independent_recovery": {
+        "channel": "local macOS console",
+        "steps": [
+          "select the reviewed known-good nix-darwin system generation",
+          "run that generation's activate program without fetching the release repository",
+          "verify host and affected services before releasing the stop"
+        ]
+      }
+    }
+  ],
+  "path_rules": [
+    {
+      "prefix": "hosts/personal/fixed/m920x/",
+      "hosts": ["m920x"],
+      "services": ["nixos-system", "comin"],
+      "risk_domain": "application"
+    },
+    {
+      "prefix": "hosts/personal/fixed/microserver-gen10plus/",
+      "hosts": ["microserver-gen10plus"],
+      "services": ["nixos-system", "comin"],
+      "risk_domain": "application"
+    },
+    {
+      "prefix": "hosts/personal/beacon-mac-mini-m4/",
+      "hosts": ["beacon-mac-mini-m4"],
+      "services": ["darwin-system", "comin-darwin"],
+      "risk_domain": "application"
+    },
+    {
+      "prefix": "hosts/personal/common/nixos-configuration.nix",
+      "hosts": ["m920x", "microserver-gen10plus", "msi-claw", "surface-pro-8", "thinkbook-plus-hybrid"],
+      "services": ["nixos-system", "system-packages"],
+      "risk_domain": "application",
+      "shared": true
+    },
+    {
+      "prefix": "hosts/personal/fixed/microserver-gen10plus/disko.nix",
+      "hosts": ["microserver-gen10plus"],
+      "services": ["disk-layout", "nixos-system"],
+      "risk_domain": "storage"
+    }
+  ]
+}

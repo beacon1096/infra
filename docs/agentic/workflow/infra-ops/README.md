@@ -4,6 +4,7 @@
 
 - [仓库与分支提交流转](repository-flow.md)：两个仓的 `main`、`prod` 分支及 PR 和自动发布入口。
 - [生产发布与 Nix 部署](production-release-and-rollout.md)：公开/私有仓边界、发布标签、`prod` 分支与 Comin。
+- [观测约束的分批发布候选](observed-staged-rollout.md)：精确 SHA/影响清单/新鲜证据的离线 dry-run、分批停止条件与独立恢复准备。
 - [Renovate 与 Multica 合并门禁](renovate-multica-gate.md)：依赖更新、审查凭据、信任边界和受保护分支合并。
 - [Forgejo 服务账号](forgejo-service-accounts.md)：自动化身份与凭据隔离。
 - [Agent 的 Nix 构建信任边界](agent-nix-build-trust.md)：本地 `sandbox = false`、CI 验证证据与远程构建机规划。

@@ -23,6 +23,7 @@ jobs:
         run: |
           nix shell nixpkgs#nodejs_24 --command node utils/test-n8n-infra-ci.mjs
           nix shell nixpkgs#nodejs_24 --command node utils/test-renovate-merge-queue.mjs
+          nix shell nixpkgs#nodejs_24 --command node utils/test-observed-rollout.mjs
       - name: Check OpenStatus receiver and probe wiring
         run: |
           nix shell nixpkgs#kubectl --command bash utils/check-openstatus-wiring.sh
