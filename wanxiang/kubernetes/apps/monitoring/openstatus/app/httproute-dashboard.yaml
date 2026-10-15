@@ -10,6 +10,16 @@ spec:
       namespace: network
       sectionName: https
   rules:
+    # The MCP transport is served by openstatus-server, not the dashboard.
+    # Reuse the authenticated OpenStatus origin so no extra DNS or certificate
+    # is required.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mcp
+      backendRefs:
+        - name: openstatus-server
+          port: 3000
     - backendRefs:
         - name: openstatus-dashboard
           port: 3000

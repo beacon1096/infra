@@ -82,12 +82,71 @@ Then verify in the UI:
 
 `private_location.last_seen_at` is not proof of successful storage: this fixed receiver updates it even when Tinybird returns an error. Treat `tinybird.success=false`, a stale result, or a missing probe heartbeat as unknown/failed rather than healthy.
 
-## MCP Follow-Up
+## MCP Integration
 
-OpenStatus exposes an API-key authenticated MCP endpoint. After the dashboard and status page are validated, create an API key from the OpenStatus UI if assistant access is needed. Prefer read-only keys for observation; use read/write keys only for deliberate incident/status-report automation.
+The fixed OpenStatus revision serves Streamable HTTP MCP from the API server.
+Gateway routing exposes it at:
 
-Do not store long-lived MCP API keys in Git unless explicitly requested.
+```text
+https://openstatus.beaco.works/mcp
+```
+
+The pinned revision authenticates MCP with `x-openstatus-key`; it does not
+implement the OAuth flow described by current upstream documentation. Create a
+dedicated **Read-only** key in **Settings > General > API Keys**. A key's scope
+is immutable, so revoke and replace it instead of widening it. Use Read & write
+only for an explicitly approved incident/status-report automation workflow.
+
+These credentials are not interchangeable:
+
+- An MCP/API key starts with `os_` and belongs to one workspace.
+- `OPENSTATUS_KEY` registers the private probe; it is not an MCP credential.
+- `SUPER_ADMIN_TOKEN` is break-glass access, must start with `sa_` for this
+  revision, and must not be configured in an assistant.
+
+Keep the MCP key in the client's secret store or environment, never in Git.
+Before supplying a key, an unauthenticated request should return API-server
+`401` JSON. A `307` redirect to the dashboard login page means the Gateway is
+still routing `/mcp` to the wrong backend.
+
+```bash
+curl -i -X POST https://openstatus.beaco.works/mcp \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"smoke-test","version":"1.0"}}}'
+```
+
+After adding `x-openstatus-key` through the client's secret configuration,
+verify `initialize`, `tools/list`, and `list_monitors`. For a Read-only key,
+`tools/list` must omit `create_*`, `update_*`, `add_*`, and `resolve_*` tools.
+Do not exercise a mutation merely to prove connectivity. If a later approved
+workflow publishes a status report or maintenance, it must explicitly decide
+the required `notify` value and resolve page/component IDs before mutation.
+
+Current upstream also ships OAuth MCP and an official Kubernetes Helm chart,
+but adopting them requires an application/database migration from this fixed
+revision. Treat that as a separate reviewed upgrade; do not mix it into an MCP
+reachability fix.
+
+## Replacement Acceptance
+
+OpenStatus replaces the planned Uptime Kuma role only after all of the
+following are evidenced together:
+
+- a private probe produces stored results across at least two intervals;
+- a controlled target failure and recovery are visible end to end;
+- a published status page represents the monitored service;
+- workspace, monitor, and recent-result persistence survive a controlled app
+  restart;
+- a dedicated Read-only MCP key completes the three checks above; and
+- the libSQL and Tinybird backup/restore path has been verified.
+
+Until then, OpenStatus is an evaluation deployment. It offers a substantially
+better agent/API surface than Uptime Kuma, but its libSQL, Tinybird, workflows,
+receiver, and probe topology has more operational failure modes than a single
+Uptime Kuma service. Pod readiness, HTTP 200, private-location `last_seen_at`,
+or a successful MCP handshake alone is not replacement evidence.
 
 ## Rollback
 
-Revert the probe and receiver manifests through GitOps. Scaling down the probe stops new checks; scaling down the receiver also prevents probes from fetching monitor assignments and ingesting results. Do not delete private-location rows, monitors, or PVCs as part of rollback.
+Revert the probe and receiver manifests through GitOps. Scaling down the probe stops new checks; scaling down the receiver also prevents probes from fetching monitor assignments and ingesting results. Reverting the `/mcp` path rule restores all requests on the dashboard hostname to the dashboard backend without touching application data. Revoke any test API key from the UI. Do not delete private-location rows, monitors, or PVCs as part of rollback.

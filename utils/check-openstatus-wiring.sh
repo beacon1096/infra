@@ -35,6 +35,11 @@ grep -Fq 'key: OPENSTATUS_KEY' "$app_dir/probe.yaml" || \
 grep -Fq -- '- ./probe.yaml' "$app_dir/kustomization.yaml" || \
   fail "probe manifest is not included by Kustomize"
 
+grep -Fq 'value: /mcp' "$app_dir/httproute-dashboard.yaml" || \
+  fail "public MCP path match is missing"
+grep -Fq 'name: openstatus-server' "$app_dir/httproute-dashboard.yaml" || \
+  fail "public MCP path must target the API server"
+
 receiver_replicas="$(sed -n '/^spec:/,/^  selector:/p' "$app_dir/private-location.yaml" | grep -F 'replicas:' | awk '{print $2}')"
 probe_replicas="$(sed -n '/^spec:/,/^  selector:/p' "$app_dir/probe.yaml" | grep -F 'replicas:' | awk '{print $2}')"
 [[ "$receiver_replicas" == "0" && "$probe_replicas" == "0" ]] || \
