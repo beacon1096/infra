@@ -11,8 +11,12 @@ PR 不会创建 Pod、PVC、Secret、RBAC 或通知，也不会改变现有 Flux
   `sha256:ae5cd17378e9da8820fd3ea55ddfbd4bdd4d0c61f3b5bb4e04bb288b00f95f87`。
   bootstrap 已从同版本安装 Prometheus Operator CRD，HelmRelease 明确跳过 CRD
   install/upgrade。
-- 离线验收工具由本仓 `flake.lock` 固定：Prometheus/promtool `3.15.0`、
-  Alertmanager `0.33.1`。
+- 本地/CI 验收统一使用 `utils/run-observability-test.sh`；脚本解析本仓 flake 的直接
+  package aliases，通过
+  `flake.lock` 的 nixpkgs revision `aca4d95fce4914b3892661bcb80b8087293536c6`
+  固定 Prometheus/promtool `3.12.0`、Alertmanager/amtool `0.31.1`、Helm、kubectl、
+  Python 和 PyYAML，不读取调用者的 nixpkgs registry alias。这里的测试工具版本与
+  chart 内生产 Prometheus/Alertmanager 镜像分开记账；脚本对实际工具版本做断言。
 - Prometheus 设置
   `serviceMonitorSelectorNilUsesHelmValues: false`、
   `podMonitorSelectorNilUsesHelmValues: false`、
@@ -26,8 +30,11 @@ PR 不会创建 Pod、PVC、Secret、RBAC 或通知，也不会改变现有 Flux
 
 这意味着 BEACO-203 的 `LonghornBackupStale` / `LonghornBackupFailed` 会被直接复用，
 而不是复制成另一套规则。补充规则覆盖从未成功备份的卷、关键指标缺失和其它平台
-路径。`longhorn_volume_robustness == 3` 的 faulted 判定沿用
-[Longhorn 1.12.1 官方规则示例](https://longhorn.io/docs/1.12.1/monitoring/alert-rules-example/)。
+路径。目标 job 使用 Operator v0.90.1 最终 relabel 后的真实值（例如
+`monitoring/cnpg-instances`、`longhorn-backend`），而不是内部 scrape config 名称。
+Longhorn 固定版本按
+[manager v1.12.1 源码](https://github.com/longhorn/longhorn-manager/blob/v1.12.1/metrics_collector/volume_collector.go)
+使用 `longhorn_volume_robustness{state="faulted"} == 1`；不沿用旧数值枚举示例。
 
 ## 告警覆盖与失败闭合
 
@@ -39,22 +46,41 @@ PR 不会创建 Pod、PVC、Secret、RBAC 或通知，也不会改变现有 Flux
 | 网关 | 现有 Envoy PodMonitor | `envoy_server_live < 1`、目标 down、关键指标缺失 |
 | 证书 | 现有 cert-manager ServiceMonitor | 14 天内到期、目标 down、到期指标缺失 |
 
-`up == 0` 与各域 `absent(...)` 分开处理：目标存在但抓取失败、Monitor/selector
-根本没有产生目标、exporter 在线但关键指标消失，都不能显示健康。启用后的首轮验收
-必须先消除或解释所有 `*MetricsMissing`，不能通过删除 absent 规则取得绿色状态。
+`up == 0`、ready Pod 与 `up` 的逐对象对账、以及关键指标的逐对象 `unless` 分开处理：
+目标抓取失败、Monitor/selector 把目标移出发现、一个 Longhorn volume 丢失备份时间序列、
+或一个 CNPG exporter 丢失 collector 指标，都不能被健康 peer 掩盖。全域 `absent(...)`
+仍作为最后一道采集缺失保护。启用后的首轮验收必须先消除或解释所有
+`*Missing`，不能通过删除缺失规则取得绿色状态。
 
 ## 权限、资源与容量预算
 
-chart 自带 RBAC，准备包不添加自定义高权限 ServiceAccount：
+chart 的 Operator 广域 ClusterRole 已关闭，由准备包拆成只读发现与 namespace-local
+reconcile 两层，仍复用 chart ServiceAccount：
 
-- Prometheus Operator 需要 cluster-wide list/watch PrometheusRule、ServiceMonitor、
-  PodMonitor、Probe、Prometheus、Alertmanager 及其生成的工作负载；
+- cluster-wide `kube-prometheus-stack-operator-discovery` 仅对 ServiceMonitor、PodMonitor、
+  PrometheusRule、Probe、ScrapeConfig、AlertmanagerConfig 以及 Nodes/Namespaces 做
+  get/list/watch，并只 get StorageClass；没有 Secret/ConfigMap 权限，也没有写权限；
+- `monitoring` Role 才能管理本栈 Prometheus/Alertmanager CR、StatefulSet、Service、
+  EndpointSlice、生成的 ConfigMap/Secret 和事件。这些写权限不能再按 resourceName
+  限定，因为生成对象随 CR reconcile/rollout 变化；verbs 已显式枚举且没有 `*`。
+  替代方案是每次升级手工维护所有生成名称，会使升级和故障恢复不可可靠执行，因此
+  选择 namespace 边界；
+- kube-state-metrics 只启用 `nodes`、`pods` collectors，渲染 ClusterRole 仅含这两个
+  list/watch，不再读取集群 Secret；默认 chart rules 同时关闭，避免为未采集对象产生
+  无法求值的规则；
 - Prometheus 因跨命名空间 selector，需要读 Services、Endpoints/EndpointSlices、Pods、
   Nodes 与对应 monitoring CR；
 - Alertmanager 只选择 `monitoring` 命名空间、标签
-  `observability.beacoworks.xyz/alertmanager=wanxiang` 的 AlertmanagerConfig。
+  `observability.beacoworks.xyz/alertmanager=wanxiang` 的 AlertmanagerConfig；matcher
+  strategy 固定为 `None`，避免 Operator 再注入 `namespace="monitoring"` 导致 storage、
+  其它业务 namespace 和无 namespace 的节点告警落入 null。来源限制仍由 namespace +
+  label selector 承担，错误 namespace/label 的配置不会被选择。
 
-上线前必须审阅 chart 渲染出的 ClusterRole；不得再授予 Secret 的通配读权限。
+CI 会实际渲染 chart 并拒绝 KSM Secret 权限、chart 默认 Operator ClusterRole 或自定义
+发现 ClusterRole 的 Secret/ConfigMap/写权限回归。不得在 cluster scope 添加 Secret。
+2026-10-15 检查的现有 ServiceMonitor/PodMonitor 没有认证 Secret 引用；未来若某个
+跨 namespace Monitor 需要认证，必须为那个 namespace/具体 Secret 单独审阅最小 Role，
+不能恢复全局 Secret list/watch。
 真实 webhook URL/token 只能由 `infra-private` 的 SOPS Secret 与 AlertmanagerConfig
 引用，公开仓不保存端点或凭据。
 
@@ -67,23 +93,24 @@ chart 自带 RBAC，准备包不添加自定义高权限 ServiceAccount：
 
 ## 离线规则与通知验收
 
-以下测试不访问集群、不发送外部通知：
+以下测试不访问集群、不发送外部通知；Helm 只拉取固定 chart 做本地渲染：
 
 ```bash
-nix-shell -I nixpkgs=flake:nixpkgs \
-  -p prometheus.cli prometheus-alertmanager kubectl \
-  'python3.withPackages (ps: [ ps.pyyaml ])' \
-  --run 'python3 utils/test-observability-prep.py'
+bash utils/run-observability-test.sh
 ```
 
-脚本执行四层检查：
+脚本执行六层检查：
 
 1. 确认 chart digest、selector、保留和 PVC 预算，且父级 Flux 未引用准备包；
-2. 用 `promtool check rules` 同时解析本包与 BEACO-203 Longhorn 规则；
-3. 用 `promtool test rules` 注入目标 down、节点异常、CNPG collector error/指标缺失、
-   Envoy 不可用、逐卷无备份和证书即将到期，并确认各自恢复后 alert 清除；
-4. 启动固定版本 Alertmanager 和仅监听 `127.0.0.1` 的临时 webhook stub，确认实际
-   收到 `firing` 与 `resolved`，随后终止进程组并删除临时数据。
+2. 实际渲染 chart `83.7.0`，确认 Operator `v0.90.1`、KSM 仅 nodes/pods 权限、chart
+   广域 Operator ClusterRole 未生成，自定义 cluster discovery 不含 Secret/写权限；
+3. 用 `promtool check rules` 同时解析本包与 BEACO-203 Longhorn 规则；
+4. 用 `promtool test rules` 覆盖真实 job/robustness 标签、正常、故障、目标从发现消失、
+   单 volume/CNPG 实例缺指标及恢复，并保留节点、Envoy、证书、备份用例；
+5. 用 `amtool config routes test` 验证 storage、其它 namespace、无 namespace 三条路径
+   都进入选定路由，而不匹配的 info 对照进入 null；
+6. 启动固定版本 Alertmanager 和仅监听 `127.0.0.1` 的临时 webhook stub，实际确认
+   三类路径的 `firing` 与 `resolved`，不匹配对照不送达，随后终止进程组并清理。
 
 HelmRelease 的默认 receiver 是无外发配置的 `null`。上述 stub 只存在于测试进程，
 不会把测试地址或真实通知目标写进生产配置。
@@ -94,9 +121,10 @@ HelmRelease 的默认 receiver 是无外发配置的 `null`。上述 stub 只存
 
 1. 重新渲染 chart `83.7.0`，确认 ClusterRole、镜像、20Gi+2Gi PVC、资源 requests
    与本页一致；确认 Longhorn 至少还有 66Gi 原始可调度余量。
-2. 在 `infra-private` 准备带上述 selector label 的 AlertmanagerConfig；webhook URL
-   与 token 使用 SOPS Secret 引用。默认 `null` receiver 可先完成纯求值验收，真实
-   渠道必须另行批准。
+2. 在 `infra-private` 准备位于 `monitoring` 且带上述 selector label 的
+   AlertmanagerConfig；它的 route 不添加 namespace matcher，按 severity/alertname
+   分组，webhook URL 与 token 使用 SOPS Secret 引用。默认 `null` receiver 可先完成
+   纯求值验收，真实渠道必须另行批准。公开测试中的同形 route 只有 loopback stub。
 3. 只在获批提交中，把 `./prometheus-stack/ks.yaml` 加到
    `kubernetes/apps/monitoring/kustomization.yaml`。确认同环境无并发 Flux/存储变更，
    再 reconcile。
@@ -106,7 +134,7 @@ HelmRelease 的默认 receiver 是无外发配置的 `null`。上述 stub 只存
    目标失败/恢复。逐卷备份新鲜度必须查看每个 volume 的时间序列，不能以 Job
    succeeded、BackupTarget available 或其它卷健康代替。
 
-停止条件：出现未审阅 ClusterRole/Secret 读取、非 monitoring 命名空间写入、PVC
+停止条件：出现 cluster-wide Secret/ConfigMap 权限、非 monitoring 命名空间写入、PVC
 预算变化、Prometheus 超过 2Gi 内存、存储逼近 15GB、预期 target/metric 缺失或通知
 指向非批准端点时，停止启用并保持/恢复父级不引用本目录。
 

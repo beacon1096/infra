@@ -11,7 +11,7 @@ spec:
       rules:
         - alert: WanxiangMonitoredTargetDown
           expr: >-
-            up{job=~"serviceMonitor/storage/longhorn-prometheus-servicemonitor/0|podMonitor/monitoring/cnpg-instances/0|podMonitor/monitoring/cnpg-operator/0|podMonitor/network/envoy-proxy/0|serviceMonitor/cert-manager/cert-manager/0"} == 0
+            up{job=~"longhorn-backend|monitoring/cnpg-instances|monitoring/cnpg-operator|network/envoy-proxy|cert-manager|cainjector|webhook"} == 0
           for: 5m
           labels:
             severity: critical
@@ -19,6 +19,49 @@ spec:
           annotations:
             summary: A required Wanxiang metrics target is down
             description: A selected Longhorn, CNPG, Envoy, or cert-manager target has failed scrapes for five minutes.
+        - alert: WanxiangMonitoredTargetMissing
+          expr: >-
+            (
+              kube_pod_container_status_ready{namespace="storage",container="longhorn-manager",condition="true"} == 1
+              unless on(namespace, pod) up{job="longhorn-backend"}
+            )
+            or
+            (
+              kube_pod_container_status_ready{container="postgres",condition="true"} == 1
+              unless on(namespace, pod) up{job="monitoring/cnpg-instances"}
+            )
+            or
+            (
+              kube_pod_container_status_ready{namespace="database",container="manager",condition="true"} == 1
+              unless on(namespace, pod) up{job="monitoring/cnpg-operator"}
+            )
+            or
+            (
+              kube_pod_container_status_ready{namespace="network",container="envoy",condition="true"} == 1
+              unless on(namespace, pod) up{job="network/envoy-proxy"}
+            )
+            or
+            (
+              kube_pod_container_status_ready{namespace="cert-manager",container="cert-manager-controller",condition="true"} == 1
+              unless on(namespace, pod) up{job="cert-manager"}
+            )
+            or
+            (
+              kube_pod_container_status_ready{namespace="cert-manager",container="cert-manager-cainjector",condition="true"} == 1
+              unless on(namespace, pod) up{job="cainjector"}
+            )
+            or
+            (
+              kube_pod_container_status_ready{namespace="cert-manager",container="cert-manager-webhook",condition="true"} == 1
+              unless on(namespace, pod) up{job="webhook"}
+            )
+          for: 10m
+          labels:
+            severity: critical
+            component: scrape
+          annotations:
+            summary: A required Wanxiang metrics target is missing
+            description: A ready exporter workload has disappeared from Prometheus service discovery for ten minutes.
         - alert: WanxiangNodeMetricsMissing
           expr: absent(node_uname_info)
           for: 10m
@@ -101,14 +144,25 @@ spec:
     - name: wanxiang.longhorn.rules
       rules:
         - alert: WanxiangLonghornVolumeFaulted
-          expr: longhorn_volume_robustness == 3
+          expr: longhorn_volume_robustness{state="faulted"} == 1
           for: 5m
           labels:
             severity: critical
             component: longhorn
           annotations:
             summary: A Longhorn volume is faulted
-            description: Longhorn reports robustness state 3 for a volume.
+            description: Longhorn 1.12.1 reports the faulted robustness state as active for a volume.
+        - alert: WanxiangLonghornBackupMetricMissing
+          expr: >-
+            longhorn_volume_capacity_bytes
+            unless on(volume) longhorn_volume_last_backup_at
+          for: 10m
+          labels:
+            severity: critical
+            component: longhorn
+          annotations:
+            summary: A Longhorn volume has lost its backup timestamp metric
+            description: Another healthy volume must not hide missing per-volume backup evidence.
         - alert: WanxiangLonghornBackupNeverSucceeded
           expr: longhorn_volume_last_backup_at == 0
           for: 30m
@@ -121,6 +175,18 @@ spec:
 
     - name: wanxiang.cnpg.rules
       rules:
+        - alert: WanxiangCNPGInstanceMetricMissing
+          expr: >-
+            up{job="monitoring/cnpg-instances"} == 1
+            unless on(job, instance, namespace, pod)
+            cnpg_collector_collection_duration_seconds{job="monitoring/cnpg-instances"}
+          for: 10m
+          labels:
+            severity: critical
+            component: cnpg
+          annotations:
+            summary: A CloudNativePG exporter has lost its collector evidence
+            description: A healthy peer must not hide missing metrics from this CNPG instance.
         - alert: WanxiangCNPGCollectorError
           expr: cnpg_collector_last_collection_error == 1
           for: 5m

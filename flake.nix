@@ -349,6 +349,17 @@
       in {
       inherit (pkgs) tailscale;
       inherit talosctl;
+
+      # Direct aliases let the observability harness resolve each tool through
+      # this repository's flake.lock without constructing an unpinned
+      # `nix-shell -I nixpkgs=flake:nixpkgs` environment.
+      observability-promtool = pkgs.prometheus.cli;
+      observability-alertmanager = pkgs.prometheus-alertmanager;
+      observability-kubectl = pkgs.kubectl;
+      observability-helm = pkgs.kubernetes-helm;
+      observability-python = pkgs.python3;
+      observability-pyyaml = pkgs.python3Packages.pyyaml;
+
       # nix build .#installer-iso
       installer-iso = self.nixosConfigurations.installer.config.system.build.isoImage;
 

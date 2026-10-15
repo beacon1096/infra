@@ -23,8 +23,50 @@ spec:
     # the rollback-safe choice for this prepared but not-yet-enabled stack.
     crds:
       enabled: false
-    rbac:
-      create: true
+    global:
+      rbac:
+        # The chart gates the operator and Prometheus roles with one global
+        # switch. Keep it off and supply the reviewed split roles in rbac.yaml.
+        create: false
+
+    defaultRules:
+      create: false
+
+    # Only collectors required by this minimal stack are enabled. In
+    # particular, kube-state-metrics has no cluster-wide Secret access.
+    kube-state-metrics:
+      collectors:
+        - nodes
+        - pods
+      rbac:
+        create: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+
+    prometheusOperator:
+      enabled: true
+      admissionWebhooks:
+        enabled: false
+      prometheusInstanceNamespaces:
+        - monitoring
+      alertmanagerInstanceNamespaces:
+        - monitoring
+      alertmanagerConfigNamespaces:
+        - monitoring
+      thanosRulerInstanceNamespaces:
+        - monitoring
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
 
     grafana:
       enabled: false
@@ -39,24 +81,6 @@ spec:
       enabled: false
     kubeScheduler:
       enabled: false
-
-    prometheusOperator:
-      resources:
-        requests:
-          cpu: 100m
-          memory: 128Mi
-        limits:
-          cpu: 500m
-          memory: 512Mi
-
-    kube-state-metrics:
-      resources:
-        requests:
-          cpu: 50m
-          memory: 128Mi
-        limits:
-          cpu: 200m
-          memory: 256Mi
 
     prometheus-node-exporter:
       resources:
@@ -131,6 +155,12 @@ spec:
       alertmanagerSpec:
         replicas: 1
         retention: 120h
+        # AlertmanagerConfigs are already restricted to the monitoring
+        # namespace and the explicit label below. Disable the default injected
+        # namespace alert matcher so the approved route can receive storage,
+        # application-namespace, and cluster-scoped alerts.
+        alertmanagerConfigMatcherStrategy:
+          type: None
         alertmanagerConfigSelector:
           matchLabels:
             observability.beacoworks.xyz/alertmanager: wanxiang

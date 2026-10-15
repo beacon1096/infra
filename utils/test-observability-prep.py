@@ -23,9 +23,12 @@ APP = ROOT / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/app"
 STACK_KS = ROOT / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/ks.yaml"
 MONITORING_KUSTOMIZATION = ROOT / "wanxiang/kubernetes/apps/monitoring/kustomization.yaml"
 LONGHORN_RULE = ROOT / "wanxiang/kubernetes/apps/storage/longhorn/app/prometheusrule.yaml"
-EXPECTED_PROMETHEUS = "3.15.0"
-EXPECTED_ALERTMANAGER = "0.33.1"
+EXPECTED_PROMETHEUS = "3.12.0"
+EXPECTED_ALERTMANAGER = "0.31.1"
+EXPECTED_CHART_VERSION = "83.7.0"
+EXPECTED_OPERATOR_VERSION = "v0.90.1"
 EXPECTED_CHART_DIGEST = "sha256:ae5cd17378e9da8820fd3ea55ddfbd4bdd4d0c61f3b5bb4e04bb288b00f95f87"
+CHART = "oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack"
 
 
 def run(*command, check=True):
@@ -59,6 +62,29 @@ def check_version(binary, expected):
         raise AssertionError(f"{binary} version must be {expected}, got: {output.strip()}")
 
 
+def named(items, kind, name):
+    matches = [
+        item for item in items
+        if item.get("kind") == kind and item.get("metadata", {}).get("name") == name
+    ]
+    if len(matches) != 1:
+        raise AssertionError(f"expected one {kind}/{name}, got {len(matches)}")
+    return matches[0]
+
+
+def render_chart(values):
+    with tempfile.TemporaryDirectory() as directory:
+        values_path = Path(directory) / "values.yaml"
+        values_path.write_text(yaml.safe_dump(values, sort_keys=False), encoding="utf-8")
+        rendered = run(
+            "helm", "template", "kube-prometheus-stack", CHART,
+            "--version", EXPECTED_CHART_VERSION,
+            "--namespace", "monitoring",
+            "--values", str(values_path),
+        ).stdout
+    return [item for item in yaml.safe_load_all(rendered) if item]
+
+
 def validate_manifests():
     rendered = run("kubectl", "kustomize", str(APP)).stdout
     rendered_documents = [item for item in yaml.safe_load_all(rendered) if item]
@@ -68,6 +94,10 @@ def validate_manifests():
     expected = {
         "OCIRepository": 1,
         "HelmRelease": 1,
+        "ClusterRole": 2,
+        "ClusterRoleBinding": 2,
+        "Role": 1,
+        "RoleBinding": 1,
         "PodMonitor": 2,
         "PrometheusRule": 1,
     }
@@ -87,8 +117,12 @@ def validate_manifests():
 
     release = one(APP / "helmrelease.yaml", "HelmRelease")
     values = release["spec"]["values"]
-    if values.get("rbac", {}).get("create") is not True:
-        raise AssertionError("chart RBAC must remain explicit for pre-enable review")
+    if values.get("global", {}).get("rbac", {}).get("create") is not False:
+        raise AssertionError("the chart's broad global RBAC must remain disabled")
+    if values["prometheusOperator"]["admissionWebhooks"]["enabled"] is not False:
+        raise AssertionError("unneeded operator admission webhook must remain disabled")
+    if values["kube-state-metrics"].get("collectors") != ["nodes", "pods"]:
+        raise AssertionError("kube-state-metrics collectors must remain minimal and Secret-free")
     prometheus = values["prometheus"]["prometheusSpec"]
     for selector in ("serviceMonitor", "podMonitor", "rule"):
         if prometheus[f"{selector}SelectorNilUsesHelmValues"] is not False:
@@ -113,12 +147,91 @@ def validate_manifests():
     selector = alertmanager["alertmanagerSpec"]["alertmanagerConfigSelector"]["matchLabels"]
     if selector != {"observability.beacoworks.xyz/alertmanager": "wanxiang"}:
         raise AssertionError("private AlertmanagerConfig selector changed")
+    namespace_selector = alertmanager["alertmanagerSpec"]["alertmanagerConfigNamespaceSelector"]
+    if namespace_selector != {"matchLabels": {"kubernetes.io/metadata.name": "monitoring"}}:
+        raise AssertionError("AlertmanagerConfig sources must remain namespace-restricted")
+    strategy = alertmanager["alertmanagerSpec"].get("alertmanagerConfigMatcherStrategy")
+    if strategy != {"type": "None"}:
+        raise AssertionError("cross-namespace alerts require the reviewed None matcher strategy")
+
+    discovery = named(
+        rendered_documents,
+        "ClusterRole",
+        "kube-prometheus-stack-operator-discovery",
+    )
+    for rule in discovery["rules"]:
+        if set(rule.get("resources", [])) & {"secrets", "configmaps"}:
+            raise AssertionError("cluster-wide operator discovery must not read Secret/ConfigMap")
+        if not set(rule["verbs"]) <= {"get", "list", "watch"}:
+            raise AssertionError("cluster-wide operator discovery must remain read-only")
+    reconcile = named(
+        rendered_documents,
+        "Role",
+        "kube-prometheus-stack-operator-reconcile",
+    )
+    if reconcile["metadata"].get("namespace") != "monitoring":
+        raise AssertionError("operator mutations must be scoped to monitoring")
+    if any("*" in rule.get("verbs", []) for rule in reconcile["rules"]):
+        raise AssertionError("namespace-local operator verbs must remain enumerated")
+
+    chart_documents = render_chart(values)
+    if any(
+        item.get("kind") == "ClusterRole"
+        and item.get("metadata", {}).get("name") == "kube-prometheus-stack-operator"
+        for item in chart_documents
+    ):
+        raise AssertionError("chart rendered its broad operator ClusterRole")
+    ksm_role = named(
+        chart_documents,
+        "ClusterRole",
+        "kube-prometheus-stack-kube-state-metrics",
+    )
+    ksm_resources = {
+        resource
+        for rule in ksm_role["rules"]
+        for resource in rule.get("resources", [])
+    }
+    if ksm_resources != {"nodes", "pods"}:
+        raise AssertionError(f"unexpected kube-state-metrics cluster access: {ksm_resources}")
+    operator = named(chart_documents, "Deployment", "kube-prometheus-stack-operator")
+    operator_image = operator["spec"]["template"]["spec"]["containers"][0]["image"]
+    if not operator_image.endswith(f":{EXPECTED_OPERATOR_VERSION}"):
+        raise AssertionError(f"unexpected Prometheus Operator image: {operator_image}")
+    named(chart_documents, "ServiceAccount", "kube-prometheus-stack-operator")
+    named(chart_documents, "ServiceAccount", "kube-prometheus-stack-prometheus")
+    alertmanager_resource = named(
+        chart_documents,
+        "Alertmanager",
+        "kube-prometheus-stack-alertmanager",
+    )
+    if alertmanager_resource["spec"].get("alertmanagerConfigMatcherStrategy") != {"type": "None"}:
+        raise AssertionError("rendered Alertmanager lost its cross-namespace matcher strategy")
+
+    selected_labels = {"observability.beacoworks.xyz/alertmanager": "wanxiang"}
+    if not (
+        selector.items() <= selected_labels.items()
+        and namespace_selector["matchLabels"] == {"kubernetes.io/metadata.name": "monitoring"}
+    ):
+        raise AssertionError("the approved private AlertmanagerConfig fixture was not selected")
+    if selector.items() <= {"observability.beacoworks.xyz/alertmanager": "other"}.items():
+        raise AssertionError("a wrong AlertmanagerConfig label was selected")
 
 
 def expected_alert(labels, summary, description):
     return {
         "exp_labels": labels,
         "exp_annotations": {"summary": summary, "description": description},
+    }
+
+
+def alert_count(alertname, eval_time, expected, extra_matchers=""):
+    matchers = f'alertname="{alertname}",alertstate="firing"'
+    if extra_matchers:
+        matchers += f",{extra_matchers}"
+    return {
+        "expr": f"(count(ALERTS{{{matchers}}}) > bool 0) or vector(0)",
+        "eval_time": eval_time,
+        "exp_samples": [{"labels": "{}", "value": expected}],
     }
 
 
@@ -133,6 +246,7 @@ def validate_rules():
     }
     expected_alert_names = {
         "WanxiangMonitoredTargetDown",
+        "WanxiangMonitoredTargetMissing",
         "WanxiangNodeMetricsMissing",
         "WanxiangKubeStateMetricsMissing",
         "WanxiangLonghornMetricsMissing",
@@ -142,10 +256,12 @@ def validate_rules():
         "WanxiangNodeNotReady",
         "WanxiangNodeFilesystemLow",
         "WanxiangLonghornVolumeFaulted",
+        "WanxiangLonghornBackupMetricMissing",
         "WanxiangLonghornBackupNeverSucceeded",
         "LonghornBackupStale",
         "LonghornBackupFailed",
         "WanxiangCNPGCollectorError",
+        "WanxiangCNPGInstanceMetricMissing",
         "WanxiangCNPGReplicationLagHigh",
         "WanxiangEnvoyUnavailable",
         "WanxiangCertificateExpiringSoon",
@@ -171,7 +287,7 @@ def validate_rules():
                     "interval": "1m",
                     "input_series": [
                         {
-                            "series": 'up{job="podMonitor/monitoring/cnpg-instances/0",instance="fixture:9187"}',
+                            "series": 'up{job="monitoring/cnpg-instances",instance="fixture:9187"}',
                             "values": "0x5 1x60",
                         },
                         {
@@ -207,7 +323,7 @@ def validate_rules():
                                 {
                                     "component": "scrape",
                                     "instance": "fixture:9187",
-                                    "job": "podMonitor/monitoring/cnpg-instances/0",
+                                    "job": "monitoring/cnpg-instances",
                                     "severity": "critical",
                                 },
                                 "A required Wanxiang metrics target is down",
@@ -299,6 +415,65 @@ def validate_rules():
                         },
                         {"eval_time": "61m", "alertname": "WanxiangCertificateExpiringSoon", "exp_alerts": []},
                     ],
+                },
+                {
+                    "name": "real labels, partial evidence loss, and target removal recover",
+                    "interval": "1m",
+                    "input_series": [
+                        {
+                            "series": 'up{job="monitoring/cnpg-instances",namespace="fixture",pod="pg-down",instance="down:9187"}',
+                            "values": "0x5 1x70",
+                        },
+                        {
+                            "series": 'longhorn_volume_robustness{volume="bad-volume",state="faulted"}',
+                            "values": "1x5 0x70",
+                        },
+                        {
+                            "series": 'longhorn_volume_capacity_bytes{volume="missing-volume",pvc="missing",pvc_namespace="fixture"}',
+                            "values": "100x75",
+                        },
+                        {
+                            "series": 'longhorn_volume_capacity_bytes{volume="healthy-volume",pvc="healthy",pvc_namespace="fixture"}',
+                            "values": "100x75",
+                        },
+                        {
+                            "series": 'longhorn_volume_last_backup_at{volume="missing-volume",pvc="missing",pvc_namespace="fixture"}',
+                            "values": "1 stale _x64 2x10",
+                        },
+                        {
+                            "series": 'longhorn_volume_last_backup_at{volume="healthy-volume",pvc="healthy",pvc_namespace="fixture"}',
+                            "values": "1+60x75",
+                        },
+                        {
+                            "series": 'up{job="monitoring/cnpg-instances",namespace="fixture",pod="pg-metric-missing",instance="missing:9187"}',
+                            "values": "1x75",
+                        },
+                        {
+                            "series": 'cnpg_collector_collection_duration_seconds{job="monitoring/cnpg-instances",namespace="fixture",pod="pg-metric-missing",instance="missing:9187"}',
+                            "values": "0.1 stale _x64 0.2x10",
+                        },
+                        {
+                            "series": 'kube_pod_container_status_ready{namespace="fixture",pod="pg-target-missing",container="postgres",condition="true"}',
+                            "values": "1x75",
+                        },
+                        {
+                            "series": 'up{job="monitoring/cnpg-instances",namespace="fixture",pod="pg-target-missing",instance="removed:9187"}',
+                            "values": "1 stale _x19 1x55",
+                        },
+                    ],
+                    "promql_expr_test": [
+                        alert_count("WanxiangMonitoredTargetDown", "5m", 1, 'pod="pg-down"'),
+                        alert_count("WanxiangMonitoredTargetDown", "6m", 0, 'pod="pg-down"'),
+                        alert_count("WanxiangLonghornVolumeFaulted", "5m", 1, 'volume="bad-volume"'),
+                        alert_count("WanxiangLonghornVolumeFaulted", "6m", 0, 'volume="bad-volume"'),
+                        alert_count("WanxiangLonghornBackupMetricMissing", "65m", 1, 'volume="missing-volume"'),
+                        alert_count("WanxiangLonghornBackupMetricMissing", "66m", 0, 'volume="missing-volume"'),
+                        alert_count("WanxiangLonghornBackupMetricMissing", "65m", 0, 'volume="healthy-volume"'),
+                        alert_count("WanxiangCNPGInstanceMetricMissing", "65m", 1, 'pod="pg-metric-missing"'),
+                        alert_count("WanxiangCNPGInstanceMetricMissing", "66m", 0, 'pod="pg-metric-missing"'),
+                        alert_count("WanxiangMonitoredTargetMissing", "20m", 1, 'pod="pg-target-missing"'),
+                        alert_count("WanxiangMonitoredTargetMissing", "21m", 0, 'pod="pg-target-missing"'),
+                    ],
                 }
             ],
         }
@@ -353,14 +528,22 @@ def post_json(url, payload):
             raise AssertionError(f"unexpected Alertmanager response: {response.status}")
 
 
-def wait_webhook(server, status, timeout=10):
+def wait_webhook(server, status, expected_alertnames, timeout=10):
     deadline = time.monotonic() + timeout
     with server.condition:
         while time.monotonic() < deadline:
-            if any(payload.get("status") == status for payload in server.payloads):
+            observed = {
+                alert.get("labels", {}).get("alertname")
+                for payload in server.payloads
+                if payload.get("status") == status
+                for alert in payload.get("alerts", [])
+            }
+            if expected_alertnames <= observed:
                 return
             server.condition.wait(deadline - time.monotonic())
-    raise AssertionError(f"local stub did not receive {status}: {server.payloads}")
+    raise AssertionError(
+        f"local stub did not receive {status} for {expected_alertnames}: {server.payloads}"
+    )
 
 
 def validate_alert_delivery():
@@ -378,13 +561,23 @@ def validate_alert_delivery():
             config = {
                 "global": {"resolve_timeout": "1m"},
                 "route": {
-                    "receiver": "local-stub",
-                    "group_by": ["alertname"],
+                    "receiver": "null",
+                    "group_by": ["alertname", "namespace"],
                     "group_wait": "0s",
                     "group_interval": "1s",
                     "repeat_interval": "1h",
+                    # This is the route shape produced for the selected private
+                    # AlertmanagerConfig when matcher strategy None is used.
+                    # It intentionally has no namespace matcher.
+                    "routes": [
+                        {
+                            "receiver": "local-stub",
+                            "matchers": ['severity=~"warning|critical"'],
+                        }
+                    ],
                 },
                 "receivers": [
+                    {"name": "null"},
                     {
                         "name": "local-stub",
                         "webhook_configs": [{"url": webhook_url, "send_resolved": True}],
@@ -395,6 +588,21 @@ def validate_alert_delivery():
                 raise AssertionError("test notification destination must be loopback only")
             config_path = directory / "alertmanager.yaml"
             config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+            route_cases = [
+                (["alertname=StorageRouteFixture", "namespace=storage", "severity=warning"], "local-stub"),
+                (["alertname=CNPGRouteFixture", "namespace=ai", "severity=critical"], "local-stub"),
+                (["alertname=NodeRouteFixture", "node=ms01-a", "severity=warning"], "local-stub"),
+                (["alertname=RejectedInfoFixture", "namespace=monitoring", "severity=info"], "null"),
+            ]
+            for labels, receiver in route_cases:
+                routed = run(
+                    "amtool", "config", "routes", "test",
+                    f"--config.file={config_path}", "--tree", *labels,
+                )
+                if receiver not in routed.stdout:
+                    raise AssertionError(
+                        f"route {labels} did not select {receiver}: {routed.stdout}"
+                    )
             log_path = directory / "alertmanager.log"
             log_handle = log_path.open("w", encoding="utf-8")
             port = free_port()
@@ -414,23 +622,45 @@ def validate_alert_delivery():
 
             now = dt.datetime.now(dt.timezone.utc)
             starts_at = now - dt.timedelta(minutes=5)
-            labels = {"alertname": "OfflineDeliveryFixture", "severity": "warning"}
-            base = {
-                "labels": labels,
-                "annotations": {"summary": "local-only delivery fixture"},
-                "startsAt": starts_at.isoformat(),
-                "generatorURL": "http://127.0.0.1/offline-fixture",
+            label_sets = [
+                {"alertname": "StorageRouteFixture", "namespace": "storage", "severity": "warning"},
+                {"alertname": "CNPGRouteFixture", "namespace": "ai", "severity": "critical"},
+                {"alertname": "NodeRouteFixture", "node": "ms01-a", "severity": "warning"},
+                {"alertname": "RejectedInfoFixture", "namespace": "monitoring", "severity": "info"},
+            ]
+            routed_alertnames = {
+                "StorageRouteFixture", "CNPGRouteFixture", "NodeRouteFixture"
             }
+
+            def alerts(ends_at):
+                return [
+                    {
+                        "labels": labels,
+                        "annotations": {"summary": "local-only delivery fixture"},
+                        "startsAt": starts_at.isoformat(),
+                        "endsAt": ends_at,
+                        "generatorURL": "http://127.0.0.1/offline-fixture",
+                    }
+                    for labels in label_sets
+                ]
+
             post_json(
                 f"http://127.0.0.1:{port}/api/v2/alerts",
-                [{**base, "endsAt": (now + dt.timedelta(minutes=5)).isoformat()}],
+                alerts((now + dt.timedelta(minutes=5)).isoformat()),
             )
-            wait_webhook(webhook, "firing")
+            wait_webhook(webhook, "firing", routed_alertnames)
             post_json(
                 f"http://127.0.0.1:{port}/api/v2/alerts",
-                [{**base, "endsAt": (dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=1)).isoformat()}],
+                alerts((dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=1)).isoformat()),
             )
-            wait_webhook(webhook, "resolved")
+            wait_webhook(webhook, "resolved", routed_alertnames)
+            delivered = {
+                alert.get("labels", {}).get("alertname")
+                for payload in webhook.payloads
+                for alert in payload.get("alerts", [])
+            }
+            if "RejectedInfoFixture" in delivered:
+                raise AssertionError("the unselected info route reached the webhook stub")
     finally:
         if alertmanager is not None and alertmanager.poll() is None:
             os.killpg(alertmanager.pid, 15)
