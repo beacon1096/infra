@@ -76,6 +76,7 @@ ADRs are organized by their scope:
 - [zot in-cluster operations (Phase 4b runbook)](operations/zot-restore.md) — image bump, chart upgrade, adding upstream registries, DR scenarios, decommission gate. Sibling to `zot-mirror.md` (LAN host).
 - [Forgejo Actions runner — talos-ii operations runbook](operations/forgejo-runner.md) — pre-flight, token mint, cutover, verification, rollback, image bump, and registry mirror migration.
 - [OpenStatus — uptime/status monitoring operations](operations/openstatus.md) — Flux deployment, OAuth secret gate, libSQL/Tinybird persistence, private-location setup, and MCP follow-up.
+- [Prometheus and Alertmanager preparation](operations/observability-stack.md) — pinned stack, existing monitor discovery, alert coverage, capacity, activation, and rollback gates.
 - [Flux + Helm recovery — stuck HelmReleases](operations/flux-helm-recovery.md) — when helm-controller restarts and loses release storage: soft (`suspend → resume`), hard (delete helm secrets), nuclear (also delete sts) recovery patterns. Cases: attic / zot / n8n / vaultwarden.
 - (to be added: node replacement, Longhorn disk replacement, Talos upgrade)
 

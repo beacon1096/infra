@@ -1,0 +1,155 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: kube-prometheus-stack
+  interval: 1h
+  install:
+    crds: Skip
+    remediation:
+      retries: 1
+  upgrade:
+    cleanupOnFail: true
+    crds: Skip
+    remediation:
+      retries: 1
+  values:
+    # CRDs are already installed by wanxiang/bootstrap/helmfile.d/00-crds.yaml
+    # from this same chart version. Keeping Helm away from their lifecycle is
+    # the rollback-safe choice for this prepared but not-yet-enabled stack.
+    crds:
+      enabled: false
+    rbac:
+      create: true
+
+    grafana:
+      enabled: false
+
+    # Talos does not expose these control-plane endpoints through Services, and
+    # Cilium replaces kube-proxy. Avoid permanently-down synthetic targets.
+    kubeControllerManager:
+      enabled: false
+    kubeEtcd:
+      enabled: false
+    kubeProxy:
+      enabled: false
+    kubeScheduler:
+      enabled: false
+
+    prometheusOperator:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
+    kube-state-metrics:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+
+    prometheus-node-exporter:
+      resources:
+        requests:
+          cpu: 20m
+          memory: 50Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+
+    prometheus:
+      serviceAccount:
+        create: true
+      prometheusSpec:
+        replicas: 1
+        shards: 1
+        retention: 7d
+        retentionSize: 15GB
+        walCompression: true
+        enableAdminAPI: false
+
+        # Select the existing monitors and rules throughout the cluster. Empty
+        # selectors deliberately mean "all" only because the corresponding
+        # NilUsesHelmValues switches are false.
+        serviceMonitorSelectorNilUsesHelmValues: false
+        serviceMonitorSelector: {}
+        serviceMonitorNamespaceSelector: {}
+        podMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelector: {}
+        podMonitorNamespaceSelector: {}
+        ruleSelectorNilUsesHelmValues: false
+        ruleSelector: {}
+        ruleNamespaceSelector: {}
+
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: "1"
+            memory: 2Gi
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              accessModes:
+                - ReadWriteOnce
+              storageClassName: longhorn-r3
+              resources:
+                requests:
+                  storage: 20Gi
+
+    alertmanager:
+      enabled: true
+      serviceAccount:
+        create: true
+      # Safe default: evaluate and retain alerts, but send nothing externally.
+      # A separately reviewed infra-private AlertmanagerConfig may be selected
+      # by the label below after its Secret and destination are approved.
+      config:
+        global:
+          resolve_timeout: 5m
+        route:
+          group_by:
+            - alertname
+            - namespace
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 4h
+          receiver: "null"
+        receivers:
+          - name: "null"
+      alertmanagerSpec:
+        replicas: 1
+        retention: 120h
+        alertmanagerConfigSelector:
+          matchLabels:
+            observability.beacoworks.xyz/alertmanager: wanxiang
+        alertmanagerConfigNamespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: monitoring
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        storage:
+          volumeClaimTemplate:
+            spec:
+              accessModes:
+                - ReadWriteOnce
+              storageClassName: longhorn-r3
+              resources:
+                requests:
+                  storage: 2Gi

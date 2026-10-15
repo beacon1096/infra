@@ -58,6 +58,12 @@ jobs:
           nix shell nixpkgs#kubectl --command bash utils/test-openstatus-quiesce-window.sh
           bash utils/test-openstatus-restore-baseline.sh
           nix shell nixpkgs#kubectl --command bash utils/test-openstatus-restore-cleanup.sh
+      - name: Test observability preparation
+        run: >-
+          nix-shell -I nixpkgs=flake:nixpkgs
+          -p prometheus.cli prometheus-alertmanager kubectl
+          'python3.withPackages (ps: [ ps.pyyaml ])'
+          --run 'python3 utils/test-observability-prep.py'
       - name: Build OCI images
         if: github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/prod')
         run: |

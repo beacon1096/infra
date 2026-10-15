@@ -1,0 +1,15 @@
+---
+# kube-prometheus-stack 83.7.0. The digest is the chart artifact reported by
+# the OCI registry, so a tag move cannot change the reviewed deployment.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: kube-prometheus-stack
+spec:
+  interval: 24h
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  ref:
+    digest: sha256:ae5cd17378e9da8820fd3ea55ddfbd4bdd4d0c61f3b5bb4e04bb288b00f95f87
+  url: oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack

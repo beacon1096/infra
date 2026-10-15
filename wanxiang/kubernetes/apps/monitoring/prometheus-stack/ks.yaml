@@ -1,0 +1,19 @@
+---
+# Prepared for BEACO-216 but intentionally not referenced from
+# ../kustomization.yaml. Adding that single parent reference is the explicit
+# production enablement step after storage, RBAC, and notification approval.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: prometheus-stack
+spec:
+  interval: 1h
+  path: ./wanxiang/kubernetes/apps/monitoring/prometheus-stack/app
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: monitoring
+  wait: true
+  timeout: 15m
