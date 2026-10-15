@@ -1,0 +1,25 @@
+{
+  "now_epoch": 2000,
+  "observation_since_epoch": 1500,
+  "minimum_real_intervals": 2,
+  "max_result_age_seconds": 300,
+  "max_heartbeat_age_seconds": 300,
+  "real": {
+    "monitor_id": "101",
+    "region_id": "7",
+    "successful_intervals": 2,
+    "latest_status": "error",
+    "last_interval_ms": 1950000,
+    "heartbeat_epoch": 1980
+  },
+  "canary": {
+    "monitor_id": "102",
+    "region_id": "7",
+    "pre_failure_success_intervals": 1,
+    "controlled_failure_intervals": 1,
+    "post_recovery_success_intervals": 1,
+    "latest_status": "success",
+    "last_interval_ms": 1960000,
+    "heartbeat_epoch": 1985
+  }
+}

@@ -152,14 +152,59 @@ succeeded.
 The backups are crash-consistent and independent; they are not an atomic
 snapshot across libSQL, Tinybird, and workflows. A safe restore drill therefore
 uses new disposable volumes in an isolated namespace and never rebinds a
-production PVC. Use the renderer rather than hand-writing `fromBackup` URLs:
+production PVC.
+
+The fixed upstream revision contains
+`packages/tinybird/datasources/ping_response__v8.datasource`, with
+`monitorId`, `region`, `cronTimestamp`, and `requestStatus`, but its README
+requires an explicit `tb push`. The Kubernetes Tinybird Deployment only starts
+`tinybird-local`; it does not mount or push that datasource. Therefore a
+healthy empty Tinybird pod is not an initialized empty OpenStatus datasource.
+`capture-openstatus-restore-baseline.sh` classifies a successful zero-row query
+as `initialized-empty`, a successful non-zero query as `ingested`, and a
+missing/unqueryable datasource as `uninitialized`. The last state is a stop
+condition: initialize the exact fixed-revision datasource through a separately
+reviewed production change before enabling ingest or approving a restore drill.
+
+Tie every drill to a source baseline captured before the selected backups. For
+an exact comparison, first obtain approval to quiesce all write-capable clients
+(`openstatus-server`, `openstatus-workflows`, `openstatus-checker`, the receiver,
+and the probe), leaving libSQL and Tinybird available. Record their original
+replica counts for rollback. With writers still quiesced:
 
 ```bash
 export RUN_ID=20261015a
-MAX_BACKUP_AGE_HOURS=26 \
+TINYBIRD_READ_TOKEN='<from approved secret channel>' \
+  bash utils/capture-openstatus-restore-baseline.sh \
+  >"./openstatus-baseline-${RUN_ID}.json"
+sha256sum "./openstatus-baseline-${RUN_ID}.json"
+
+kubectl -n storage create job --from=cronjob/daily-backup \
+  "daily-backup-${RUN_ID}"
+kubectl -n storage wait --for=condition=complete \
+  "job/daily-backup-${RUN_ID}" --timeout=2h
+MAX_BACKUP_AGE_HOURS=2 bash utils/check-openstatus-backups.sh
+```
+
+The Job completing is not backup success. Continue only when the per-volume
+check reports a clean newer recovery point for all three volumes. Restore the
+recorded replica counts immediately after baseline-linked backup evidence has
+been saved; verify Flux remains Ready and not suspended. Quiescing workloads,
+creating the manual backup Job, initializing Tinybird, and restoring replicas
+are production operations and require explicit approval.
+
+Use the renderer rather than hand-writing `fromBackup` URLs. It rejects a
+backup whose snapshot predates the captured baseline:
+
+```bash
+export RUN_ID=20261015a
+BASELINE_FILE="./openstatus-baseline-${RUN_ID}.json" \
+MAX_BACKUP_AGE_HOURS=2 \
   bash utils/render-openstatus-restore-drill.sh >"./openstatus-restore-${RUN_ID}.yaml"
 kubectl apply --dry-run=client -f "./openstatus-restore-${RUN_ID}.yaml"
 sha256sum "./openstatus-restore-${RUN_ID}.yaml"
+RUN_ID="$RUN_ID" RESTORE_MANIFEST="./openstatus-restore-${RUN_ID}.yaml" \
+  bash utils/cleanup-openstatus-restore-drill.sh --plan
 ```
 
 The renderer is read-only. It stops unless every latest backup is clean,
@@ -173,10 +218,11 @@ This is disposable recovery validation, not an HA copy.
 The approval packet must contain:
 
 - the renderer's backup/source-volume table and per-disk capacity table;
-- the rendered manifest SHA-256 and its 20 GiB/24 GiB annotations;
+- the baseline JSON SHA-256 and state (`initialized-empty` or `ingested`), the
+  rendered manifest SHA-256, and its baseline/storage annotations;
 - confirmation that no unrelated Longhorn or storage change is active;
 - the exact `RUN_ID`, expected namespace/PV/Volume names, start window, and
-  `cleanup-openstatus-restore-drill.sh --plan` output; and
+  manifest-derived `cleanup-openstatus-restore-drill.sh --plan` output; and
 - an explicit statement that no source Backup, source Volume, production PVC,
   Secret, or production Deployment is selected.
 
@@ -200,35 +246,52 @@ clone read-only. No production Secret is mounted and no external egress exists.
 kubectl -n "openstatus-restore-${RUN_ID}" scale deployment \
   restore-libsql restore-tinybird restore-workflows-reader --replicas=1
 TINYBIRD_RESTORE_TOKEN='<from approved secret channel>' \
+  BASELINE_FILE="./openstatus-baseline-${RUN_ID}.json" \
   RUN_ID="$RUN_ID" PHASE=data bash utils/check-openstatus-restore-drill.sh
 ```
 
-The data phase performs a zero-write libSQL query and requires non-zero
-workspace, monitor, private-location, and assignment rows. It also requires
-non-zero `ping_response__v8` rows, intervals, monitors, and regions from the
-restored Tinybird instance, plus workflows tree readability from the pinned
-workflows image. `TINYBIRD_RESTORE_TOKEN` is supplied at execution time and is
-never committed or printed.
+The data phase performs zero-write libSQL and Tinybird queries and compares the
+exact counts and Tinybird state with the recorded pre-backup baseline. An
+`initialized-empty` baseline must restore as initialized and empty; it does not
+prove ingest recovery. An `ingested` baseline must restore with the exact
+recorded rows, intervals, monitors, and regions. An `uninitialized` datasource
+always fails. The workflows tree must also be readable from the pinned image.
+`TINYBIRD_RESTORE_TOKEN` is supplied at execution time and is never committed
+or printed.
+
+Record two milestones separately: an initialized-empty restore before first
+ingest, and a later ingested-data restore from a new post-ingest baseline and
+new backups. Only the latter is evidence that stored monitoring results are
+recoverable; it cannot be made a prerequisite for enabling the first ingest.
 
 Stop immediately on a stale/missing backup, capacity shortfall, concurrent
 storage work, restore error, non-healthy volume, unexpected resource without
-the exact run label, failed inventory, data-query error, empty expected data,
-unexpected egress, or any observed production mutation. A successful mount
-without the libSQL and Tinybird reads is not a successful drill.
+the exact run label, failed inventory, data-query error, uninitialized or
+baseline-mismatched data, unexpected egress, or any observed production
+mutation. A successful mount without the libSQL and Tinybird reads is not a
+successful drill.
 
 Save the check output, then review the exact cleanup plan. Execution requires a
-second run-id confirmation and selects exactly three labeled PVs, three labeled
-Longhorn volumes, and the one labeled namespace:
+second run-id confirmation and considers only the three expected PV names,
+three expected Longhorn Volume names, and the one run namespace; after a
+partial apply it deletes only those that exist:
 
 ```bash
-RUN_ID="$RUN_ID" bash utils/cleanup-openstatus-restore-drill.sh --plan
-CONFIRM_RUN_ID="$RUN_ID" RUN_ID="$RUN_ID" \
+RUN_ID="$RUN_ID" RESTORE_MANIFEST="./openstatus-restore-${RUN_ID}.yaml" \
+  bash utils/cleanup-openstatus-restore-drill.sh --plan
+EXPECTED_MANIFEST_SHA256='<approved-manifest-sha256>' \
+  CONFIRM_RUN_ID="$RUN_ID" RUN_ID="$RUN_ID" \
+  RESTORE_MANIFEST="./openstatus-restore-${RUN_ID}.yaml" \
   bash utils/cleanup-openstatus-restore-drill.sh --execute
 ```
 
-The static PVs use `Retain`; cleanup deletes the namespace first, then the
-three recorded PVs and three restored Longhorn volumes. It refuses a missing or
-mismatched label/count and never selects source backups or production storage.
+The static PVs use `Retain`; cleanup deletes the run namespace first, then only
+the expected PV and restored Longhorn Volume names that actually exist. The
+plan works before creation and after a partially failed apply. Both modes
+validate the concrete manifest, exact run labels, PV→PVC→Longhorn Volume
+bindings, Longhorn CSI driver and storage class, and the `Retain` policy; an
+unexpected run-labeled name is a hard stop. Source backups and production
+storage are never selected.
 
 Do not claim recovery readiness until all three volumes pass the freshness
 check and at least libSQL plus Tinybird have completed this isolated read test.
@@ -278,6 +341,14 @@ STATUS_PAGE_URL='https://status.beaco.works/example' \
 STATUS_PAGE_EXPECT='Example service' \
   bash utils/check-openstatus-acceptance.sh
 ```
+
+The default freshness limit is 300 seconds for both the newest stored result
+and each private-location heartbeat; set `MAX_RESULT_AGE_SECONDS` or
+`MAX_HEARTBEAT_AGE_SECONDS` only when the reviewed monitor cadence requires a
+different bound. The check counts distinct successful `cronTimestamp` values,
+requires the latest result to be successful and fresh, and rejects duplicate
+success rows from one cycle, a later failed cycle, stale results, stale
+heartbeats, and empty evidence.
 
 The check requires one available digest-pinned receiver and probe; probe job
 startup; sampled receiver `tinybird.success=true`; active libSQL assignments

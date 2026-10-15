@@ -6,6 +6,8 @@ phase="${PHASE:-storage}"
 longhorn_namespace="${LONGHORN_NAMESPACE:-storage}"
 restore_namespace="openstatus-restore-${run_id}"
 restore_label="openstatus.beaco.works/restore-run"
+baseline_file="${BASELINE_FILE:-}"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat >&2 <<'EOF'
@@ -14,14 +16,17 @@ Validate an applied OpenStatus restore drill without changing it.
 Usage:
   RUN_ID=20261015a PHASE=storage bash utils/check-openstatus-restore-drill.sh
 
-  TINYBIRD_RESTORE_TOKEN=... RUN_ID=20261015a PHASE=data \
+  TINYBIRD_RESTORE_TOKEN=... BASELINE_FILE=./openstatus-baseline.json \
+    RUN_ID=20261015a PHASE=data \
     bash utils/check-openstatus-restore-drill.sh
 
 PHASE=storage validates labels, restored Longhorn volumes, PVC bindings, and
 the read-only filesystem inventory. PHASE=data additionally queries the
-isolated libSQL and Tinybird instances and verifies the workflows image can
-read its restored tree. Data deployments must have been explicitly scaled up
-after the storage phase passed. The token is never printed.
+isolated libSQL and Tinybird instances, compares exact counts/state with the
+recorded pre-backup baseline, and verifies the workflows image can read its
+restored tree. An initialized-empty Tinybird baseline is valid; an
+uninitialized datasource is not. Data deployments must have been explicitly
+scaled up after the storage phase passed. The token is never printed.
 EOF
 }
 
@@ -130,6 +135,10 @@ fi
   echo "restore check: TINYBIRD_RESTORE_TOKEN is required for PHASE=data" >&2
   exit 2
 }
+[[ -r "$baseline_file" ]] || {
+  echo "restore check: BASELINE_FILE is required and must be readable for PHASE=data" >&2
+  exit 2
+}
 
 for deployment in restore-libsql restore-tinybird restore-workflows-reader; do
   deployment_json="$(kubectl -n "$restore_namespace" get deployment "$deployment" -o json)"
@@ -195,37 +204,69 @@ libsql_response="$(curl -fsS http://127.0.0.1:18081/v2/pipeline \
 jq -e '
   .results[0].type == "ok" and
   .results[0].response.result.rows_written == 0 and
-  (.results[0].response.result.rows[0] | length) == 4 and
-  all(.results[0].response.result.rows[0][]; (.value | tonumber) > 0)
+  (.results[0].response.result.rows[0] | length) == 4
 ' <<<"$libsql_response" >/dev/null || {
-  echo "restore check: libSQL read did not find workspace, monitor, private-location, and assignment rows" >&2
+  echo "restore check: libSQL count query failed" >&2
   exit 1
 }
 
-tinybird_sql='SELECT count() AS result_count, uniqExact(timestamp) AS distinct_intervals, min(timestamp) AS first_timestamp, max(timestamp) AS last_timestamp, uniqExact(monitorId) AS monitors, uniqExact(region) AS regions FROM ping_response__v8'
-tinybird_response="$(curl -fsS -G http://127.0.0.1:17181/v0/sql \
+tinybird_sql='SELECT count() AS result_count, uniqExact(cronTimestamp) AS distinct_intervals, min(cronTimestamp) AS first_timestamp, max(cronTimestamp) AS last_timestamp, uniqExact(monitorId) AS monitors, uniqExact(region) AS regions FROM ping_response__v8'
+tinybird_http_code="$(curl -sS -G http://127.0.0.1:17181/v0/sql \
   -H "@$check_tmp_dir/tinybird-auth-header" \
-  --data-urlencode "q=$tinybird_sql")"
-jq -e '
-  (.data | length) == 1 and
-  (.data[0].result_count | tonumber) > 0 and
-  (.data[0].distinct_intervals | tonumber) > 0 and
-  (.data[0].monitors | tonumber) > 0 and
-  (.data[0].regions | tonumber) > 0
-' <<<"$tinybird_response" >/dev/null || {
-  echo "restore check: Tinybird read did not find stored OpenStatus response rows" >&2
-  exit 1
-}
+  --data-urlencode "q=$tinybird_sql" \
+  -o "$check_tmp_dir/tinybird-response.json" -w '%{http_code}')"
+tinybird_state="uninitialized"
+tinybird_rows=0
+tinybird_intervals=0
+tinybird_monitors=0
+tinybird_regions=0
+if [[ "$tinybird_http_code" == "200" ]] && jq -e '(.data | length) == 1' "$check_tmp_dir/tinybird-response.json" >/dev/null; then
+  tinybird_rows="$(jq -r '.data[0].result_count | tonumber' "$check_tmp_dir/tinybird-response.json")"
+  tinybird_intervals="$(jq -r '.data[0].distinct_intervals | tonumber' "$check_tmp_dir/tinybird-response.json")"
+  tinybird_monitors="$(jq -r '.data[0].monitors | tonumber' "$check_tmp_dir/tinybird-response.json")"
+  tinybird_regions="$(jq -r '.data[0].regions | tonumber' "$check_tmp_dir/tinybird-response.json")"
+  if (( tinybird_rows == 0 )); then
+    tinybird_state="initialized-empty"
+  else
+    tinybird_state="ingested"
+  fi
+fi
+
+actual_file="$check_tmp_dir/restored-actual.json"
+jq -n \
+  --argjson workspaces "$(jq -r '.results[0].response.result.rows[0][0].value | tonumber' <<<"$libsql_response")" \
+  --argjson monitors "$(jq -r '.results[0].response.result.rows[0][1].value | tonumber' <<<"$libsql_response")" \
+  --argjson private_locations "$(jq -r '.results[0].response.result.rows[0][2].value | tonumber' <<<"$libsql_response")" \
+  --argjson assignments "$(jq -r '.results[0].response.result.rows[0][3].value | tonumber' <<<"$libsql_response")" \
+  --arg tinybird_state "$tinybird_state" \
+  --argjson tinybird_rows "$tinybird_rows" \
+  --argjson tinybird_intervals "$tinybird_intervals" \
+  --argjson tinybird_monitors "$tinybird_monitors" \
+  --argjson tinybird_regions "$tinybird_regions" '
+  {
+    schema_version: 1,
+    libsql: {
+      workspaces: $workspaces,
+      monitors: $monitors,
+      private_locations: $private_locations,
+      assignments: $assignments
+    },
+    tinybird: {
+      state: $tinybird_state,
+      rows: $tinybird_rows,
+      intervals: $tinybird_intervals,
+      monitors: $tinybird_monitors,
+      regions: $tinybird_regions
+    }
+  }
+' >"$actual_file"
+bash "$script_dir/validate-openstatus-restore-baseline.sh" "$baseline_file" "$actual_file"
 
 printf 'LIBSQL\tworkspaces=%s\tmonitors=%s\tprivate_locations=%s\tassignments=%s\trows_written=0\n' \
   "$(jq -r '.results[0].response.result.rows[0][0].value' <<<"$libsql_response")" \
   "$(jq -r '.results[0].response.result.rows[0][1].value' <<<"$libsql_response")" \
   "$(jq -r '.results[0].response.result.rows[0][2].value' <<<"$libsql_response")" \
   "$(jq -r '.results[0].response.result.rows[0][3].value' <<<"$libsql_response")"
-jq -r '.data[0] | ["TINYBIRD", "rows=" + (.result_count | tostring),
-  "intervals=" + (.distinct_intervals | tostring),
-  "first=" + (.first_timestamp | tostring),
-  "last=" + (.last_timestamp | tostring),
-  "monitors=" + (.monitors | tostring),
-  "regions=" + (.regions | tostring)] | @tsv' <<<"$tinybird_response"
-echo "restore check: data phase passed; libSQL and Tinybird were queried read-only"
+printf 'TINYBIRD\tstate=%s\trows=%s\tintervals=%s\tmonitors=%s\tregions=%s\n' \
+  "$tinybird_state" "$tinybird_rows" "$tinybird_intervals" "$tinybird_monitors" "$tinybird_regions"
+echo "restore check: data phase passed; read-only results exactly match the recorded baseline"

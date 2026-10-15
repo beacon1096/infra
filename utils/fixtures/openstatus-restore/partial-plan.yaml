@@ -1,0 +1,139 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openstatus-restore-fixture
+  labels:
+    openstatus.beaco.works/restore-run: fixture
+---
+apiVersion: longhorn.io/v1beta2
+kind: Volume
+metadata:
+  name: osr-fixture-libsql
+  namespace: storage
+  labels:
+    openstatus.beaco.works/restore-run: fixture
+spec:
+  fromBackup: s3://fixture/libsql
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: osr-fixture-libsql
+  labels:
+    openstatus.beaco.works/restore-run: fixture
+spec:
+  accessModes: [ReadWriteOnce]
+  capacity:
+    storage: 1Gi
+  claimRef:
+    namespace: openstatus-restore-fixture
+    name: restore-libsql-data
+  csi:
+    driver: driver.longhorn.io
+    volumeHandle: osr-fixture-libsql
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: longhorn
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: restore-libsql-data
+  namespace: openstatus-restore-fixture
+  labels:
+    openstatus.beaco.works/restore-run: fixture
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: longhorn
+  volumeName: osr-fixture-libsql
+---
+apiVersion: longhorn.io/v1beta2
+kind: Volume
+metadata:
+  name: osr-fixture-tinybird
+  namespace: storage
+  labels:
+    openstatus.beaco.works/restore-run: fixture
+spec:
+  fromBackup: s3://fixture/tinybird
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: osr-fixture-tinybird
+  labels:
+    openstatus.beaco.works/restore-run: fixture
+spec:
+  accessModes: [ReadWriteOnce]
+  capacity:
+    storage: 1Gi
+  claimRef:
+    namespace: openstatus-restore-fixture
+    name: restore-tinybird-data
+  csi:
+    driver: driver.longhorn.io
+    volumeHandle: osr-fixture-tinybird
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: longhorn
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: restore-tinybird-data
+  namespace: openstatus-restore-fixture
+  labels:
+    openstatus.beaco.works/restore-run: fixture
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: longhorn
+  volumeName: osr-fixture-tinybird
+---
+apiVersion: longhorn.io/v1beta2
+kind: Volume
+metadata:
+  name: osr-fixture-workflows
+  namespace: storage
+  labels:
+    openstatus.beaco.works/restore-run: fixture
+spec:
+  fromBackup: s3://fixture/workflows
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: osr-fixture-workflows
+  labels:
+    openstatus.beaco.works/restore-run: fixture
+spec:
+  accessModes: [ReadWriteOnce]
+  capacity:
+    storage: 1Gi
+  claimRef:
+    namespace: openstatus-restore-fixture
+    name: restore-workflows-data
+  csi:
+    driver: driver.longhorn.io
+    volumeHandle: osr-fixture-workflows
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: longhorn
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: restore-workflows-data
+  namespace: openstatus-restore-fixture
+  labels:
+    openstatus.beaco.works/restore-run: fixture
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: longhorn
+  volumeName: osr-fixture-workflows

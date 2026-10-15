@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "libsql": {"workspaces": 1, "monitors": 1, "private_locations": 1, "assignments": 1},
+  "tinybird": {"state": "initialized-empty", "rows": 0, "intervals": 0, "monitors": 0, "regions": 0}
+}

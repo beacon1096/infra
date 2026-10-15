@@ -5,6 +5,7 @@ run_id="${RUN_ID:-}"
 openstatus_namespace="${OPENSTATUS_NAMESPACE:-monitoring}"
 longhorn_namespace="${LONGHORN_NAMESPACE:-storage}"
 max_age_hours="${MAX_BACKUP_AGE_HOURS:-26}"
+baseline_file="${BASELINE_FILE:-}"
 restore_namespace="openstatus-restore-${run_id}"
 restore_label="openstatus.beaco.works/restore-run"
 inspector_image="mirror.gcr.io/library/postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873"
@@ -14,13 +15,15 @@ usage() {
 Render (do not apply) an isolated OpenStatus Longhorn restore drill.
 
 Usage:
-  RUN_ID=20261015a [MAX_BACKUP_AGE_HOURS=26] \
+  RUN_ID=20261015a BASELINE_FILE=./openstatus-baseline.json \
+    [MAX_BACKUP_AGE_HOURS=26] \
     bash utils/render-openstatus-restore-drill.sh > restore.yaml
 
 The renderer is read-only. It refuses incomplete/stale backups, resolves the
-three source PVCs to their latest Longhorn Backup objects, and pins the three
-validation images to the digests currently running in the source deployment.
-Applying the output creates storage and therefore requires explicit approval.
+three source PVCs to their latest Longhorn Backup objects, requires each
+snapshot to be newer than the read-only pre-backup baseline, and pins the
+three validation images to the digests currently running in the source
+deployment. Applying the output creates storage and requires approval.
 EOF
 }
 
@@ -39,12 +42,26 @@ fi
   exit 2
 }
 
-for command in kubectl jq date; do
+[[ -r "$baseline_file" ]] || {
+  echo "restore renderer: BASELINE_FILE is required and must be readable" >&2
+  exit 2
+}
+for command in kubectl jq date sha256sum awk; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "restore renderer: $command is required" >&2
     exit 2
   }
 done
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+bash "$script_dir/validate-openstatus-restore-baseline.sh" "$baseline_file" "$baseline_file" >/dev/null
+baseline_captured_at="$(jq -r '.captured_at // empty' "$baseline_file")"
+[[ -n "$baseline_captured_at" ]] || {
+  echo "restore renderer: baseline lacks captured_at" >&2
+  exit 1
+}
+baseline_epoch="$(date -u -d "$baseline_captured_at" +%s)"
+baseline_sha256="$(sha256sum "$baseline_file" | awk '{print $1}')"
 
 if kubectl get namespace "$restore_namespace" >/dev/null 2>&1; then
   echo "restore renderer: namespace $restore_namespace already exists; choose a new RUN_ID" >&2
@@ -143,6 +160,10 @@ for component in "${components[@]}"; do
     echo "restore renderer: Backup/$backup for $component is stale ($((age_seconds / 3600))h > ${max_age_hours}h)" >&2
     exit 1
   fi
+  if (( backup_epoch < baseline_epoch )); then
+    echo "restore renderer: Backup/$backup predates the recorded baseline ($snapshot_time < $baseline_captured_at)" >&2
+    exit 1
+  fi
 
   backup_names[$component]="$backup"
   backup_times[$component]="$snapshot_time"
@@ -211,6 +232,7 @@ metadata:
     openstatus.beaco.works/storage-approval-required: "true"
     openstatus.beaco.works/logical-storage-gib: "${logical_gib}"
     openstatus.beaco.works/minimum-schedulable-gib: "${required_gib}"
+    openstatus.beaco.works/baseline-sha256: "${baseline_sha256}"
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -236,6 +258,8 @@ data:
   logicalStorageGiB: "${logical_gib}"
   minimumSchedulableGiB: "${required_gib}"
   observedEligibleAvailableGiB: "${eligible_available_gib}"
+  baselineCapturedAt: "${baseline_captured_at}"
+  baselineSha256: "${baseline_sha256}"
   libsqlBackup: "${backup_names[libsql]}"
   libsqlSnapshotCreatedAt: "${backup_times[libsql]}"
   tinybirdBackup: "${backup_names[tinybird]}"
