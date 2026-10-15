@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-10-15T13:00:00Z",
+  "upstream_revision": "ef7691ad18971c14b9bd1a306b4bd0cf20b6e411",
+  "libsql": {"workspaces": 0, "monitors": 0, "private_locations": 0, "assignments": 0},
+  "tinybird": {"state": "uninitialized", "rows": 0, "intervals": 0, "monitors": 0, "regions": 0}
+}

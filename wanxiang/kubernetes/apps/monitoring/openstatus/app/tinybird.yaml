@@ -19,7 +19,9 @@ spec:
     spec:
       containers:
         - name: tinybird
-          image: 172.16.87.51:5000/tinybirdco/tinybird-local:latest
+          # The embedded CLI reports a placeholder version, so pin the exact
+          # runtime digest used to validate the ef7691ad datasource bootstrap.
+          image: 172.16.87.51:5000/tinybirdco/tinybird-local:latest@sha256:107829e9143df641e81c7339b0fd7bf9ed97bcea8841f1bb7e9b2fc966049b20
           imagePullPolicy: IfNotPresent
           env:
             - name: COMPATIBILITY_MODE

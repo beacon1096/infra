@@ -34,7 +34,13 @@ jobs:
             utils/cleanup-openstatus-restore-drill.sh
             utils/render-openstatus-restore-drill.sh
             utils/capture-openstatus-restore-baseline.sh
+            utils/check-openstatus-baseline-backup.sh
+            utils/classify-openstatus-tinybird-query.sh
+            utils/initialize-openstatus-tinybird.sh
+            utils/quiesce-openstatus-writers.sh
+            utils/render-openstatus-baseline-backup.sh
             utils/test-openstatus-acceptance-evidence.sh
+            utils/test-openstatus-initialization-backup.sh
             utils/test-openstatus-restore-baseline.sh
             utils/test-openstatus-restore-cleanup.sh
             utils/validate-openstatus-acceptance-evidence.sh
@@ -44,6 +50,7 @@ jobs:
             bash -n "$script"
           done
           bash utils/test-openstatus-acceptance-evidence.sh
+          nix shell nixpkgs#kubectl --command bash utils/test-openstatus-initialization-backup.sh
           bash utils/test-openstatus-restore-baseline.sh
           nix shell nixpkgs#kubectl --command bash utils/test-openstatus-restore-cleanup.sh
       - name: Build OCI images

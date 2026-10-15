@@ -3,6 +3,7 @@ set -euo pipefail
 
 openstatus_namespace="${OPENSTATUS_NAMESPACE:-monitoring}"
 upstream_revision="${OPENSTATUS_UPSTREAM_REVISION:-ef7691ad18971c14b9bd1a306b4bd0cf20b6e411}"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat >&2 <<'EOF'
@@ -93,16 +94,16 @@ tinybird_rows=0
 tinybird_intervals=0
 tinybird_monitors=0
 tinybird_regions=0
-if [[ "$tinybird_http_code" == "200" ]] && jq -e '(.data | length) == 1' "$capture_tmp_dir/tinybird-response.json" >/dev/null; then
+set +e
+tinybird_state="$(bash "$script_dir/classify-openstatus-tinybird-query.sh" \
+  "$tinybird_http_code" "$capture_tmp_dir/tinybird-response.json")"
+tinybird_state_rc=$?
+set -e
+if [[ "$tinybird_state_rc" == "0" ]]; then
   tinybird_rows="$(jq -r '.data[0].result_count | tonumber' "$capture_tmp_dir/tinybird-response.json")"
   tinybird_intervals="$(jq -r '.data[0].distinct_intervals | tonumber' "$capture_tmp_dir/tinybird-response.json")"
   tinybird_monitors="$(jq -r '.data[0].monitors | tonumber' "$capture_tmp_dir/tinybird-response.json")"
   tinybird_regions="$(jq -r '.data[0].regions | tonumber' "$capture_tmp_dir/tinybird-response.json")"
-  if (( tinybird_rows == 0 )); then
-    tinybird_state="initialized-empty"
-  else
-    tinybird_state="ingested"
-  fi
 fi
 
 jq -n \
@@ -137,7 +138,18 @@ jq -n \
   }
 '
 
-if [[ "$tinybird_state" == "uninitialized" ]]; then
-  echo "baseline capture: ping_response__v8 is not initialized; do not approve restore or ingest" >&2
-  exit 1
-fi
+case "$tinybird_state" in
+  initialized-empty | ingested) ;;
+  uninitialized)
+    echo "baseline capture: ping_response__v8 is uninitialized" >&2
+    exit 4
+    ;;
+  authentication-failed)
+    echo "baseline capture: Tinybird read authentication failed" >&2
+    exit 3
+    ;;
+  *)
+    echo "baseline capture: Tinybird query failed for a reason other than an absent datasource" >&2
+    exit 1
+    ;;
+esac
