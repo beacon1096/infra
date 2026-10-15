@@ -12,7 +12,7 @@
     "source_paths": ["flake.nix", "hosts/personal/common/nixos-configuration.nix"],
     "diff_base_sha": "0000000000000000000000000000000000000000",
     "changed_paths_sha256": "sha256:5857c3c97d4e9970daf5c41d10e5bc89d3de207d04e792eb1cba92df22b4fdee",
-    "scope_sha256": "sha256:371cd925a664e46c0a8000fd849730f05205ca011503e5ee8d9dd0657ef9206f"
+    "scope_sha256": "sha256:1e68e0ea34fe7a447a1f41fd371cddc9c955cafea7e326758e6391d8f60ceb79"
   },
   "hosts": [
     {
@@ -32,11 +32,12 @@
         }
       ],
       "staged_delivery": {
-        "mechanism": "comin-service-hold",
+        "mechanism": "comin-persistent-marker-hold",
         "service": "comin.service",
         "known_good_revision": "1111111111111111111111111111111111111111",
         "verified_at": "2026-10-15T22:25:00Z",
-        "state": "active"
+        "state": "active",
+        "hold_capability": { "marker_path": "/var/lib/comin/rollout-hold", "unit_condition": "ConditionPathExists=!/var/lib/comin/rollout-hold", "support_revision": "1111111111111111111111111111111111111111", "candidate_source_revision": "2222222222222222222222222222222222222222", "verified_at": "2026-10-15T22:25:00Z", "ready": true }
       }
     },
     {
@@ -56,11 +57,12 @@
         }
       ],
       "staged_delivery": {
-        "mechanism": "comin-service-hold",
+        "mechanism": "comin-persistent-marker-hold",
         "service": "comin.service",
         "known_good_revision": "1111111111111111111111111111111111111111",
         "verified_at": "2026-10-15T22:25:00Z",
-        "state": "active"
+        "state": "active",
+        "hold_capability": { "marker_path": "/var/lib/comin/rollout-hold", "unit_condition": "ConditionPathExists=!/var/lib/comin/rollout-hold", "support_revision": "1111111111111111111111111111111111111111", "candidate_source_revision": "2222222222222222222222222222222222222222", "verified_at": "2026-10-15T22:25:00Z", "ready": true }
       }
     },
     {
@@ -80,11 +82,12 @@
         }
       ],
       "staged_delivery": {
-        "mechanism": "comin-service-hold",
+        "mechanism": "comin-persistent-marker-hold",
         "service": "comin.service",
         "known_good_revision": "1111111111111111111111111111111111111111",
         "verified_at": "2026-10-15T22:25:00Z",
-        "state": "active"
+        "state": "active",
+        "hold_capability": { "marker_path": "/var/lib/comin/rollout-hold", "unit_condition": "ConditionPathExists=!/var/lib/comin/rollout-hold", "support_revision": "1111111111111111111111111111111111111111", "candidate_source_revision": "2222222222222222222222222222222222222222", "verified_at": "2026-10-15T22:25:00Z", "ready": true }
       }
     },
     {
@@ -104,11 +107,12 @@
         }
       ],
       "staged_delivery": {
-        "mechanism": "comin-service-hold",
+        "mechanism": "comin-persistent-marker-hold",
         "service": "comin.service",
         "known_good_revision": "1111111111111111111111111111111111111111",
         "verified_at": "2026-10-15T22:25:00Z",
-        "state": "active"
+        "state": "active",
+        "hold_capability": { "marker_path": "/var/lib/comin/rollout-hold", "unit_condition": "ConditionPathExists=!/var/lib/comin/rollout-hold", "support_revision": "1111111111111111111111111111111111111111", "candidate_source_revision": "2222222222222222222222222222222222222222", "verified_at": "2026-10-15T22:25:00Z", "ready": true }
       }
     },
     {
@@ -128,11 +132,12 @@
         }
       ],
       "staged_delivery": {
-        "mechanism": "comin-service-hold",
+        "mechanism": "comin-persistent-marker-hold",
         "service": "comin.service",
         "known_good_revision": "1111111111111111111111111111111111111111",
         "verified_at": "2026-10-15T22:25:00Z",
-        "state": "active"
+        "state": "active",
+        "hold_capability": { "marker_path": "/var/lib/comin/rollout-hold", "unit_condition": "ConditionPathExists=!/var/lib/comin/rollout-hold", "support_revision": "1111111111111111111111111111111111111111", "candidate_source_revision": "2222222222222222222222222222222222222222", "verified_at": "2026-10-15T22:25:00Z", "ready": true }
       }
     }
   ],

@@ -54,10 +54,13 @@ function expectBlocked(name, plan, inventoryValue, code) {
   assert.equal(result.output.recovery.length, 5);
   assert.equal(result.output.rollout.stages[0].name, "pre-release-hold");
   assert.deepEqual(result.output.rollout.stages[0].held_hosts, ["microserver-gen10plus", "msi-claw", "surface-pro-8", "thinkbook-plus-hybrid"]);
+  assert.equal(result.output.rollout.stages[0].actions.length, 12);
+  assert.deepEqual(result.output.rollout.stages[0].actions.slice(0, 3).map(({ action }) => action), ["install-persistent-hold", "stop-service", "verify-persistent-hold"]);
   assert(result.output.rollout.stages[0].expected_revisions.every(({ prod_revision }) => prod_revision === healthyPlan.known_good_sha));
   assert.deepEqual(result.output.rollout.stages[1].expected_revisions.find(({ host }) => host === "m920x"), { host: "m920x", prod_revision: null, source_revision: healthyPlan.candidate_sha, state: "awaiting-exact-promotion-proof" });
   assert(result.output.rollout.stages[1].expected_revisions.filter(({ host }) => host !== "m920x").every(({ prod_revision }) => prod_revision === healthyPlan.known_good_sha));
-  assert.deepEqual(result.output.rollout.stages[2].held_hosts, []);
+  assert.deepEqual(result.output.rollout.stages[2].held_hosts, ["microserver-gen10plus", "msi-claw", "surface-pro-8", "thinkbook-plus-hybrid"]);
+  assert.deepEqual(result.output.rollout.stages[2].actions, []);
 }
 
 {
@@ -68,6 +71,84 @@ function expectBlocked(name, plan, inventoryValue, code) {
   const result = run(plan);
   assert.equal(result.status, 0);
   assert.deepEqual(result.output.rollout.stages[1].expected_revisions.find(({ host }) => host === "m920x"), { host: "m920x", prod_revision: plan.rollout.candidate_prod_sha, source_revision: plan.candidate_sha, state: "candidate-promotion" });
+  const remaining = result.output.rollout.stages[2];
+  assert.deepEqual(remaining.actions.slice(0, 3).map(({ action }) => action), ["remove-persistent-hold", "start-service", "verify-promotion"]);
+  for (const action of remaining.actions) {
+    assert.equal(action.expected_prod_revision, plan.rollout.candidate_prod_sha);
+    assert.equal(action.expected_source_revision, plan.candidate_sha);
+    if (action.action === "start-service") assert.equal(action.expected_revision, plan.rollout.candidate_prod_sha);
+  }
+}
+
+{
+  const plan = clone(healthyPlan);
+  plan.rollout.candidate_prod_sha = "3333333333333333333333333333333333333333";
+  plan.rollout.promotion_source_sha = plan.candidate_sha;
+  plan.rollout.promotion_observed_at = "2026-10-15T22:34:30Z";
+  const result = run(plan);
+  assert.equal(result.status, 0);
+
+  let prodRevision = plan.known_good_sha;
+  const hosts = new Map(result.output.impact.hosts.map((host) => [host, {
+    active: true,
+    hold_marker: false,
+    hold_supported: true,
+    prod_revision: plan.known_good_sha,
+  }]));
+  const activate = (state) => {
+    if (state.hold_supported && state.hold_marker) state.active = false;
+    else {
+      state.active = true;
+      state.prod_revision = prodRevision;
+    }
+  };
+  const applyAction = (action, { failInstall = false } = {}) => {
+    const state = hosts.get(action.host);
+    if (action.action === "install-persistent-hold") {
+      if (failInstall) return false;
+      state.hold_marker = true;
+    } else if (action.action === "stop-service") state.active = false;
+    else if (action.action === "remove-persistent-hold") state.hold_marker = false;
+    else if (action.action === "start-service") activate(state);
+    else if (action.action === "activate-known-good-generation") {
+      state.prod_revision = plan.known_good_sha;
+      activate(state);
+    } else if (action.action === "verify-persistent-hold") {
+      assert.equal(state.hold_marker, true);
+      assert.equal(state.active, false);
+      assert.equal(state.prod_revision, plan.known_good_sha);
+    }
+    return true;
+  };
+
+  const preRelease = result.output.rollout.stages[0];
+  const failedHost = preRelease.held_hosts[0];
+  assert.equal(applyAction(preRelease.actions.find(({ host, action }) => host === failedHost && action === "install-persistent-hold"), { failInstall: true }), false);
+  assert.equal(hosts.get(failedHost).hold_marker, false);
+  assert.equal(prodRevision, plan.known_good_sha, "hold failure must stop before prod advances");
+
+  for (const action of preRelease.actions) applyAction(action);
+  prodRevision = plan.rollout.candidate_prod_sha;
+  for (const host of plan.batches[0].hosts) activate(hosts.get(host));
+  const held = hosts.get(failedHost);
+  activate(held);
+  assert.equal(held.active, false, "persistent marker must block Comin after peer reboot");
+  assert.equal(held.prod_revision, plan.known_good_sha);
+
+  held.prod_revision = plan.known_good_sha;
+  activate(held);
+  assert.equal(held.active, false, "known-good activation must retain the hold");
+
+  const recovering = result.output.recovery.find(({ host }) => host === plan.batches[0].hosts[0]);
+  for (const action of recovering.actions) applyAction(action);
+  assert.equal(hosts.get(recovering.host).active, false, "recovery activation must not restart Comin while prod is candidate");
+  assert.equal(hosts.get(recovering.host).prod_revision, plan.known_good_sha);
+
+  prodRevision = plan.known_good_sha;
+  for (const action of recovering.release_after_prod_restored) applyAction(action);
+  assert.equal(hosts.get(recovering.host).active, true);
+  assert.equal(hosts.get(recovering.host).prod_revision, plan.known_good_sha);
+  assert(preRelease.held_hosts.slice(1).every((host) => hosts.get(host).active === false && hosts.get(host).prod_revision === plan.known_good_sha), "unreleased peers must not advance early");
 }
 
 for (const [name, mutate, code] of [
@@ -163,11 +244,29 @@ for (const [name, mutate, code] of [
 }
 
 {
+  const changedInventory = clone(inventory);
+  changedInventory.hosts[0].staged_delivery.hold_capability.ready = false;
+  expectBlocked("persistent hold prerequisite not deployed", healthyPlan, changedInventory, "persistent-hold-not-ready");
+}
+
+{
+  const changedInventory = clone(inventory);
+  changedInventory.hosts[0].staged_delivery.hold_capability.candidate_source_revision = healthyPlan.base_source_sha;
+  expectBlocked("candidate drops persistent hold support", healthyPlan, changedInventory, "persistent-hold-not-ready");
+}
+
+{
+  const plan = clone(healthyPlan);
+  plan.recovery[0].hold.support_revision = plan.candidate_sha;
+  expectBlocked("recovery generation lacks known-good hold support", plan, inventory, "recovery-hold-mismatch");
+}
+
+{
   const plan = clone(healthyPlan);
   plan.rollout.control_channel_status = "unavailable";
   const result = expectBlocked("control channel failure", plan, inventory, "control-channel-unavailable");
   assert(result.output.rollout.stages.every(({ actions }) => actions.length === 0));
-  assert(result.output.recovery.every(({ available, stop_service, generation }) => available === true && stop_service.args.join(" ") === "stop comin.service" && generation.executable.startsWith(generation.store_path)));
+  assert(result.output.recovery.every(({ available, hold, actions, stop_service, generation }) => available === true && hold.marker_path === "/var/lib/comin/rollout-hold" && actions[0].action === "install-persistent-hold" && stop_service.args.join(" ") === "stop comin.service" && generation.executable.startsWith(generation.store_path)));
 }
 
-process.stdout.write("observed rollout planner: 26 scenarios passed\n");
+process.stdout.write("observed rollout planner: 35 scenarios passed\n");

@@ -11,6 +11,11 @@ const SAFE_DOMAINS = new Set(["application", "documentation", "observability"]);
 const SEPARATE_REVIEW_DOMAINS = new Set(["authentication", "control-plane", "network", "storage"]);
 const KNOWN_DOMAINS = new Set([...SAFE_DOMAINS, ...SEPARATE_REVIEW_DOMAINS, "unclassified"]);
 const INDEPENDENT_FROM = ["comin", "forgejo", "n8n", "production-network"];
+const HOLD_MARKER = "/var/lib/comin/rollout-hold";
+const HOLD_CONDITION = `ConditionPathExists=!${HOLD_MARKER}`;
+const SYSTEMCTL = "/run/current-system/sw/bin/systemctl";
+const INSTALL = "/run/current-system/sw/bin/install";
+const RM = "/run/current-system/sw/bin/rm";
 
 function usage() {
   return "usage: node utils/plan-observed-rollout.mjs --plan PLAN.json --inventory INVENTORY.json [--output RESULT.json]";
@@ -57,6 +62,78 @@ function digest(value) {
 
 function diagnostic(code, message, details = {}) {
   return { code, message, ...details };
+}
+
+function installHoldAction(host) {
+  return {
+    action: "install-persistent-hold",
+    host,
+    marker_path: HOLD_MARKER,
+    command: { executable: INSTALL, args: ["-D", "-m", "0600", "/dev/null", HOLD_MARKER] },
+    requires_existing_human_approval: true,
+  };
+}
+
+function stopServiceAction(host) {
+  return {
+    action: "stop-service",
+    host,
+    service: "comin.service",
+    command: { executable: SYSTEMCTL, args: ["stop", "comin.service"] },
+    requires_existing_human_approval: true,
+  };
+}
+
+function verifyHoldAction(host, knownGoodSha) {
+  return {
+    action: "verify-persistent-hold",
+    host,
+    marker_path: HOLD_MARKER,
+    unit_condition: HOLD_CONDITION,
+    expected: { service_state: "inactive", prod_revision: knownGoodSha },
+    checks: [
+      { command: { executable: "/run/current-system/sw/bin/test", args: ["-e", HOLD_MARKER] }, expected_exit: 0 },
+      { command: { executable: SYSTEMCTL, args: ["show", "--property=ActiveState", "--value", "comin.service"] }, expected_stdout: "inactive" },
+      { command: { executable: SYSTEMCTL, args: ["cat", "comin.service"] }, expected_contains: HOLD_CONDITION },
+    ],
+    requires_existing_human_approval: true,
+  };
+}
+
+function releaseHoldActions(host, prodRevision, sourceRevision) {
+  return [
+    {
+      action: "remove-persistent-hold",
+      host,
+      marker_path: HOLD_MARKER,
+      command: { executable: RM, args: ["--", HOLD_MARKER] },
+      expected_prod_revision: prodRevision,
+      expected_source_revision: sourceRevision,
+      requires_existing_human_approval: true,
+    },
+    {
+      action: "start-service",
+      host,
+      service: "comin.service",
+      command: { executable: SYSTEMCTL, args: ["start", "comin.service"] },
+      expected_revision: prodRevision,
+      expected_prod_revision: prodRevision,
+      expected_source_revision: sourceRevision,
+      requires_existing_human_approval: true,
+    },
+    {
+      action: "verify-promotion",
+      host,
+      service: "comin.service",
+      expected_prod_revision: prodRevision,
+      expected_source_revision: sourceRevision,
+      checks: [
+        { source: "prometheus/comin", metric: "comin_deployment_info", label: "commit_id", expected: prodRevision },
+        ...(sourceRevision === null ? [] : [{ source: "forgejo/promotion-commit", field: "Source-Commit", expected: sourceRevision }]),
+      ],
+      requires_existing_human_approval: true,
+    },
+  ];
 }
 
 function isObject(value) {
@@ -175,10 +252,15 @@ function evaluate(plan, inventory) {
       validateTime(channel.verified_at, evaluatedAt, maximumRecoveryAge, maximumFutureSkew, { invalid: "invalid-recovery-channel-time", future: "future-recovery-channel", stale: "stale-recovery-channel" }, { host: host.name, channel: channel.id ?? null }, blockers);
     }
     const delivery = host.staged_delivery ?? {};
-    const deliveryFields = ["mechanism", "service", "known_good_revision", "verified_at", "state"];
+    const deliveryFields = ["mechanism", "service", "known_good_revision", "verified_at", "state", "hold_capability"];
     checkShape(delivery, `${where}.staged_delivery`, deliveryFields, deliveryFields, blockers);
-    if (delivery.mechanism !== "comin-service-hold" || delivery.service !== "comin.service" || delivery.known_good_revision !== plan?.known_good_sha || delivery.state !== "active") blockers.push(diagnostic("staged-delivery-not-ready", "host must have active Comin at the known-good revision before an approved service hold", { host: host.name }));
+    if (delivery.mechanism !== "comin-persistent-marker-hold" || delivery.service !== "comin.service" || delivery.known_good_revision !== plan?.known_good_sha || delivery.state !== "active") blockers.push(diagnostic("staged-delivery-not-ready", "host must have active Comin at the known-good revision before an approved persistent hold", { host: host.name }));
     validateTime(delivery.verified_at, evaluatedAt, maximumRecoveryAge, maximumFutureSkew, { invalid: "invalid-delivery-time", future: "future-delivery", stale: "stale-delivery" }, { host: host.name }, blockers);
+    const holdCapability = delivery.hold_capability ?? {};
+    const holdFields = ["marker_path", "unit_condition", "support_revision", "candidate_source_revision", "verified_at", "ready"];
+    checkShape(holdCapability, `${where}.staged_delivery.hold_capability`, holdFields, holdFields, blockers);
+    if (holdCapability.marker_path !== HOLD_MARKER || holdCapability.unit_condition !== HOLD_CONDITION || holdCapability.support_revision !== plan?.known_good_sha || holdCapability.candidate_source_revision !== plan?.candidate_sha || holdCapability.ready !== true) blockers.push(diagnostic("persistent-hold-not-ready", "known-good and the evaluated candidate must both include the fixed persistent Comin hold condition", { host: host.name, marker_path: holdCapability.marker_path ?? null, support_revision: holdCapability.support_revision ?? null, candidate_source_revision: holdCapability.candidate_source_revision ?? null }));
+    validateTime(holdCapability.verified_at, evaluatedAt, maximumRecoveryAge, maximumFutureSkew, { invalid: "invalid-hold-time", future: "future-hold", stale: "stale-hold" }, { host: host.name }, blockers);
   }
 
   const pathRules = Array.isArray(inventory?.path_rules) ? inventory.path_rules : [];
@@ -278,8 +360,10 @@ function evaluate(plan, inventory) {
   const recoveryEntries = Array.isArray(plan?.recovery) ? plan.recovery : [];
   if (!Array.isArray(plan?.recovery)) blockers.push(diagnostic("invalid-recovery", "recovery must be an array"));
   for (const [index, recovery] of recoveryEntries.entries()) {
-    const fields = ["host", "known_good_sha", "channel_id", "stop_service", "generation", "verified_at", "available"];
+    const fields = ["host", "known_good_sha", "channel_id", "hold", "stop_service", "generation", "verified_at", "available"];
     checkShape(recovery, `plan.recovery[${index}]`, fields, fields, blockers);
+    const holdFields = ["marker_path", "unit_condition", "support_revision", "candidate_source_revision"];
+    checkShape(recovery.hold ?? {}, `plan.recovery[${index}].hold`, holdFields, holdFields, blockers);
     const stopFields = ["executable", "args"];
     checkShape(recovery.stop_service ?? {}, `plan.recovery[${index}].stop_service`, stopFields, stopFields, blockers);
     const generationFields = ["number", "revision", "store_path", "executable", "args"];
@@ -295,9 +379,11 @@ function evaluate(plan, inventory) {
     const host = hostsByName.get(hostName);
     const channel = host?.recovery_channels?.find((candidate) => candidate.id === recovery.channel_id);
     const generation = recovery.generation ?? {};
+    const hold = recovery.hold ?? {};
     if (recovery.known_good_sha !== plan.known_good_sha || generation.revision !== plan.known_good_sha) blockers.push(diagnostic("recovery-revision-mismatch", "recovery and local generation must bind the plan known-good revision", { host: hostName }));
     if (!channel) blockers.push(diagnostic("unknown-recovery-channel", "recovery references an unreviewed channel", { host: hostName, channel: recovery.channel_id ?? null }));
-    if (recovery.stop_service?.executable !== "/run/current-system/sw/bin/systemctl" || JSON.stringify(recovery.stop_service?.args) !== JSON.stringify(["stop", "comin.service"])) blockers.push(diagnostic("invalid-recovery-stop", "host-local recovery must stop Comin before switching the known-good generation", { host: hostName }));
+    if (hold.marker_path !== HOLD_MARKER || hold.unit_condition !== HOLD_CONDITION || hold.support_revision !== plan.known_good_sha || hold.candidate_source_revision !== plan.candidate_sha || hold.support_revision !== host?.staged_delivery?.hold_capability?.support_revision || hold.candidate_source_revision !== host?.staged_delivery?.hold_capability?.candidate_source_revision) blockers.push(diagnostic("recovery-hold-mismatch", "recovery must bind the verified persistent hold capability in both the known-good generation and candidate source", { host: hostName }));
+    if (recovery.stop_service?.executable !== SYSTEMCTL || JSON.stringify(recovery.stop_service?.args) !== JSON.stringify(["stop", "comin.service"])) blockers.push(diagnostic("invalid-recovery-stop", "host-local recovery must stop Comin after installing the persistent hold and before switching the known-good generation", { host: hostName }));
     if (recovery.available !== true || !Number.isInteger(generation.number) || generation.number <= 0 || !STORE_PATH_RE.test(generation.store_path ?? "")) blockers.push(diagnostic("invalid-local-generation", "recovery needs an available positive local generation and exact Nix store path", { host: hostName }));
     const expectedExecutable = `${generation.store_path}/bin/switch-to-configuration`;
     if (generation.executable !== expectedExecutable || JSON.stringify(generation.args) !== JSON.stringify(["switch"])) blockers.push(diagnostic("invalid-recovery-command", "NixOS recovery must execute switch-to-configuration from the verified local generation", { host: hostName, expected_executable: expectedExecutable }));
@@ -312,7 +398,7 @@ function evaluate(plan, inventory) {
   const rollout = plan?.rollout ?? {};
   const rolloutFields = ["mechanism", "main_branch", "control_channel_status", "candidate_prod_sha", "promotion_source_sha", "promotion_observed_at"];
   checkShape(rollout, "plan.rollout", rolloutFields, rolloutFields, blockers);
-  if (rollout.mechanism !== "comin-service-hold" || rollout.main_branch !== "prod") blockers.push(diagnostic("invalid-rollout-mechanism", "staged rollout must hold non-current Comin services and retain the existing prod release path"));
+  if (rollout.mechanism !== "comin-persistent-marker-hold" || rollout.main_branch !== "prod") blockers.push(diagnostic("invalid-rollout-mechanism", "staged rollout must persistently gate non-current Comin services and retain the existing prod release path"));
   if (rollout.control_channel_status !== "available") blockers.push(diagnostic("control-channel-unavailable", "no release or later Comin batch may advance while the control channel is unavailable"));
   const promotionPending = rollout.candidate_prod_sha === null && rollout.promotion_source_sha === null && rollout.promotion_observed_at === null;
   if (!promotionPending) {
@@ -338,31 +424,32 @@ function evaluate(plan, inventory) {
   stages.push({
     name: "pre-release-hold",
     minimum_observation_seconds: 0,
-    actions: rollout.control_channel_status === "available" ? initiallyHeld.map((host) => ({ action: "stop-service", host, service: "comin.service", requires_existing_human_approval: true })) : [],
+    actions: rollout.control_channel_status === "available" ? initiallyHeld.flatMap((host) => [installHoldAction(host), stopServiceAction(host), verifyHoldAction(host, plan.known_good_sha)]) : [],
     expected_revisions: expectedHosts.map((host) => expectedDeployment(host, false)),
     held_hosts: initiallyHeld,
-    success_conditions: ["held Comin services are inactive", "all hosts still report known-good", "canary Comin remains active"],
+    success_conditions: ["each held host has the persistent marker and verified unit condition", "held Comin services remain inactive through activation and reboot", "all hosts still report known-good", "canary Comin remains active"],
   });
   const advanced = new Set(canaryHosts);
   if (batches[0]) {
     stages.push({
       name: batches[0].name,
       minimum_observation_seconds: batches[0].minimum_observation_seconds,
-      actions: rollout.control_channel_status === "available" ? [{ action: "use-existing-production-release", repository: plan.repository, revision: plan.candidate_sha, branch: "prod", requires_existing_human_approval: true }] : [],
+      actions: rollout.control_channel_status === "available" ? [{ action: "use-existing-production-release", repository: plan.repository, source_revision: plan.candidate_sha, expected_prod_revision: null, branch: "prod", requires_existing_human_approval: true }] : [],
       expected_revisions: expectedHosts.map((host) => expectedDeployment(host, advanced.has(host))),
       held_hosts: expectedHosts.filter((host) => !advanced.has(host)),
       success_conditions: ["canary reports the exact prod promotion whose Source-Commit is the candidate", "required evidence remains healthy for the full observation window", "held hosts remain at known-good"],
     });
   }
   for (const batch of batches.slice(1)) {
-    for (const host of batch.hosts ?? []) advanced.add(host);
+    const canAdvanceBatch = rollout.control_channel_status === "available" && !promotionPending;
+    if (canAdvanceBatch) for (const host of batch.hosts ?? []) advanced.add(host);
     stages.push({
       name: batch.name,
       minimum_observation_seconds: batch.minimum_observation_seconds,
-      actions: rollout.control_channel_status === "available" ? (batch.hosts ?? []).map((host) => ({ action: "start-service", host, service: "comin.service", expected_revision: plan.candidate_sha, requires_existing_human_approval: true })) : [],
+      actions: canAdvanceBatch ? (batch.hosts ?? []).flatMap((host) => releaseHoldActions(host, rollout.candidate_prod_sha, plan.candidate_sha)) : [],
       expected_revisions: expectedHosts.map((host) => expectedDeployment(host, advanced.has(host))),
       held_hosts: expectedHosts.filter((host) => !advanced.has(host)),
-      success_conditions: ["current batch reports the exact verified prod promotion", "required evidence remains healthy for the full observation window", "still-held hosts remain at known-good"],
+      success_conditions: ["current batch reports the exact prod promotion and its verified source identity", "required evidence remains healthy for the full observation window", "still-held hosts retain the marker and remain at known-good"],
     });
   }
 
@@ -381,14 +468,32 @@ function evaluate(plan, inventory) {
     rollout: {
       mechanism: rollout.mechanism ?? null,
       main_branch: rollout.main_branch ?? null,
-      invariant: `all non-canary Comin services are stopped before the existing production release advances prod from ${plan?.known_good_sha ?? "unknown"}; only the current batch is started afterward`,
+      invariant: `all non-canary hosts carry the persistent Comin marker before the existing production release advances prod from ${plan?.known_good_sha ?? "unknown"}; only the current batch removes its marker after exact promotion proof`,
       stages,
       final_completion: { action: "verify-all-services-restored", prod_revision: rollout.candidate_prod_sha ?? null, source_revision: plan?.candidate_sha ?? null, requires_existing_human_approval: true },
-      on_control_failure: "stop; do not start another Comin service; use only the verified host-local stop-and-generation recovery records below",
+      on_control_failure: "stop; do not remove another hold marker or start Comin; use only the verified host-local marker-and-generation recovery records below",
     },
     stop_conditions: stopConditions,
     separate_review_domains: uniq(separateReview),
-    recovery: recoveryEntries.map((entry) => ({ host: entry.host ?? null, known_good_sha: entry.known_good_sha ?? null, channel_id: entry.channel_id ?? null, stop_service: entry.stop_service ?? null, generation: entry.generation ?? null, verified_at: entry.verified_at ?? null, available: entry.available ?? null })),
+    recovery: recoveryEntries.map((entry) => ({
+      host: entry.host ?? null,
+      known_good_sha: entry.known_good_sha ?? null,
+      channel_id: entry.channel_id ?? null,
+      hold: entry.hold ?? null,
+      actions: [installHoldAction(entry.host), stopServiceAction(entry.host), {
+        action: "activate-known-good-generation",
+        host: entry.host ?? null,
+        command: { executable: entry.generation?.executable ?? null, args: entry.generation?.args ?? null },
+        expected_prod_revision: entry.known_good_sha ?? null,
+        expected_service_state: "inactive-by-persistent-hold",
+        requires_existing_human_approval: true,
+      }, verifyHoldAction(entry.host, entry.known_good_sha)],
+      release_after_prod_restored: releaseHoldActions(entry.host, entry.known_good_sha, null),
+      stop_service: entry.stop_service ?? null,
+      generation: entry.generation ?? null,
+      verified_at: entry.verified_at ?? null,
+      available: entry.available ?? null,
+    })),
     blockers,
     notes,
   };

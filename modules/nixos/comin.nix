@@ -45,6 +45,10 @@ in
       type = lib.types.nullOr lib.types.str;
       default = null;
     };
+
+    rolloutHold.enable = lib.mkEnableOption ''
+      the persistent /var/lib/comin/rollout-hold deployment gate
+    '';
   };
 
   config = lib.mkIf cfg.enable {
@@ -70,6 +74,14 @@ in
           branches.testing.name = "";
         }
       ];
+    };
+
+    # This is deliberately inert until both the option is enabled in a
+    # reviewed generation and the root-owned marker exists.  Unlike a plain
+    # `systemctl stop`, the condition is checked again after activation and
+    # boot, before Comin can follow a newer prod revision.
+    systemd.services.comin.unitConfig = lib.mkIf cfg.rolloutHold.enable {
+      ConditionPathExists = "!/var/lib/comin/rollout-hold";
     };
   };
 }
