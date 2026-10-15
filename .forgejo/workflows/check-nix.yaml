@@ -62,6 +62,8 @@ jobs:
           nix shell nixpkgs#kubectl --command bash utils/test-openstatus-restore-cleanup.sh
       - name: Test observability preparation
         run: bash utils/run-observability-test.sh
+      - name: Test Forgejo linear history hook
+        run: bash utils/test-forgejo-linear-history.sh
       - name: Build OCI images
         if: github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/prod')
         run: |

@@ -9,3 +9,10 @@ resources:
   - ./service-tailscale.yaml
   - ./admin.sops.yaml
   - ./authentik.sops.yaml
+configMapGenerator:
+  - name: forgejo-linear-history
+    files:
+      - require-linear-history.sh=hooks/require-linear-history.sh
+      - infra-baseline=hooks/infra-baseline
+generatorOptions:
+  disableNameSuffixHash: true
