@@ -82,8 +82,17 @@
     "mechanism": "comin-persistent-marker-hold",
     "main_branch": "prod",
     "control_channel_status": "available",
+    "current_prod_sha": "1111111111111111111111111111111111111111",
+    "current_prod_observed_at": "2026-10-15T22:34:30Z",
     "candidate_prod_sha": null,
     "promotion_source_sha": null,
-    "promotion_observed_at": null
+    "promotion_observed_at": null,
+    "forward_recovery": {
+      "source_sha": null,
+      "prod_sha": null,
+      "promotion_source_sha": null,
+      "promotion_observed_at": null,
+      "configuration_evidence": null
+    }
   }
 }

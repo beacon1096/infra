@@ -396,15 +396,55 @@ function evaluate(plan, inventory) {
   for (const condition of ["candidate-revision-drift", "control-channel-unavailable", "evidence-unhealthy-or-missing", "host-or-service-regression"]) if (!stopConditions.includes(condition)) blockers.push(diagnostic("missing-stop-condition", "required rollout stop condition is absent", { condition }));
 
   const rollout = plan?.rollout ?? {};
-  const rolloutFields = ["mechanism", "main_branch", "control_channel_status", "candidate_prod_sha", "promotion_source_sha", "promotion_observed_at"];
+  const rolloutFields = ["mechanism", "main_branch", "control_channel_status", "current_prod_sha", "current_prod_observed_at", "candidate_prod_sha", "promotion_source_sha", "promotion_observed_at", "forward_recovery"];
   checkShape(rollout, "plan.rollout", rolloutFields, rolloutFields, blockers);
   if (rollout.mechanism !== "comin-persistent-marker-hold" || rollout.main_branch !== "prod") blockers.push(diagnostic("invalid-rollout-mechanism", "staged rollout must persistently gate non-current Comin services and retain the existing prod release path"));
   if (rollout.control_channel_status !== "available") blockers.push(diagnostic("control-channel-unavailable", "no release or later Comin batch may advance while the control channel is unavailable"));
+  if (!SHA_RE.test(rollout.current_prod_sha ?? "")) blockers.push(diagnostic("invalid-current-prod", "current_prod_sha must be an exact observed prod revision"));
+  validateTime(rollout.current_prod_observed_at, evaluatedAt, maximumAge, maximumFutureSkew, { invalid: "invalid-current-prod-time", future: "future-current-prod", stale: "stale-current-prod" }, {}, blockers);
   const promotionPending = rollout.candidate_prod_sha === null && rollout.promotion_source_sha === null && rollout.promotion_observed_at === null;
   if (!promotionPending) {
     if (!SHA_RE.test(rollout.candidate_prod_sha ?? "") || rollout.candidate_prod_sha === plan?.known_good_sha || rollout.promotion_source_sha !== plan?.candidate_sha) blockers.push(diagnostic("invalid-promotion-evidence", "candidate prod revision must be exact, differ from known-good, and carry the candidate Source-Commit"));
     validateTime(rollout.promotion_observed_at, evaluatedAt, maximumAge, maximumFutureSkew, { invalid: "invalid-promotion-time", future: "future-promotion", stale: "stale-promotion" }, {}, blockers);
   }
+
+  const forwardRecovery = rollout.forward_recovery ?? {};
+  const forwardRecoveryFields = ["source_sha", "prod_sha", "promotion_source_sha", "promotion_observed_at", "configuration_evidence"];
+  checkShape(forwardRecovery, "plan.rollout.forward_recovery", forwardRecoveryFields, forwardRecoveryFields, blockers);
+  const forwardRecoveryValues = forwardRecoveryFields.map((field) => forwardRecovery[field]);
+  const forwardRecoveryPending = forwardRecoveryValues.every((value) => value === null);
+  const forwardRecoveryComplete = forwardRecoveryValues.every((value) => value !== null);
+  let forwardRecoveryValid = false;
+  if (!forwardRecoveryPending && !forwardRecoveryComplete) {
+    blockers.push(diagnostic("incomplete-forward-recovery", "forward recovery evidence must be entirely absent or bind source, promotion, configuration evidence, and observation time"));
+  } else if (forwardRecoveryComplete) {
+    if (promotionPending) blockers.push(diagnostic("recovery-before-candidate-promotion", "forward recovery is only valid after an exact candidate promotion has been observed"));
+    if (!SHA_RE.test(forwardRecovery.source_sha ?? "") || forwardRecovery.source_sha === plan?.candidate_sha) blockers.push(diagnostic("invalid-recovery-source", "forward recovery source must be an exact new reviewed source revision"));
+    if (!SHA_RE.test(forwardRecovery.prod_sha ?? "") || [plan?.known_good_sha, rollout.candidate_prod_sha].includes(forwardRecovery.prod_sha)) blockers.push(diagnostic("invalid-recovery-promotion", "forward recovery prod must be a new promotion revision, not the historical known-good or failed candidate promotion"));
+    if (forwardRecovery.promotion_source_sha !== forwardRecovery.source_sha) blockers.push(diagnostic("recovery-source-mismatch", "forward recovery promotion Source-Commit must equal the reviewed recovery source"));
+    validateTime(forwardRecovery.promotion_observed_at, evaluatedAt, maximumAge, maximumFutureSkew, { invalid: "invalid-recovery-promotion-time", future: "future-recovery-promotion", stale: "stale-recovery-promotion" }, {}, blockers);
+
+    const content = forwardRecovery.configuration_evidence ?? {};
+    const contentFields = ["kind", "method", "reviewed_by", "reference_prod_sha", "recovery_source_sha", "reference_sha256", "recovery_sha256", "reviewed_at", "status"];
+    checkShape(content, "plan.rollout.forward_recovery.configuration_evidence", contentFields, contentFields, blockers);
+    if (content.kind !== "nixos-configuration-evaluation" || content.method !== "nix-eval-and-reviewed-diff" || !nonEmptyString(content.reviewed_by) || content.status !== "verified") blockers.push(diagnostic("invalid-recovery-configuration-evidence", "forward recovery must carry identified Nix evaluation and diff review evidence"));
+    if (content.reference_prod_sha !== plan?.known_good_sha || content.recovery_source_sha !== forwardRecovery.source_sha) blockers.push(diagnostic("recovery-configuration-identity-mismatch", "configuration evidence must bind the historical known-good prod and reviewed forward recovery source"));
+    if (!DIGEST_RE.test(content.reference_sha256 ?? "") || content.reference_sha256 !== content.recovery_sha256) blockers.push(diagnostic("recovery-configuration-mismatch", "forward recovery and historical known-good configuration manifests must have the same SHA-256 digest"));
+    validateTime(content.reviewed_at, evaluatedAt, maximumRecoveryAge, maximumFutureSkew, { invalid: "invalid-recovery-review-time", future: "future-recovery-review", stale: "stale-recovery-review" }, {}, blockers);
+
+    const candidateObservedAt = timestamp(rollout.promotion_observed_at);
+    const recoveryObservedAt = timestamp(forwardRecovery.promotion_observed_at);
+    const contentReviewedAt = timestamp(content.reviewed_at);
+    if (candidateObservedAt !== null && recoveryObservedAt !== null && recoveryObservedAt < candidateObservedAt) blockers.push(diagnostic("recovery-precedes-candidate", "forward recovery promotion cannot predate the failed candidate promotion"));
+    if (contentReviewedAt !== null && recoveryObservedAt !== null && contentReviewedAt > recoveryObservedAt + maximumFutureSkew * 1000) blockers.push(diagnostic("recovery-promotion-before-review", "forward recovery promotion evidence predates its configuration review"));
+  }
+
+  const expectedCurrentProd = forwardRecoveryComplete ? forwardRecovery.prod_sha : promotionPending ? plan?.known_good_sha : rollout.candidate_prod_sha;
+  if (SHA_RE.test(rollout.current_prod_sha ?? "") && rollout.current_prod_sha !== expectedCurrentProd) blockers.push(diagnostic("current-prod-mismatch", "observed prod does not match the current rollout or forward recovery phase", { expected: expectedCurrentProd ?? null, actual: rollout.current_prod_sha }));
+  const currentProdObservedAt = timestamp(rollout.current_prod_observed_at);
+  const expectedPromotionObservedAt = timestamp(forwardRecoveryComplete ? forwardRecovery.promotion_observed_at : rollout.promotion_observed_at);
+  if (currentProdObservedAt !== null && expectedPromotionObservedAt !== null && currentProdObservedAt < expectedPromotionObservedAt) blockers.push(diagnostic("prod-observation-before-promotion", "current prod observation must not predate the promotion it claims to observe"));
+  forwardRecoveryValid = forwardRecoveryComplete && blockers.length === 0;
 
   const expectedDeployment = (host, useCandidate) => useCandidate ? {
     host,
@@ -421,10 +461,11 @@ function evaluate(plan, inventory) {
   const stages = [];
   const canaryHosts = new Set(batches[0]?.hosts ?? []);
   const initiallyHeld = expectedHosts.filter((host) => !canaryHosts.has(host));
+  const canEmitCandidateActions = blockers.length === 0 && !forwardRecoveryComplete;
   stages.push({
     name: "pre-release-hold",
     minimum_observation_seconds: 0,
-    actions: rollout.control_channel_status === "available" ? initiallyHeld.flatMap((host) => [installHoldAction(host), stopServiceAction(host), verifyHoldAction(host, plan.known_good_sha)]) : [],
+    actions: canEmitCandidateActions ? initiallyHeld.flatMap((host) => [installHoldAction(host), stopServiceAction(host), verifyHoldAction(host, plan.known_good_sha)]) : [],
     expected_revisions: expectedHosts.map((host) => expectedDeployment(host, false)),
     held_hosts: initiallyHeld,
     success_conditions: ["each held host has the persistent marker and verified unit condition", "held Comin services remain inactive through activation and reboot", "all hosts still report known-good", "canary Comin remains active"],
@@ -434,14 +475,14 @@ function evaluate(plan, inventory) {
     stages.push({
       name: batches[0].name,
       minimum_observation_seconds: batches[0].minimum_observation_seconds,
-      actions: rollout.control_channel_status === "available" ? [{ action: "use-existing-production-release", repository: plan.repository, source_revision: plan.candidate_sha, expected_prod_revision: null, branch: "prod", requires_existing_human_approval: true }] : [],
+      actions: canEmitCandidateActions ? [{ action: "use-existing-production-release", repository: plan.repository, source_revision: plan.candidate_sha, expected_prod_revision: null, branch: "prod", requires_existing_human_approval: true }] : [],
       expected_revisions: expectedHosts.map((host) => expectedDeployment(host, advanced.has(host))),
       held_hosts: expectedHosts.filter((host) => !advanced.has(host)),
       success_conditions: ["canary reports the exact prod promotion whose Source-Commit is the candidate", "required evidence remains healthy for the full observation window", "held hosts remain at known-good"],
     });
   }
   for (const batch of batches.slice(1)) {
-    const canAdvanceBatch = rollout.control_channel_status === "available" && !promotionPending;
+    const canAdvanceBatch = canEmitCandidateActions && !promotionPending;
     if (canAdvanceBatch) for (const host of batch.hosts ?? []) advanced.add(host);
     stages.push({
       name: batch.name,
@@ -454,6 +495,7 @@ function evaluate(plan, inventory) {
   }
 
   if (blockers.length === 0) notes.push(diagnostic("candidate-only", "all offline checks passed; this is only a candidate for the existing human release review"));
+  if (!promotionPending && forwardRecoveryPending) notes.push(diagnostic("forward-recovery-evidence-pending", "candidate prod has advanced; a failed rollout must retain every hold until a reviewed forward recovery source and new promotion are proven"));
   return {
     schema_version: 2,
     recommendation: blockers.length === 0 ? "candidate-for-human-review" : "blocked",
@@ -468,9 +510,13 @@ function evaluate(plan, inventory) {
     rollout: {
       mechanism: rollout.mechanism ?? null,
       main_branch: rollout.main_branch ?? null,
+      current_prod_sha: rollout.current_prod_sha ?? null,
+      current_prod_observed_at: rollout.current_prod_observed_at ?? null,
+      candidate_promotion: { prod_revision: rollout.candidate_prod_sha ?? null, source_revision: rollout.promotion_source_sha ?? null, observed_at: rollout.promotion_observed_at ?? null },
+      forward_recovery: { source_revision: forwardRecovery.source_sha ?? null, prod_revision: forwardRecovery.prod_sha ?? null, promotion_source_revision: forwardRecovery.promotion_source_sha ?? null, observed_at: forwardRecovery.promotion_observed_at ?? null, configuration_evidence: forwardRecovery.configuration_evidence ?? null },
       invariant: `all non-canary hosts carry the persistent Comin marker before the existing production release advances prod from ${plan?.known_good_sha ?? "unknown"}; only the current batch removes its marker after exact promotion proof`,
       stages,
-      final_completion: { action: "verify-all-services-restored", prod_revision: rollout.candidate_prod_sha ?? null, source_revision: plan?.candidate_sha ?? null, requires_existing_human_approval: true },
+      final_completion: { action: "verify-all-services-restored", prod_revision: forwardRecoveryComplete ? forwardRecovery.prod_sha : rollout.candidate_prod_sha ?? null, source_revision: forwardRecoveryComplete ? forwardRecovery.source_sha : plan?.candidate_sha ?? null, requires_existing_human_approval: true },
       on_control_failure: "stop; do not remove another hold marker or start Comin; use only the verified host-local marker-and-generation recovery records below",
     },
     stop_conditions: stopConditions,
@@ -488,7 +534,18 @@ function evaluate(plan, inventory) {
         expected_service_state: "inactive-by-persistent-hold",
         requires_existing_human_approval: true,
       }, verifyHoldAction(entry.host, entry.known_good_sha)],
-      release_after_prod_restored: releaseHoldActions(entry.host, entry.known_good_sha, null),
+      cleanup_before_prod_change: {
+        state: !promotionPending ? "not-applicable" : blockers.length === 0 && rollout.current_prod_sha === plan?.known_good_sha ? "prod-unchanged" : "blocked",
+        prod_revision: plan?.known_good_sha ?? null,
+        actions: blockers.length === 0 && promotionPending ? releaseHoldActions(entry.host, entry.known_good_sha, null) : [],
+      },
+      release_after_forward_recovery: {
+        state: promotionPending ? "not-applicable" : forwardRecoveryValid ? "verified-forward-promotion" : forwardRecoveryPending && blockers.length === 0 ? "awaiting-forward-recovery-promotion-proof" : "blocked",
+        source_revision: forwardRecovery.source_sha ?? null,
+        prod_revision: forwardRecovery.prod_sha ?? null,
+        configuration_evidence: forwardRecovery.configuration_evidence ?? null,
+        actions: forwardRecoveryValid ? releaseHoldActions(entry.host, forwardRecovery.prod_sha, forwardRecovery.source_sha) : [],
+      },
       stop_service: entry.stop_service ?? null,
       generation: entry.generation ?? null,
       verified_at: entry.verified_at ?? null,

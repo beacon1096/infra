@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,8 +12,10 @@ const fixtureDir = join(root, "utils/fixtures/observed-rollout");
 const script = join(root, "utils/plan-observed-rollout.mjs");
 const inventory = JSON.parse(readFileSync(join(fixtureDir, "inventory.json"), "utf8"));
 const healthyPlan = JSON.parse(readFileSync(join(fixtureDir, "healthy-plan.json"), "utf8"));
+let scenarioCount = 0;
 
 function run(plan, inventoryValue = inventory) {
+  scenarioCount += 1;
   const directory = mkdtempSync(join(tmpdir(), "observed-rollout-"));
   try {
     const planPath = join(directory, "plan.json");
@@ -29,6 +32,49 @@ function run(plan, inventoryValue = inventory) {
 
 function clone(value) {
   return structuredClone(value);
+}
+
+function promoteCandidate(plan, prodSha = "3333333333333333333333333333333333333333") {
+  plan.rollout.current_prod_sha = prodSha;
+  plan.rollout.candidate_prod_sha = prodSha;
+  plan.rollout.promotion_source_sha = plan.candidate_sha;
+  plan.rollout.promotion_observed_at = "2026-10-15T22:34:10Z";
+}
+
+function bindForwardRecovery(plan, {
+  sourceSha = "4444444444444444444444444444444444444444",
+  prodSha = "5555555555555555555555555555555555555555",
+  configurationSha256 = `sha256:${"6".repeat(64)}`,
+} = {}) {
+  plan.rollout.current_prod_sha = prodSha;
+  plan.rollout.current_prod_observed_at = "2026-10-15T22:34:50Z";
+  plan.rollout.forward_recovery = {
+    source_sha: sourceSha,
+    prod_sha: prodSha,
+    promotion_source_sha: sourceSha,
+    promotion_observed_at: "2026-10-15T22:34:40Z",
+    configuration_evidence: {
+      kind: "nixos-configuration-evaluation",
+      method: "nix-eval-and-reviewed-diff",
+      reviewed_by: "offline-fixture-reviewer",
+      reference_prod_sha: plan.known_good_sha,
+      recovery_source_sha: sourceSha,
+      reference_sha256: configurationSha256,
+      recovery_sha256: configurationSha256,
+      reviewed_at: "2026-10-15T22:34:20Z",
+      status: "verified",
+    },
+  };
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  return JSON.stringify(value);
+}
+
+function digest(value) {
+  return `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
 }
 
 function blockerCodes(result) {
@@ -61,13 +107,15 @@ function expectBlocked(name, plan, inventoryValue, code) {
   assert(result.output.rollout.stages[1].expected_revisions.filter(({ host }) => host !== "m920x").every(({ prod_revision }) => prod_revision === healthyPlan.known_good_sha));
   assert.deepEqual(result.output.rollout.stages[2].held_hosts, ["microserver-gen10plus", "msi-claw", "surface-pro-8", "thinkbook-plus-hybrid"]);
   assert.deepEqual(result.output.rollout.stages[2].actions, []);
+  assert.equal(result.output.recovery[0].cleanup_before_prod_change.state, "prod-unchanged");
+  assert.deepEqual(result.output.recovery[0].cleanup_before_prod_change.actions.map(({ action }) => action), ["remove-persistent-hold", "start-service", "verify-promotion"]);
+  assert.equal(result.output.recovery[0].release_after_forward_recovery.state, "not-applicable");
+  assert.deepEqual(result.output.recovery[0].release_after_forward_recovery.actions, []);
 }
 
 {
   const plan = clone(healthyPlan);
-  plan.rollout.candidate_prod_sha = "3333333333333333333333333333333333333333";
-  plan.rollout.promotion_source_sha = plan.candidate_sha;
-  plan.rollout.promotion_observed_at = "2026-10-15T22:34:30Z";
+  promoteCandidate(plan);
   const result = run(plan);
   assert.equal(result.status, 0);
   assert.deepEqual(result.output.rollout.stages[1].expected_revisions.find(({ host }) => host === "m920x"), { host: "m920x", prod_revision: plan.rollout.candidate_prod_sha, source_revision: plan.candidate_sha, state: "candidate-promotion" });
@@ -78,13 +126,14 @@ function expectBlocked(name, plan, inventoryValue, code) {
     assert.equal(action.expected_source_revision, plan.candidate_sha);
     if (action.action === "start-service") assert.equal(action.expected_revision, plan.rollout.candidate_prod_sha);
   }
+  assert.equal(result.output.recovery[0].cleanup_before_prod_change.state, "not-applicable");
+  assert.deepEqual(result.output.recovery[0].cleanup_before_prod_change.actions, []);
+  assert.deepEqual(result.output.recovery[0].release_after_forward_recovery.actions, []);
 }
 
 {
   const plan = clone(healthyPlan);
-  plan.rollout.candidate_prod_sha = "3333333333333333333333333333333333333333";
-  plan.rollout.promotion_source_sha = plan.candidate_sha;
-  plan.rollout.promotion_observed_at = "2026-10-15T22:34:30Z";
+  promoteCandidate(plan);
   const result = run(plan);
   assert.equal(result.status, 0);
 
@@ -144,11 +193,54 @@ function expectBlocked(name, plan, inventoryValue, code) {
   assert.equal(hosts.get(recovering.host).active, false, "recovery activation must not restart Comin while prod is candidate");
   assert.equal(hosts.get(recovering.host).prod_revision, plan.known_good_sha);
 
-  prodRevision = plan.known_good_sha;
-  for (const action of recovering.release_after_prod_restored) applyAction(action);
+  const recoveryPlan = clone(plan);
+  bindForwardRecovery(recoveryPlan);
+  const recovered = run(recoveryPlan);
+  assert.equal(recovered.status, 0);
+  assert(recovered.output.rollout.stages.every(({ actions }) => actions.length === 0), "forward recovery must not regenerate candidate rollout actions");
+  const release = recovered.output.recovery.find(({ host }) => host === recovering.host).release_after_forward_recovery;
+  assert.equal(release.state, "verified-forward-promotion");
+  prodRevision = recoveryPlan.rollout.forward_recovery.prod_sha;
+  for (const action of release.actions) applyAction(action);
   assert.equal(hosts.get(recovering.host).active, true);
-  assert.equal(hosts.get(recovering.host).prod_revision, plan.known_good_sha);
+  assert.equal(hosts.get(recovering.host).prod_revision, recoveryPlan.rollout.forward_recovery.prod_sha);
   assert(preRelease.held_hosts.slice(1).every((host) => hosts.get(host).active === false && hosts.get(host).prod_revision === plan.known_good_sha), "unreleased peers must not advance early");
+}
+
+{
+  const plan = clone(healthyPlan);
+  promoteCandidate(plan);
+  plan.rollout.forward_recovery.source_sha = "4444444444444444444444444444444444444444";
+  const result = expectBlocked("partial forward recovery", plan, inventory, "incomplete-forward-recovery");
+  assert(result.output.recovery.every(({ release_after_forward_recovery }) => release_after_forward_recovery.actions.length === 0));
+}
+
+for (const [name, mutate, code] of [
+  ["wrong recovery Source-Commit", (plan) => { plan.rollout.forward_recovery.promotion_source_sha = plan.candidate_sha; }, "recovery-source-mismatch"],
+  ["mismatched recovery configuration", (plan) => { plan.rollout.forward_recovery.configuration_evidence.recovery_sha256 = `sha256:${"7".repeat(64)}`; }, "recovery-configuration-mismatch"],
+  ["unidentified recovery review", (plan) => { plan.rollout.forward_recovery.configuration_evidence.reviewed_by = ""; }, "invalid-recovery-configuration-evidence"],
+  ["stale recovery configuration review", (plan) => { plan.rollout.forward_recovery.configuration_evidence.reviewed_at = "2026-09-01T00:00:00Z"; }, "stale-recovery-review"],
+  ["old prod reused for recovery", (plan) => {
+    plan.rollout.forward_recovery.prod_sha = plan.known_good_sha;
+    plan.rollout.current_prod_sha = plan.known_good_sha;
+  }, "invalid-recovery-promotion"],
+  ["recovery prod observation mismatch", (plan) => { plan.rollout.current_prod_sha = plan.rollout.candidate_prod_sha; }, "current-prod-mismatch"],
+]) {
+  const plan = clone(healthyPlan);
+  promoteCandidate(plan);
+  bindForwardRecovery(plan);
+  mutate(plan);
+  const result = expectBlocked(name, plan, inventory, code);
+  assert(result.output.recovery.every(({ release_after_forward_recovery }) => release_after_forward_recovery.actions.length === 0), `${name}: hold must remain`);
+}
+
+{
+  const plan = clone(healthyPlan);
+  promoteCandidate(plan);
+  bindForwardRecovery(plan);
+  plan.rollout.control_channel_status = "unavailable";
+  const result = expectBlocked("forward recovery control channel failure", plan, inventory, "control-channel-unavailable");
+  assert(result.output.recovery.every(({ release_after_forward_recovery }) => release_after_forward_recovery.actions.length === 0));
 }
 
 for (const [name, mutate, code] of [
@@ -269,4 +361,70 @@ for (const [name, mutate, code] of [
   assert(result.output.recovery.every(({ available, hold, actions, stop_service, generation }) => available === true && hold.marker_path === "/var/lib/comin/rollout-hold" && actions[0].action === "install-persistent-hold" && stop_service.args.join(" ") === "stop comin.service" && generation.executable.startsWith(generation.store_path)));
 }
 
-process.stdout.write("observed rollout planner: 35 scenarios passed\n");
+{
+  const directory = mkdtempSync(join(tmpdir(), "observed-rollout-release-graph-"));
+  const gitEnv = {
+    ...process.env,
+    GIT_AUTHOR_NAME: "Offline fixture",
+    GIT_AUTHOR_EMAIL: "fixture@example.invalid",
+    GIT_COMMITTER_NAME: "Offline fixture",
+    GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+  };
+  for (const key of Object.keys(gitEnv)) if (key.startsWith("GIT_CONFIG_")) delete gitEnv[key];
+  const git = (...arguments_) => {
+    const result = spawnSync("git", ["-c", "commit.gpgsign=false", ...arguments_], { cwd: directory, env: gitEnv, encoding: "utf8", timeout: 10000 });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  try {
+    git("init", "--quiet");
+    writeFileSync(join(directory, "service.txt"), "known-good\n");
+    git("add", "service.txt");
+    git("commit", "--quiet", "-m", "known-good source");
+    const knownGoodSource = git("rev-parse", "HEAD");
+    const knownGoodTree = git("rev-parse", "HEAD^{tree}");
+    const knownGoodProd = git("commit-tree", knownGoodTree, "-m", `release good\n\nSource-Commit: ${knownGoodSource}`);
+
+    writeFileSync(join(directory, "service.txt"), "candidate\n");
+    git("add", "service.txt");
+    git("commit", "--quiet", "-m", "candidate source");
+    const candidateSource = git("rev-parse", "HEAD");
+    const candidateProd = git("commit-tree", git("rev-parse", "HEAD^{tree}"), "-p", knownGoodProd, "-m", `release candidate\n\nSource-Commit: ${candidateSource}`);
+    const rejectedOldSource = spawnSync("git", ["merge-base", "--is-ancestor", candidateSource, knownGoodSource], { cwd: directory, env: gitEnv, encoding: "utf8", timeout: 10000 });
+    assert.ifError(rejectedOldSource.error);
+    assert.equal(rejectedOldSource.status, 1, "release ancestry guard must reject republishing the historical source");
+
+    writeFileSync(join(directory, "service.txt"), "known-good\n");
+    git("add", "service.txt");
+    git("commit", "--quiet", "-m", "forward recovery source");
+    const recoverySource = git("rev-parse", "HEAD");
+    git("merge-base", "--is-ancestor", candidateSource, recoverySource);
+    assert.equal(git("rev-parse", "HEAD^{tree}"), knownGoodTree);
+    const recoveryProd = git("commit-tree", knownGoodTree, "-p", candidateProd, "-m", `release recovery\n\nSource-Commit: ${recoverySource}`);
+    assert.notEqual(recoveryProd, knownGoodProd, "forward recovery must produce a new prod promotion identity");
+
+    const replacements = new Map([
+      [healthyPlan.base_source_sha, knownGoodSource],
+      [healthyPlan.known_good_sha, knownGoodProd],
+      [healthyPlan.candidate_sha, candidateSource],
+    ]);
+    const replaceFixtureRevisions = (value) => JSON.parse(JSON.stringify(value, (key, entry) => replacements.get(entry) ?? entry));
+    const plan = replaceFixtureRevisions(healthyPlan);
+    const inventoryValue = replaceFixtureRevisions(inventory);
+    inventoryValue.attestation.scope_sha256 = digest({ hosts: inventoryValue.hosts, path_rules: inventoryValue.path_rules });
+    promoteCandidate(plan, candidateProd);
+    bindForwardRecovery(plan, { sourceSha: recoverySource, prodSha: recoveryProd, configurationSha256: digest({ evaluated_tree: knownGoodTree }) });
+    const result = run(plan, inventoryValue);
+    assert.equal(result.status, 0);
+    const release = result.output.recovery[0].release_after_forward_recovery;
+    assert.equal(release.state, "verified-forward-promotion");
+    assert(release.actions.every(({ expected_prod_revision }) => expected_prod_revision === recoveryProd));
+    assert(release.actions.every(({ expected_source_revision }) => expected_source_revision === recoverySource));
+    assert.notEqual(release.prod_revision, knownGoodProd);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+process.stdout.write(`observed rollout planner: ${scenarioCount} planner scenarios passed\n`);
