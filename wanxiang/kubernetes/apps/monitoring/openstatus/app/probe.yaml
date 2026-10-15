@@ -23,7 +23,7 @@ spec:
         - name: probe
           # Built reproducibly by packages/openstatus-private-probe from the
           # same fixed upstream revision as the self-hosted stack.
-          image: forgejo.beaco.works/infrastructure/nix-fleet/openstatus-private-probe:ef7691a
+          image: forgejo.beaco.works/infrastructure/nix-fleet/openstatus-private-probe@sha256:7a65e8d63c70fe42b87ac3668e486c94e16c68194efd289caa16b5069df89d03
           imagePullPolicy: IfNotPresent
           env:
             - name: OPENSTATUS_KEY

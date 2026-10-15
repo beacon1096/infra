@@ -28,8 +28,8 @@ grep -Fq 'key: TINY_BIRD_API_KEY' "$app_dir/private-location.yaml" || \
 
 grep -Fq 'name: openstatus-probe-wanxiang' "$app_dir/probe.yaml" || \
   fail "active Wanxiang probe Deployment is missing"
-grep -Fq 'openstatus-private-probe:ef7691a' "$app_dir/probe.yaml" || \
-  fail "probe image must stay on the audited source revision"
+grep -Fq 'openstatus-private-probe@sha256:7a65e8d63c70fe42b87ac3668e486c94e16c68194efd289caa16b5069df89d03' \
+  "$app_dir/probe.yaml" || fail "probe image must stay pinned to the published digest"
 grep -Fq 'key: OPENSTATUS_KEY' "$app_dir/probe.yaml" || \
   fail "probe must reference the private-location key"
 grep -Fq -- '- ./probe.yaml' "$app_dir/kustomization.yaml" || \
