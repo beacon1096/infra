@@ -267,6 +267,20 @@ Resume preserves an unexpected holder but still attempts every recorded
 replica restore and `suspend=false`; it exits non-zero so the unknown object is
 investigated rather than deleted.
 
+The wrapper also creates
+`${REPLICA_STATE_FILE}.quiesce-ownership.json`. Absence means the helper has
+not passed its read-only Flux/revision, replica, image and holder preflight;
+`acquired` is written atomically after those checks and before the first API
+mutation; `recovered` is written only after the recorded replicas, holder and
+Flux state have been restored. A preflight refusal therefore performs no
+cluster writes, while an API mutation that applies but reports failure is still
+covered by the already-installed outer trap. The wrapper makes only one
+recovery call; the helper owns an interrupted recovery retry, and first checks
+whether recovery is already complete to avoid replaying an old plan. Preserve
+an `acquired` marker and its exact replica-state file for incident recovery;
+never replace it with a new plan or remove it until the original state is
+verified. A completed or refused run needs a new plan before another window.
+
 The payload writes the baseline, manifest and authoritative scope file,
 re-resolves all three PVC→PV→Volume bindings, applies only the temporary
 `groups: []` RecurringJob and its three direct labels, and starts only the

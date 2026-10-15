@@ -30,7 +30,7 @@ case "$mode" in
     ;;
   *) echo "OpenStatus quiesce: unknown mode $mode" >&2; exit 2 ;;
 esac
-for command in jq sha256sum timeout date head; do
+for command in jq sha256sum timeout date head mv; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "OpenStatus quiesce: $command is required" >&2
     exit 2
@@ -167,6 +167,52 @@ elif [[ "$state_names" != "$current_names" && "$state_names" != "$legacy_names" 
   exit 1
 fi
 
+ownership_file="${OPENSTATUS_QUIESCE_OWNERSHIP_FILE:-}"
+[[ -n "$ownership_file" && "$ownership_file" == /* ]] || {
+  echo "OpenStatus quiesce: OPENSTATUS_QUIESCE_OWNERSHIP_FILE must be an absolute path" >&2
+  exit 2
+}
+ownership_parent="${ownership_file%/*}"
+[[ -d "$ownership_parent" && -w "$ownership_parent" ]] || {
+  echo "OpenStatus quiesce: ownership marker parent is not writable" >&2
+  exit 2
+}
+
+ownership_phase() {
+  [[ -r "$ownership_file" ]] || return 1
+  jq -er --arg sha "$state_sha256" '
+    select(.schema_version == 1 and .state_sha256 == $sha) | .phase |
+    select(. == "acquired" or . == "recovered")
+  ' "$ownership_file"
+}
+
+acquire_recovery_ownership() {
+  local rc
+  # Noclobber makes the absent -> acquired transition atomic. The outer
+  # wrapper already owns the recovery trap before this marker is written.
+  set +e
+  (
+    set -o noclobber
+    umask 077
+    jq -nc --arg sha "$state_sha256" \
+      '{schema_version:1,state_sha256:$sha,phase:"acquired"}' >"$ownership_file"
+  )
+  rc=$?
+  set -e
+  if (( rc != 0 )); then
+    echo "OpenStatus quiesce: recovery ownership marker already exists or could not be created" >&2
+    return 1
+  fi
+}
+
+mark_recovery_complete() {
+  local marker_tmp="${ownership_file}.tmp.$$"
+  umask 077
+  jq -nc --arg sha "$state_sha256" \
+    '{schema_version:1,state_sha256:$sha,phase:"recovered"}' >"$marker_tmp"
+  mv -f -- "$marker_tmp" "$ownership_file"
+}
+
 holder_name="$(jq -r '.holder.name' "$state_file")"
 holder_image="$(jq -r '.holder.image' "$state_file")"
 state_run_id="$(jq -r '.run_id' "$state_file")"
@@ -191,13 +237,8 @@ delete_holder() {
 }
 
 restore_recorded_state() {
-  local recovery_seconds="${OPENSTATUS_RECOVERY_MAX_SECONDS:-300}"
-  [[ "$recovery_seconds" =~ ^[0-9]+$ ]] && (( recovery_seconds >= 30 && recovery_seconds <= 600 )) || {
-    echo "OpenStatus quiesce: OPENSTATUS_RECOVERY_MAX_SECONDS must be 30-600" >&2
-    return 2
-  }
-  local deadline rc deployment replicas wait_seconds
-  deadline=$(( $(date -u +%s) + recovery_seconds ))
+  local deadline="$1"
+  local rc deployment replicas wait_seconds
   rc=0
 
   # A foreign or malformed holder is deliberately preserved, but it must not
@@ -233,6 +274,39 @@ restore_recorded_state() {
     fi
   done
   return "$rc"
+}
+
+recorded_state_is_restored() {
+  local deadline="$1"
+  local flux_json holder_json deployment replicas current
+  flux_json="$(bounded "$deadline" 30 "${kubectl_command[@]}" -n "$namespace" get \
+    kustomization.kustomize.toolkit.fluxcd.io openstatus -o json)" || return 1
+  jq -e '(.spec.suspend // false) == false' <<<"$flux_json" >/dev/null || return 1
+  for deployment in "${state_writers[@]}"; do
+    replicas="$(jq -r --arg name "$deployment" '.writers[] | select(.name == $name) | .replicas' "$state_file")"
+    current="$(bounded "$deadline" 30 "${kubectl_command[@]}" -n "$namespace" get deployment \
+      "$deployment" -o jsonpath='{.spec.replicas}')" || return 1
+    [[ "$current" == "$replicas" ]] || return 1
+  done
+  holder_json="$(bounded "$deadline" 30 "${kubectl_command[@]}" -n "$namespace" get pod \
+    "$holder_name" --ignore-not-found -o name)" || return 1
+  [[ -z "$holder_json" ]]
+}
+
+complete_recovery() {
+  local recovery_seconds="${OPENSTATUS_RECOVERY_MAX_SECONDS:-300}"
+  [[ "$recovery_seconds" =~ ^[0-9]+$ ]] && (( recovery_seconds >= 30 && recovery_seconds <= 600 )) || {
+    echo "OpenStatus quiesce: OPENSTATUS_RECOVERY_MAX_SECONDS must be 30-600" >&2
+    return 2
+  }
+  local deadline
+  deadline=$(( $(date -u +%s) + recovery_seconds ))
+  if recorded_state_is_restored "$deadline"; then
+    mark_recovery_complete
+    return 0
+  fi
+  restore_recorded_state "$deadline" || return $?
+  mark_recovery_complete
 }
 
 if [[ "$mode" == "--stop" ]]; then
@@ -275,20 +349,11 @@ if [[ "$mode" == "--stop" ]]; then
     exit 1
   }
 
-  stop_needs_restore=true
-  restore_after_failed_stop() {
-    local rc=$?
-    trap - EXIT INT TERM
-    if [[ "$stop_needs_restore" == "true" ]]; then
-      echo "OpenStatus quiesce: stop failed or was interrupted; restoring recorded state" >&2
-      restore_recorded_state || true
-    fi
-    exit "$rc"
-  }
-  trap restore_after_failed_stop EXIT
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
-
+  # All reads above are the mutation preflight. Only now does this invocation
+  # acquire recovery responsibility. The wrapper's trap was installed before
+  # launching us, so even a first mutation that applies and then reports an
+  # error is covered without treating a preflight refusal as our mutation.
+  acquire_recovery_ownership
   bounded "$window_deadline" 30 "${kubectl_command[@]}" -n "$namespace" patch \
     kustomization.kustomize.toolkit.fluxcd.io openstatus \
     --type=merge -p '{"spec":{"suspend":true}}' >/dev/null
@@ -330,9 +395,16 @@ if [[ "$mode" == "--stop" ]]; then
   wait_seconds=$((window_deadline - $(date -u +%s)))
   bounded "$window_deadline" "$wait_seconds" "${kubectl_command[@]}" -n "$namespace" wait \
     --for=condition=Ready "pod/$holder_name" --timeout="${wait_seconds}s" >/dev/null
-  stop_needs_restore=false
-  trap - EXIT INT TERM
   echo "OpenStatus quiesce: six writers stopped and all writer Pods exited; read-only workflows holder ready"
+  exit 0
+fi
+
+phase="$(ownership_phase)" || {
+  echo "OpenStatus quiesce: resume requires this state file's valid ownership marker" >&2
+  exit 1
+}
+if [[ "$phase" == "recovered" ]]; then
+  echo "OpenStatus quiesce: recovery already completed; no mutation required"
   exit 0
 fi
 
@@ -342,7 +414,7 @@ restore_on_resume_exit() {
   trap - EXIT INT TERM
   if [[ "$resume_finished" != "true" ]]; then
     echo "OpenStatus quiesce: resume interrupted; retrying replica and Flux restoration" >&2
-    restore_recorded_state || true
+    complete_recovery || true
   fi
   exit "$rc"
 }
@@ -350,7 +422,7 @@ trap restore_on_resume_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 set +e
-restore_recorded_state
+complete_recovery
 restore_rc=$?
 set -e
 resume_finished=true
