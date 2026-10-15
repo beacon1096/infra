@@ -152,23 +152,83 @@ succeeded.
 The backups are crash-consistent and independent; they are not an atomic
 snapshot across libSQL, Tinybird, and workflows. A safe restore drill therefore
 uses new disposable volumes in an isolated namespace and never rebinds a
-production PVC:
+production PVC. Use the renderer rather than hand-writing `fromBackup` URLs:
 
-1. Record the three backup names emitted by the check and obtain approval for
-   the storage restore operation.
-2. Create one new Longhorn `Volume` per backup with `spec.fromBackup`, unique
-   `openstatus-restore-<component>-<date>` names, and no recurring-job labels.
-   Wait for each restore to finish and `restoreRequired=false`.
-3. Bind new static PV/PVC objects only in an isolated restore namespace. Mount
-   them read-only first and keep all Services cluster-local.
-4. Start the matching pinned component images in isolation. For libSQL, verify
-   workspace, monitor, private-location, and assignment rows. For Tinybird,
-   verify the expected response tables and recent row counts. For workflows,
-   verify the data tree is readable and the process can open it without writing
-   to the production services.
-5. Record backup timestamp, restore start/end time, selected object counts, and
-   cleanup. Delete only the disposable namespace, PVs, and restored Longhorn
-   volumes; keep the source backups and all production PVCs.
+```bash
+export RUN_ID=20261015a
+MAX_BACKUP_AGE_HOURS=26 \
+  bash utils/render-openstatus-restore-drill.sh >"./openstatus-restore-${RUN_ID}.yaml"
+kubectl apply --dry-run=client -f "./openstatus-restore-${RUN_ID}.yaml"
+sha256sum "./openstatus-restore-${RUN_ID}.yaml"
+```
+
+The renderer is read-only. It stops unless every latest backup is clean,
+completed, and fresh; the source volumes carry the `default` recurring-job
+group; no run-id collision exists; all validation images resolve to running
+digests; and Longhorn reports enough schedulable capacity. The drill restores
+8 GiB libSQL, 10 GiB Tinybird, and 2 GiB workflows volumes with one replica:
+20 GiB nominal and at least 24 GiB schedulable headroom including a 20% margin.
+This is disposable recovery validation, not an HA copy.
+
+The approval packet must contain:
+
+- the renderer's backup/source-volume table and per-disk capacity table;
+- the rendered manifest SHA-256 and its 20 GiB/24 GiB annotations;
+- confirmation that no unrelated Longhorn or storage change is active;
+- the exact `RUN_ID`, expected namespace/PV/Volume names, start window, and
+  `cleanup-openstatus-restore-drill.sh --plan` output; and
+- an explicit statement that no source Backup, source Volume, production PVC,
+  Secret, or production Deployment is selected.
+
+Applying the rendered manifest is a storage operation and requires approval.
+After approval, apply that exact digest, wait for the inventory Job, and run:
+
+```bash
+kubectl apply -f "./openstatus-restore-${RUN_ID}.yaml"
+RUN_ID="$RUN_ID" PHASE=storage bash utils/check-openstatus-restore-drill.sh
+```
+
+The namespace has default-deny ingress and egress. The initial Job mounts all
+three restored PVCs read-only and refuses an empty/unreadable tree. The three
+component deployments are rendered at zero replicas. Only after the storage
+phase passes, scale the disposable libSQL, Tinybird, and workflows-reader
+deployments to one; they use the exact source runtime digests. libSQL and
+Tinybird may write only to the restored clones. The workflows image mounts its
+clone read-only. No production Secret is mounted and no external egress exists.
+
+```bash
+kubectl -n "openstatus-restore-${RUN_ID}" scale deployment \
+  restore-libsql restore-tinybird restore-workflows-reader --replicas=1
+TINYBIRD_RESTORE_TOKEN='<from approved secret channel>' \
+  RUN_ID="$RUN_ID" PHASE=data bash utils/check-openstatus-restore-drill.sh
+```
+
+The data phase performs a zero-write libSQL query and requires non-zero
+workspace, monitor, private-location, and assignment rows. It also requires
+non-zero `ping_response__v8` rows, intervals, monitors, and regions from the
+restored Tinybird instance, plus workflows tree readability from the pinned
+workflows image. `TINYBIRD_RESTORE_TOKEN` is supplied at execution time and is
+never committed or printed.
+
+Stop immediately on a stale/missing backup, capacity shortfall, concurrent
+storage work, restore error, non-healthy volume, unexpected resource without
+the exact run label, failed inventory, data-query error, empty expected data,
+unexpected egress, or any observed production mutation. A successful mount
+without the libSQL and Tinybird reads is not a successful drill.
+
+Save the check output, then review the exact cleanup plan. Execution requires a
+second run-id confirmation and selects exactly three labeled PVs, three labeled
+Longhorn volumes, and the one labeled namespace:
+
+```bash
+RUN_ID="$RUN_ID" bash utils/cleanup-openstatus-restore-drill.sh --plan
+CONFIRM_RUN_ID="$RUN_ID" RUN_ID="$RUN_ID" \
+  bash utils/cleanup-openstatus-restore-drill.sh --execute
+```
+
+The static PVs use `Retain`; cleanup deletes the namespace first, then the
+three recorded PVs and three restored Longhorn volumes. It refuses a missing or
+mismatched label/count and never selects source backups or production storage.
 
 Do not claim recovery readiness until all three volumes pass the freshness
 check and at least libSQL plus Tinybird have completed this isolated read test.
@@ -191,6 +251,62 @@ better agent/API surface than Uptime Kuma, but its libSQL, Tinybird, workflows,
 receiver, and probe topology has more operational failure modes than a single
 Uptime Kuma service. Pod readiness, HTTP 200, private-location `last_seen_at`,
 or a successful MCP handshake alone is not replacement evidence.
+
+### Executable acceptance
+
+Use a real site monitor for continuous-ingest evidence and a separate,
+disposable canary monitor for the controlled failure. Do not interrupt a real
+site to demonstrate failure. Creating/assigning monitors, changing the canary,
+restarting the app, changing Secrets, and changing replica counts remain
+separately reviewed production actions; the check itself is read-only.
+
+After an approved test has produced at least two real-site intervals, record
+the canary failure and recovery timestamps and the time immediately before the
+controlled API-server restart. Then run:
+
+```bash
+TINYBIRD_READ_TOKEN='<from approved secret channel>' \
+OBSERVATION_SINCE='2026-10-15T13:00:00Z' \
+REAL_MONITOR_ID=101 REAL_REGION_ID=7 \
+REAL_TARGET_URL='https://example-site.invalid/health' \
+CANARY_MONITOR_ID=102 CANARY_REGION_ID=7 \
+CANARY_TARGET_URL='https://dedicated-canary.invalid/health' \
+FAILURE_AT='2026-10-15T13:10:00Z' \
+RECOVERY_AT='2026-10-15T13:14:00Z' \
+RESTART_AFTER='2026-10-15T13:15:00Z' \
+STATUS_PAGE_URL='https://status.beaco.works/example' \
+STATUS_PAGE_EXPECT='Example service' \
+  bash utils/check-openstatus-acceptance.sh
+```
+
+The check requires one available digest-pinned receiver and probe; probe job
+startup; sampled receiver `tinybird.success=true`; active libSQL assignments
+and fresh heartbeats; stored real-site successes across at least two distinct
+intervals; a canary success → error → later success sequence in Tinybird; an
+API-server pod started after the declared restart boundary; and identifying
+text on the public status page. Timestamps and IDs make reruns bounded and
+prevent old results from satisfying a new exercise.
+
+Finally, create a dedicated **Read-only** `os_` key through the approved secret
+path and run the non-mutating MCP check:
+
+```bash
+OPENSTATUS_MCP_KEY='<read-only os_ key>' \
+  bash utils/check-openstatus-mcp-readonly.sh
+```
+
+It requires an unauthenticated 401, then checks `initialize`, `tools/list`, and
+`list_monitors`. Every advertised tool must carry `readOnlyHint: true`; any
+`create_*`, `update_*`, `add_*`, or `resolve_*` tool fails the check. The key is
+held in a mode-0600 temporary header file and is not printed.
+
+Execution prerequisites still missing before the first production exercise
+must be stated explicitly: merged public/private PRs, a published immutable
+probe digest, the approved Tinybird Secret correction, a workspace and private
+location with assigned real/canary monitors, a published status page, a
+dedicated Tinybird read credential, a dedicated Read-only MCP key, fresh
+per-volume backups, a successful isolated restore read, and approvals for the
+Secret, storage, replica, canary-failure, and restart actions.
 
 ## Rollback
 

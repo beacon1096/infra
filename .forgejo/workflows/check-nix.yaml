@@ -26,7 +26,13 @@ jobs:
       - name: Check OpenStatus receiver and probe wiring
         run: |
           nix shell nixpkgs#kubectl --command bash utils/check-openstatus-wiring.sh
-          bash -n utils/check-openstatus-backups.sh
+          bash -n \
+            utils/check-openstatus-acceptance.sh \
+            utils/check-openstatus-backups.sh \
+            utils/check-openstatus-mcp-readonly.sh \
+            utils/check-openstatus-restore-drill.sh \
+            utils/cleanup-openstatus-restore-drill.sh \
+            utils/render-openstatus-restore-drill.sh
       - name: Build OCI images
         if: github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/prod')
         run: |
