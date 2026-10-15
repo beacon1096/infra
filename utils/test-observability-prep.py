@@ -121,6 +121,12 @@ def validate_manifests():
         raise AssertionError("the chart's broad global RBAC must remain disabled")
     if values["prometheusOperator"]["admissionWebhooks"]["enabled"] is not False:
         raise AssertionError("unneeded operator admission webhook must remain disabled")
+    if values["prometheusOperator"]["tls"]["enabled"] is not False:
+        raise AssertionError("operator TLS must stay off when no admission certificate is produced")
+    if values["prometheusOperator"]["kubeletService"]["namespace"] != "monitoring":
+        raise AssertionError("operator kubelet synchronization must stay in monitoring")
+    if values["kubelet"]["namespace"] != "monitoring":
+        raise AssertionError("kubelet ServiceMonitor must stay beside its managed Service")
     if values["kube-state-metrics"].get("collectors") != ["nodes", "pods"]:
         raise AssertionError("kube-state-metrics collectors must remain minimal and Secret-free")
     prometheus = values["prometheus"]["prometheusSpec"]
@@ -194,9 +200,47 @@ def validate_manifests():
     if ksm_resources != {"nodes", "pods"}:
         raise AssertionError(f"unexpected kube-state-metrics cluster access: {ksm_resources}")
     operator = named(chart_documents, "Deployment", "kube-prometheus-stack-operator")
-    operator_image = operator["spec"]["template"]["spec"]["containers"][0]["image"]
+    operator_pod = operator["spec"]["template"]["spec"]
+    operator_container = operator_pod["containers"][0]
+    operator_image = operator_container["image"]
     if not operator_image.endswith(f":{EXPECTED_OPERATOR_VERSION}"):
         raise AssertionError(f"unexpected Prometheus Operator image: {operator_image}")
+    operator_args = operator_container["args"]
+    if "--web.enable-tls=false" not in operator_args:
+        raise AssertionError("operator did not render its reviewed HTTP-only endpoint")
+    if "--kubelet-service=monitoring/kube-prometheus-stack-kubelet" not in operator_args:
+        raise AssertionError("operator kubelet target escaped the monitoring Role")
+    if any(volume.get("secret") for volume in (operator_pod.get("volumes") or [])):
+        raise AssertionError("HTTP-only operator unexpectedly requires a TLS Secret")
+    for probe_name in ("livenessProbe", "readinessProbe"):
+        probe = operator_container[probe_name]["httpGet"]
+        if probe.get("scheme") != "HTTP" or probe.get("port") != "http":
+            raise AssertionError(f"operator {probe_name} did not follow the HTTP endpoint")
+    operator_monitor = named(
+        chart_documents,
+        "ServiceMonitor",
+        "kube-prometheus-stack-operator",
+    )
+    if operator_monitor["spec"]["endpoints"] != [{"port": "http", "honorLabels": True}]:
+        raise AssertionError("operator ServiceMonitor still expects admission TLS")
+    kubelet_monitor = named(
+        chart_documents,
+        "ServiceMonitor",
+        "kube-prometheus-stack-kubelet",
+    )
+    if kubelet_monitor["metadata"].get("namespace") != "monitoring":
+        raise AssertionError("kubelet ServiceMonitor rendered outside monitoring")
+    if kubelet_monitor["spec"].get("namespaceSelector") != {"matchNames": ["monitoring"]}:
+        raise AssertionError("kubelet ServiceMonitor does not select the managed Service namespace")
+    service_rule = next(
+        (
+            rule for rule in reconcile["rules"]
+            if {"services", "endpoints"} <= set(rule.get("resources", []))
+        ),
+        None,
+    )
+    if service_rule is None or not {"get", "create", "update"} <= set(service_rule["verbs"]):
+        raise AssertionError("monitoring Role cannot maintain the kubelet Service/Endpoints")
     named(chart_documents, "ServiceAccount", "kube-prometheus-stack-operator")
     named(chart_documents, "ServiceAccount", "kube-prometheus-stack-prometheus")
     alertmanager_resource = named(
@@ -248,6 +292,7 @@ def validate_rules():
         "WanxiangMonitoredTargetDown",
         "WanxiangMonitoredTargetMissing",
         "WanxiangNodeMetricsMissing",
+        "WanxiangNodeExporterMetricMissing",
         "WanxiangKubeStateMetricsMissing",
         "WanxiangLonghornMetricsMissing",
         "WanxiangCNPGMetricsMissing",
@@ -327,7 +372,7 @@ def validate_rules():
                                     "severity": "critical",
                                 },
                                 "A required Wanxiang metrics target is down",
-                                "A selected Longhorn, CNPG, Envoy, or cert-manager target has failed scrapes for five minutes.",
+                                "A selected node, Longhorn, CNPG, Envoy, or cert-manager target has failed scrapes for five minutes.",
                             )],
                         },
                         {"eval_time": "6m", "alertname": "WanxiangMonitoredTargetDown", "exp_alerts": []},
@@ -453,12 +498,40 @@ def validate_rules():
                             "values": "0.1 stale _x64 0.2x10",
                         },
                         {
-                            "series": 'kube_pod_container_status_ready{namespace="fixture",pod="pg-target-missing",container="postgres",condition="true"}',
+                            "series": 'kube_pod_container_status_ready{namespace="fixture",pod="pg-target-missing",container="postgres",uid="fixture-uid"}',
                             "values": "1x75",
                         },
                         {
                             "series": 'up{job="monitoring/cnpg-instances",namespace="fixture",pod="pg-target-missing",instance="removed:9187"}',
                             "values": "1 stale _x19 1x55",
+                        },
+                        {
+                            "series": 'up{job="node-exporter",namespace="monitoring",pod="node-exporter-down",instance="down:9100"}',
+                            "values": "0x5 1x70",
+                        },
+                        {
+                            "series": 'kube_pod_container_status_ready{namespace="monitoring",pod="node-exporter-missing",container="node-exporter",uid="node-uid"}',
+                            "values": "1x75",
+                        },
+                        {
+                            "series": 'up{job="node-exporter",namespace="monitoring",pod="node-exporter-missing",instance="removed:9100"}',
+                            "values": "1 stale _x19 1x55",
+                        },
+                        {
+                            "series": 'up{job="node-exporter",namespace="monitoring",pod="node-exporter-metric-missing",instance="missing:9100"}',
+                            "values": "1x75",
+                        },
+                        {
+                            "series": 'node_uname_info{job="node-exporter",namespace="monitoring",pod="node-exporter-metric-missing",instance="missing:9100"}',
+                            "values": "1 stale _x64 1x10",
+                        },
+                        {
+                            "series": 'up{job="node-exporter",namespace="monitoring",pod="node-exporter-healthy",instance="healthy:9100"}',
+                            "values": "1x75",
+                        },
+                        {
+                            "series": 'node_uname_info{job="node-exporter",namespace="monitoring",pod="node-exporter-healthy",instance="healthy:9100"}',
+                            "values": "1x75",
                         },
                     ],
                     "promql_expr_test": [
@@ -472,7 +545,16 @@ def validate_rules():
                         alert_count("WanxiangCNPGInstanceMetricMissing", "65m", 1, 'pod="pg-metric-missing"'),
                         alert_count("WanxiangCNPGInstanceMetricMissing", "66m", 0, 'pod="pg-metric-missing"'),
                         alert_count("WanxiangMonitoredTargetMissing", "20m", 1, 'pod="pg-target-missing"'),
-                        alert_count("WanxiangMonitoredTargetMissing", "21m", 0, 'pod="pg-target-missing"'),
+                        alert_count("WanxiangMonitoredTargetMissing", "21m", 1, 'pod="pg-target-missing"'),
+                        alert_count("WanxiangMonitoredTargetMissing", "22m", 0, 'pod="pg-target-missing"'),
+                        alert_count("WanxiangMonitoredTargetDown", "5m", 1, 'pod="node-exporter-down"'),
+                        alert_count("WanxiangMonitoredTargetDown", "6m", 0, 'pod="node-exporter-down"'),
+                        alert_count("WanxiangMonitoredTargetMissing", "20m", 1, 'pod="node-exporter-missing"'),
+                        alert_count("WanxiangMonitoredTargetMissing", "21m", 1, 'pod="node-exporter-missing"'),
+                        alert_count("WanxiangMonitoredTargetMissing", "22m", 0, 'pod="node-exporter-missing"'),
+                        alert_count("WanxiangNodeExporterMetricMissing", "65m", 1, 'pod="node-exporter-metric-missing"'),
+                        alert_count("WanxiangNodeExporterMetricMissing", "66m", 0, 'pod="node-exporter-metric-missing"'),
+                        alert_count("WanxiangNodeExporterMetricMissing", "65m", 0, 'pod="node-exporter-healthy"'),
                     ],
                 }
             ],

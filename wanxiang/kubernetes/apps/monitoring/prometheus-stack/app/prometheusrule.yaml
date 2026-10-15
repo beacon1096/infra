@@ -11,51 +11,57 @@ spec:
       rules:
         - alert: WanxiangMonitoredTargetDown
           expr: >-
-            up{job=~"longhorn-backend|monitoring/cnpg-instances|monitoring/cnpg-operator|network/envoy-proxy|cert-manager|cainjector|webhook"} == 0
+            up{job=~"node-exporter|longhorn-backend|monitoring/cnpg-instances|monitoring/cnpg-operator|network/envoy-proxy|cert-manager|cainjector|webhook"} == 0
           for: 5m
           labels:
             severity: critical
             component: scrape
           annotations:
             summary: A required Wanxiang metrics target is down
-            description: A selected Longhorn, CNPG, Envoy, or cert-manager target has failed scrapes for five minutes.
+            description: A selected node, Longhorn, CNPG, Envoy, or cert-manager target has failed scrapes for five minutes.
         - alert: WanxiangMonitoredTargetMissing
           expr: >-
             (
-              kube_pod_container_status_ready{namespace="storage",container="longhorn-manager",condition="true"} == 1
+              kube_pod_container_status_ready{namespace="monitoring",container="node-exporter"} == 1
+              unless on(namespace, pod) up{job="node-exporter"}
+            )
+            or
+            (
+              kube_pod_container_status_ready{namespace="storage",container="longhorn-manager"} == 1
               unless on(namespace, pod) up{job="longhorn-backend"}
             )
             or
             (
-              kube_pod_container_status_ready{container="postgres",condition="true"} == 1
+              kube_pod_container_status_ready{container="postgres"} == 1
               unless on(namespace, pod) up{job="monitoring/cnpg-instances"}
             )
             or
             (
-              kube_pod_container_status_ready{namespace="database",container="manager",condition="true"} == 1
+              kube_pod_container_status_ready{namespace="database",container="manager"} == 1
               unless on(namespace, pod) up{job="monitoring/cnpg-operator"}
             )
             or
             (
-              kube_pod_container_status_ready{namespace="network",container="envoy",condition="true"} == 1
+              kube_pod_container_status_ready{namespace="network",container="envoy"} == 1
               unless on(namespace, pod) up{job="network/envoy-proxy"}
             )
             or
             (
-              kube_pod_container_status_ready{namespace="cert-manager",container="cert-manager-controller",condition="true"} == 1
+              kube_pod_container_status_ready{namespace="cert-manager",container="cert-manager-controller"} == 1
               unless on(namespace, pod) up{job="cert-manager"}
             )
             or
             (
-              kube_pod_container_status_ready{namespace="cert-manager",container="cert-manager-cainjector",condition="true"} == 1
+              kube_pod_container_status_ready{namespace="cert-manager",container="cert-manager-cainjector"} == 1
               unless on(namespace, pod) up{job="cainjector"}
             )
             or
             (
-              kube_pod_container_status_ready{namespace="cert-manager",container="cert-manager-webhook",condition="true"} == 1
+              kube_pod_container_status_ready{namespace="cert-manager",container="cert-manager-webhook"} == 1
               unless on(namespace, pod) up{job="webhook"}
             )
           for: 10m
+          keep_firing_for: 1s
           labels:
             severity: critical
             component: scrape
@@ -71,6 +77,18 @@ spec:
           annotations:
             summary: Node exporter metrics are absent
             description: The stack cannot prove node or disk health without node exporter samples.
+        - alert: WanxiangNodeExporterMetricMissing
+          expr: >-
+            up{job="node-exporter"} == 1
+            unless on(job, instance, namespace, pod)
+            node_uname_info{job="node-exporter"}
+          for: 10m
+          labels:
+            severity: critical
+            component: node
+          annotations:
+            summary: A node exporter target has lost its identity metric
+            description: A healthy peer must not hide missing node metrics from this exporter target.
         - alert: WanxiangKubeStateMetricsMissing
           expr: absent(kube_node_status_condition)
           for: 10m

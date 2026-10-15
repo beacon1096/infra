@@ -40,13 +40,17 @@ Longhorn 固定版本按
 
 | 层次 | 信号 | 规则 |
 |---|---|---|
-| 节点 / 磁盘 | kube-state-metrics、node-exporter | NodeNotReady、可写文件系统余量低于 15%、两类指标缺失 |
+| 节点 / 磁盘 | kube-state-metrics、node-exporter | NodeNotReady、可写文件系统余量低于 15%、exporter down/移出发现/逐目标关键指标缺失、两类全域指标缺失 |
 | Longhorn | 现有 ServiceMonitor | volume faulted、逐卷从未成功备份、指标缺失；另复用 BEACO-203 的逐卷 stale / failed |
 | CNPG | 新增 instance/operator PodMonitor | collector error、复制延迟超过 300 秒、目标 down、关键指标缺失 |
 | 网关 | 现有 Envoy PodMonitor | `envoy_server_live < 1`、目标 down、关键指标缺失 |
 | 证书 | 现有 cert-manager ServiceMonitor | 14 天内到期、目标 down、到期指标缺失 |
 
-`up == 0`、ready Pod 与 `up` 的逐对象对账、以及关键指标的逐对象 `unless` 分开处理：
+`up == 0`、ready Pod 与 `up` 的逐对象对账、以及关键指标的逐对象 `unless` 分开处理。
+其中 kube-state-metrics `2.18.0` 的 `kube_pod_container_status_ready` 使用真实的
+container/pod/namespace/uid 标签，不假定不存在的 `condition` 标签。node-exporter 同时覆盖
+单目标抓取失败、DaemonSet Pod 仍 Ready 但目标从发现消失，以及 `up=1` 时单目标
+`node_uname_info` 丢失：
 目标抓取失败、Monitor/selector 把目标移出发现、一个 Longhorn volume 丢失备份时间序列、
 或一个 CNPG exporter 丢失 collector 指标，都不能被健康 peer 掩盖。全域 `absent(...)`
 仍作为最后一道采集缺失保护。启用后的首轮验收必须先消除或解释所有
@@ -65,6 +69,10 @@ reconcile 两层，仍复用 chart ServiceAccount：
   限定，因为生成对象随 CR reconcile/rollout 变化；verbs 已显式枚举且没有 `*`。
   替代方案是每次升级手工维护所有生成名称，会使升级和故障恢复不可可靠执行，因此
   选择 namespace 边界；
+- Operator admission webhook 与内部 TLS 同时关闭；固定 chart 渲染必须显示 HTTP probe、
+  HTTP self-monitor 且不挂载 `kube-prometheus-stack-admission` Secret。Operator 管理的
+  kubelet Service/Endpoints 及对应 ServiceMonitor 均位于 `monitoring`，复用上述 Role，
+  不向 `kube-system` 或 cluster scope 增加写权限；
 - kube-state-metrics 只启用 `nodes`、`pods` collectors，渲染 ClusterRole 仅含这两个
   list/watch，不再读取集群 Secret；默认 chart rules 同时关闭，避免为未采集对象产生
   无法求值的规则；
@@ -105,8 +113,8 @@ bash utils/run-observability-test.sh
 2. 实际渲染 chart `83.7.0`，确认 Operator `v0.90.1`、KSM 仅 nodes/pods 权限、chart
    广域 Operator ClusterRole 未生成，自定义 cluster discovery 不含 Secret/写权限；
 3. 用 `promtool check rules` 同时解析本包与 BEACO-203 Longhorn 规则；
-4. 用 `promtool test rules` 覆盖真实 job/robustness 标签、正常、故障、目标从发现消失、
-   单 volume/CNPG 实例缺指标及恢复，并保留节点、Envoy、证书、备份用例；
+4. 用 `promtool test rules` 覆盖真实 job/robustness/KSM 标签、正常、故障、目标从发现消失、
+   单 node-exporter/volume/CNPG 实例缺指标及恢复，并保留节点、Envoy、证书、备份用例；
 5. 用 `amtool config routes test` 验证 storage、其它 namespace、无 namespace 三条路径
    都进入选定路由，而不匹配的 info 对照进入 null；
 6. 启动固定版本 Alertmanager 和仅监听 `127.0.0.1` 的临时 webhook stub，实际确认
@@ -121,10 +129,12 @@ HelmRelease 的默认 receiver 是无外发配置的 `null`。上述 stub 只存
 
 1. 重新渲染 chart `83.7.0`，确认 ClusterRole、镜像、20Gi+2Gi PVC、资源 requests
    与本页一致；确认 Longhorn 至少还有 66Gi 原始可调度余量。
-2. 在 `infra-private` 准备位于 `monitoring` 且带上述 selector label 的
-   AlertmanagerConfig；它的 route 不添加 namespace matcher，按 severity/alertname
-   分组，webhook URL 与 token 使用 SOPS Secret 引用。默认 `null` receiver 可先完成
-   纯求值验收，真实渠道必须另行批准。公开测试中的同形 route 只有 loopback stub。
+2. 审阅 `infra-private` 的
+   `wanxiang/kubernetes/apps/monitoring/alertmanager-config/app/alertmanagerconfig.yaml`。
+   该未引用模板位于 `monitoring` 且带上述 selector label；route 不添加 namespace
+   matcher，按 severity/alertname 分组，webhook URL 与 token 仅引用同 namespace Secret。
+   私有 harness 从该模板派生实际 Alertmanager 路由，并只向 loopback stub 验证
+   firing/resolved。真实 Secret、渠道和父级引用仍必须另行批准。
 3. 只在获批提交中，把 `./prometheus-stack/ks.yaml` 加到
    `kubernetes/apps/monitoring/kustomization.yaml`。确认同环境无并发 Flux/存储变更，
    再 reconcile。
