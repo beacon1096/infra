@@ -24,7 +24,9 @@ jobs:
           nix shell nixpkgs#nodejs_24 --command node utils/test-n8n-infra-ci.mjs
           nix shell nixpkgs#nodejs_24 --command node utils/test-renovate-merge-queue.mjs
       - name: Check OpenStatus receiver and probe wiring
-        run: bash utils/check-openstatus-wiring.sh
+        run: |
+          nix shell nixpkgs#kubectl --command bash utils/check-openstatus-wiring.sh
+          bash -n utils/check-openstatus-backups.sh
       - name: Build OCI images
         if: github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/prod')
         run: |

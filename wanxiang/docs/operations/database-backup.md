@@ -41,8 +41,9 @@
 
 ## 可观测与告警
 
-- `RecurringJob.status` 记录成功/失败历史（`recurring-failed-jobs-history-limit`），
-  Longhorn 也会为备份进度与结果发 Kubernetes Event。
+- Kubernetes Job 的成功只表示 recurring-job 控制器完成了遍历；卷级上传失败时
+  Job 仍可能是 `succeeded=1`。必须逐卷核对最新 `Backup.status.state`、`error` 与
+  `snapshotCreatedAt`。Longhorn 也会为备份进度与结果发 Kubernetes Event。
 - `PrometheusRule longhorn-backup`（`storage` 命名空间）定义两条告警：
   - `LonghornBackupStale`：某卷超过 2×RPO 没有成功备份。
   - `LonghornBackupFailed`：`Backup` 进入 Error 状态。
@@ -58,6 +59,9 @@
 4. Longhorn UI → Recurring Jobs / Backups 查看失败历史，关注
    `BackupTargetUnavailable` 事件。
 5. 确认异地加密数据集已解锁、未逼近配额（主机与路径见 `infra-private`）。
+6. 对 OpenStatus 使用 `MAX_BACKUP_AGE_HOURS=26 bash
+   utils/check-openstatus-backups.sh`；脚本非零退出即表示 Secret、升级和上线恢复门槛
+   未满足。不要用 Job `succeeded` 或 BackupTarget `available` 代替逐卷结果。
 
 ## 恢复演练 runbook
 

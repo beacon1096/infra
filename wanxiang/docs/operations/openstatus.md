@@ -128,6 +128,51 @@ but adopting them requires an application/database migration from this fixed
 revision. Treat that as a separate reviewed upgrade; do not mix it into an MCP
 reachability fix.
 
+## Backup And Restore Gate
+
+The three OpenStatus Longhorn volumes are selected by
+`RecurringJob/daily-backup` through the `default` group. Selection, a
+successful Kubernetes Job, and `BackupTarget/default` reporting available are
+only prerequisites: the recurring-job controller can finish its Job while
+individual volume backups fail.
+
+Before a secret change, replica rollout, or upgrade, require a completed and
+fresh backup for every volume:
+
+```bash
+MAX_BACKUP_AGE_HOURS=26 bash utils/check-openstatus-backups.sh
+```
+
+The check resolves each PVC to its Longhorn volume, verifies the `default`
+group binding, and evaluates the newest `Backup` object's state, error, and
+`snapshotCreatedAt`. Keep the per-volume table with the rollout evidence. A
+stale or absent result is a failed recovery gate even when the top-level Job
+succeeded.
+
+The backups are crash-consistent and independent; they are not an atomic
+snapshot across libSQL, Tinybird, and workflows. A safe restore drill therefore
+uses new disposable volumes in an isolated namespace and never rebinds a
+production PVC:
+
+1. Record the three backup names emitted by the check and obtain approval for
+   the storage restore operation.
+2. Create one new Longhorn `Volume` per backup with `spec.fromBackup`, unique
+   `openstatus-restore-<component>-<date>` names, and no recurring-job labels.
+   Wait for each restore to finish and `restoreRequired=false`.
+3. Bind new static PV/PVC objects only in an isolated restore namespace. Mount
+   them read-only first and keep all Services cluster-local.
+4. Start the matching pinned component images in isolation. For libSQL, verify
+   workspace, monitor, private-location, and assignment rows. For Tinybird,
+   verify the expected response tables and recent row counts. For workflows,
+   verify the data tree is readable and the process can open it without writing
+   to the production services.
+5. Record backup timestamp, restore start/end time, selected object counts, and
+   cleanup. Delete only the disposable namespace, PVs, and restored Longhorn
+   volumes; keep the source backups and all production PVCs.
+
+Do not claim recovery readiness until all three volumes pass the freshness
+check and at least libSQL plus Tinybird have completed this isolated read test.
+
 ## Replacement Acceptance
 
 OpenStatus replaces the planned Uptime Kuma role only after all of the
