@@ -1,0 +1,22 @@
+{
+  "prometheus_config": {
+    "returncode": 0,
+    "stdout": "Checking <repo>/utils/metrics-backend-benchmark/results/2026-10-16/configs/prometheus.yaml\n  SUCCESS: 1 rule files found\n SUCCESS: <repo>/utils/metrics-backend-benchmark/results/2026-10-16/configs/prometheus.yaml is valid prometheus config file syntax\n\nChecking <repo>/utils/metrics-backend-benchmark/results/2026-10-16/configs/rules.yaml\n  SUCCESS: 21 rules found\n\n",
+    "stderr": ""
+  },
+  "prometheus_alertmanager": {
+    "returncode": 0,
+    "stdout": "Checking '<private-runtime>/prometheus-alertmanager.yaml'  SUCCESS\nFound:\n - global config\n - route\n - 0 inhibit rules\n - 2 receivers\n - 0 templates\n\n",
+    "stderr": ""
+  },
+  "victoriametrics_alertmanager": {
+    "returncode": 0,
+    "stdout": "Checking '<private-runtime>/victoriametrics-alertmanager.yaml'  SUCCESS\nFound:\n - global config\n - route\n - 0 inhibit rules\n - 2 receivers\n - 0 templates\n\n",
+    "stderr": ""
+  },
+  "vmagent_config": {
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

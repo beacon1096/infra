@@ -1,0 +1,251 @@
+groups:
+- name: wanxiang.collection.rules
+  rules:
+  - alert: WanxiangMonitoredTargetDown
+    expr: up{job=~"node-exporter|longhorn-backend|monitoring/cnpg-instances|monitoring/cnpg-operator|network/envoy-proxy|cert-manager|cainjector|webhook"}
+      == 0
+    for: 15s
+    labels:
+      severity: critical
+      component: scrape
+    annotations:
+      summary: A required Wanxiang metrics target is down
+      description: A selected node, Longhorn, CNPG, Envoy, or cert-manager target
+        has failed scrapes for five minutes.
+  - alert: WanxiangMonitoredTargetMissing
+    expr: "(\n  kube_pod_container_status_ready{namespace=\"monitoring\",container=\"\
+      node-exporter\"} == 1\n  unless on(namespace, pod) up{job=\"node-exporter\"\
+      }\n) or (\n  kube_pod_container_status_ready{namespace=\"storage\",container=\"\
+      longhorn-manager\"} == 1\n  unless on(namespace, pod) up{job=\"longhorn-backend\"\
+      }\n) or (\n  kube_pod_container_status_ready{container=\"postgres\"} == 1\n\
+      \  unless on(namespace, pod) up{job=\"monitoring/cnpg-instances\"}\n) or (\n\
+      \  kube_pod_container_status_ready{namespace=\"database\",container=\"manager\"\
+      } == 1\n  unless on(namespace, pod) up{job=\"monitoring/cnpg-operator\"}\n)\
+      \ or (\n  kube_pod_container_status_ready{namespace=\"network\",container=\"\
+      envoy\"} == 1\n  unless on(namespace, pod) up{job=\"network/envoy-proxy\"}\n\
+      ) or (\n  kube_pod_container_status_ready{namespace=\"cert-manager\",container=\"\
+      cert-manager-controller\"} == 1\n  unless on(namespace, pod) up{job=\"cert-manager\"\
+      }\n) or (\n  kube_pod_container_status_ready{namespace=\"cert-manager\",container=\"\
+      cert-manager-cainjector\"} == 1\n  unless on(namespace, pod) up{job=\"cainjector\"\
+      }\n) or (\n  kube_pod_container_status_ready{namespace=\"cert-manager\",container=\"\
+      cert-manager-webhook\"} == 1\n  unless on(namespace, pod) up{job=\"webhook\"\
+      }\n)"
+    for: 15s
+    keep_firing_for: 1s
+    labels:
+      severity: critical
+      component: scrape
+    annotations:
+      summary: A required Wanxiang metrics target is missing
+      description: A ready exporter workload has disappeared from Prometheus service
+        discovery for ten minutes.
+  - alert: WanxiangNodeMetricsMissing
+    expr: absent(node_uname_info)
+    for: 15s
+    labels:
+      severity: critical
+      component: node
+    annotations:
+      summary: Node exporter metrics are absent
+      description: The stack cannot prove node or disk health without node exporter
+        samples.
+  - alert: WanxiangNodeExporterMetricMissing
+    expr: up{job="node-exporter"} == 1 unless on(job, instance, namespace, pod) node_uname_info{job="node-exporter"}
+    for: 15s
+    labels:
+      severity: critical
+      component: node
+    annotations:
+      summary: A node exporter target has lost its identity metric
+      description: A healthy peer must not hide missing node metrics from this exporter
+        target.
+  - alert: WanxiangKubeStateMetricsMissing
+    expr: absent(kube_node_status_condition)
+    for: 15s
+    labels:
+      severity: critical
+      component: kubernetes
+    annotations:
+      summary: kube-state-metrics samples are absent
+      description: Kubernetes object health must be treated as unknown until collection
+        recovers.
+  - alert: WanxiangLonghornMetricsMissing
+    expr: absent(longhorn_volume_last_backup_at)
+    for: 15s
+    labels:
+      severity: critical
+      component: longhorn
+    annotations:
+      summary: Longhorn backup metrics are absent
+      description: Per-volume backup freshness cannot be proven while this metric
+        is absent.
+  - alert: WanxiangCNPGMetricsMissing
+    expr: absent(cnpg_collector_collection_duration_seconds)
+    for: 15s
+    labels:
+      severity: critical
+      component: cnpg
+    annotations:
+      summary: CloudNativePG instance metrics are absent
+      description: CNPG health must be treated as unknown until instance collection
+        recovers.
+  - alert: WanxiangEnvoyMetricsMissing
+    expr: absent(envoy_server_live)
+    for: 15s
+    labels:
+      severity: critical
+      component: gateway
+    annotations:
+      summary: Envoy gateway metrics are absent
+      description: Gateway health must be treated as unknown until Envoy collection
+        recovers.
+  - alert: WanxiangCertManagerMetricsMissing
+    expr: absent(certmanager_certificate_expiration_timestamp_seconds)
+    for: 15s
+    labels:
+      severity: critical
+      component: certificate
+    annotations:
+      summary: cert-manager certificate metrics are absent
+      description: Certificate lifetime cannot be proven while expiry samples are
+        absent.
+  interval: 5s
+- name: wanxiang.node.rules
+  rules:
+  - alert: WanxiangNodeNotReady
+    expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+    for: 15s
+    labels:
+      severity: critical
+      component: node
+    annotations:
+      summary: A Wanxiang node is not Ready
+      description: kube-state-metrics reports that a node has remained non-Ready for
+        ten minutes.
+  - alert: WanxiangNodeFilesystemLow
+    expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs",mountpoint!~"/var/lib/kubelet/pods/.+"}
+      / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs",mountpoint!~"/var/lib/kubelet/pods/.+"})
+      < 0.15 and node_filesystem_readonly{fstype!~"tmpfs|overlay|squashfs",mountpoint!~"/var/lib/kubelet/pods/.+"}
+      == 0
+    for: 15s
+    labels:
+      severity: warning
+      component: disk
+    annotations:
+      summary: A Wanxiang node filesystem has less than 15 percent free
+      description: Free space has remained below the warning budget for fifteen minutes.
+  interval: 5s
+- name: wanxiang.longhorn.rules
+  rules:
+  - alert: WanxiangLonghornVolumeFaulted
+    expr: longhorn_volume_robustness{state="faulted"} == 1
+    for: 15s
+    labels:
+      severity: critical
+      component: longhorn
+    annotations:
+      summary: A Longhorn volume is faulted
+      description: Longhorn 1.12.1 reports the faulted robustness state as active
+        for a volume.
+  - alert: WanxiangLonghornBackupMetricMissing
+    expr: longhorn_volume_capacity_bytes unless on(volume) longhorn_volume_last_backup_at
+    for: 15s
+    labels:
+      severity: critical
+      component: longhorn
+    annotations:
+      summary: A Longhorn volume has lost its backup timestamp metric
+      description: Another healthy volume must not hide missing per-volume backup
+        evidence.
+  - alert: WanxiangLonghornBackupNeverSucceeded
+    expr: longhorn_volume_last_backup_at == 0
+    for: 15s
+    labels:
+      severity: warning
+      component: longhorn
+    annotations:
+      summary: A Longhorn volume has no successful backup
+      description: Per-volume freshness is unhealthy until a completed backup timestamp
+        exists.
+  interval: 5s
+- name: wanxiang.cnpg.rules
+  rules:
+  - alert: WanxiangCNPGInstanceMetricMissing
+    expr: up{job="monitoring/cnpg-instances"} == 1 unless on(job, instance, namespace,
+      pod) cnpg_collector_collection_duration_seconds{job="monitoring/cnpg-instances"}
+    for: 15s
+    labels:
+      severity: critical
+      component: cnpg
+    annotations:
+      summary: A CloudNativePG exporter has lost its collector evidence
+      description: A healthy peer must not hide missing metrics from this CNPG instance.
+  - alert: WanxiangCNPGCollectorError
+    expr: cnpg_collector_last_collection_error == 1
+    for: 15s
+    labels:
+      severity: warning
+      component: cnpg
+    annotations:
+      summary: CloudNativePG metrics collection is failing
+      description: A CNPG instance has reported collection errors for five minutes.
+  - alert: WanxiangCNPGReplicationLagHigh
+    expr: cnpg_pg_replication_lag > 300
+    for: 15s
+    labels:
+      severity: warning
+      component: cnpg
+    annotations:
+      summary: CloudNativePG replication lag exceeds five minutes
+      description: A replica has remained more than 300 seconds behind for fifteen
+        minutes.
+  interval: 5s
+- name: wanxiang.edge.rules
+  rules:
+  - alert: WanxiangEnvoyUnavailable
+    expr: envoy_server_live < 1
+    for: 15s
+    labels:
+      severity: critical
+      component: gateway
+    annotations:
+      summary: An Envoy gateway proxy is not live
+      description: Envoy has reported a non-live server state for five minutes.
+  - alert: WanxiangCertificateExpiringSoon
+    expr: certmanager_certificate_expiration_timestamp_seconds > 0 and (certmanager_certificate_expiration_timestamp_seconds
+      - time()) < 1209600
+    for: 15s
+    labels:
+      severity: warning
+      component: certificate
+    annotations:
+      summary: A managed certificate expires within fourteen days
+      description: cert-manager reports less than fourteen days of certificate lifetime
+        remaining.
+  interval: 5s
+- name: longhorn.backup.rules
+  rules:
+  - alert: LonghornBackupStale
+    expr: "longhorn_volume_last_backup_at > 0\n  and (time() - longhorn_volume_last_backup_at)\
+      \ > 172800\n"
+    for: 15s
+    labels:
+      severity: warning
+    annotations:
+      summary: Longhorn volume {{ $labels.pvc }} has no recent backup
+      description: Volume {{ $labels.volume }} (PVC {{ $labels.pvc }} in namespace
+        {{ $labels.pvc_namespace }}) was last backed up {{ $value | humanizeDuration
+        }} ago, more than 2x the 24h RPO. Check the Longhorn recurring job and the
+        backup target.
+  - alert: LonghornBackupFailed
+    expr: 'longhorn_backup_state == 4
+
+      '
+    for: 15s
+    labels:
+      severity: warning
+    annotations:
+      summary: Longhorn backup {{ $labels.backup }} failed
+      description: Backup {{ $labels.backup }} for volume {{ $labels.volume }} is
+        in the Error state. Inspect the Longhorn UI or the `Backup` CR.
+  interval: 5s

@@ -361,7 +361,10 @@
       # this repository's flake.lock without constructing an unpinned
       # `nix-shell -I nixpkgs=flake:nixpkgs` environment.
       observability-promtool = pkgs.prometheus.cli;
+      observability-prometheus = pkgs.prometheus;
       observability-alertmanager = pkgs.prometheus-alertmanager;
+      observability-victoriametrics = pkgs.victoriametrics;
+      observability-vmagent = pkgs.vmagent;
       observability-kubectl = pkgs.kubectl;
       observability-helm = pkgs.kubernetes-helm;
       observability-python = pkgs.python3;

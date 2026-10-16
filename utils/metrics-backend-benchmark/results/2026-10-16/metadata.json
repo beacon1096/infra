@@ -1,0 +1,219 @@
+{
+  "budgets": {
+    "cpu_affinity": {
+      "prometheus": [
+        0,
+        1
+      ],
+      "victoriametrics": [
+        2,
+        3
+      ]
+    },
+    "cpu_cores_per_stack": 2,
+    "disk_bytes_per_stack": 2147483648,
+    "rss_bytes_per_stack": 1610612736,
+    "wall_time_seconds": 3600
+  },
+  "cleanup": {
+    "child_processes_stopped": true
+  },
+  "controlled_deviations": {
+    "notification_timing": {
+      "benchmark_group_interval": "1s",
+      "benchmark_group_wait": "0s",
+      "source_timing": "validated from the private template and intentionally not reproduced here"
+    },
+    "rule_timing": [
+      {
+        "alert": "WanxiangMonitoredTargetDown",
+        "benchmark_for": "15s",
+        "source_for": "5m"
+      },
+      {
+        "alert": "WanxiangMonitoredTargetMissing",
+        "benchmark_for": "15s",
+        "source_for": "10m"
+      },
+      {
+        "alert": "WanxiangNodeMetricsMissing",
+        "benchmark_for": "15s",
+        "source_for": "10m"
+      },
+      {
+        "alert": "WanxiangNodeExporterMetricMissing",
+        "benchmark_for": "15s",
+        "source_for": "10m"
+      },
+      {
+        "alert": "WanxiangKubeStateMetricsMissing",
+        "benchmark_for": "15s",
+        "source_for": "10m"
+      },
+      {
+        "alert": "WanxiangLonghornMetricsMissing",
+        "benchmark_for": "15s",
+        "source_for": "10m"
+      },
+      {
+        "alert": "WanxiangCNPGMetricsMissing",
+        "benchmark_for": "15s",
+        "source_for": "10m"
+      },
+      {
+        "alert": "WanxiangEnvoyMetricsMissing",
+        "benchmark_for": "15s",
+        "source_for": "10m"
+      },
+      {
+        "alert": "WanxiangCertManagerMetricsMissing",
+        "benchmark_for": "15s",
+        "source_for": "10m"
+      },
+      {
+        "alert": "WanxiangNodeNotReady",
+        "benchmark_for": "15s",
+        "source_for": "10m"
+      },
+      {
+        "alert": "WanxiangNodeFilesystemLow",
+        "benchmark_for": "15s",
+        "source_for": "15m"
+      },
+      {
+        "alert": "WanxiangLonghornVolumeFaulted",
+        "benchmark_for": "15s",
+        "source_for": "5m"
+      },
+      {
+        "alert": "WanxiangLonghornBackupMetricMissing",
+        "benchmark_for": "15s",
+        "source_for": "10m"
+      },
+      {
+        "alert": "WanxiangLonghornBackupNeverSucceeded",
+        "benchmark_for": "15s",
+        "source_for": "30m"
+      },
+      {
+        "alert": "WanxiangCNPGInstanceMetricMissing",
+        "benchmark_for": "15s",
+        "source_for": "10m"
+      },
+      {
+        "alert": "WanxiangCNPGCollectorError",
+        "benchmark_for": "15s",
+        "source_for": "5m"
+      },
+      {
+        "alert": "WanxiangCNPGReplicationLagHigh",
+        "benchmark_for": "15s",
+        "source_for": "15m"
+      },
+      {
+        "alert": "WanxiangEnvoyUnavailable",
+        "benchmark_for": "15s",
+        "source_for": "5m"
+      },
+      {
+        "alert": "WanxiangCertificateExpiringSoon",
+        "benchmark_for": "15s",
+        "source_for": "1h"
+      },
+      {
+        "alert": "LonghornBackupStale",
+        "benchmark_for": "15s",
+        "source_for": "1h"
+      },
+      {
+        "alert": "LonghornBackupFailed",
+        "benchmark_for": "15s",
+        "source_for": "5m"
+      }
+    ]
+  },
+  "finished_at": "2026-10-16T09:36:16.486343+00:00",
+  "host": {
+    "allowed_cpus": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ],
+    "architecture": "x86_64",
+    "cgroup_memory_max": "8589934592",
+    "cpu_model": "12th Gen Intel(R) Core(TM) i9-12900H",
+    "filesystem": [
+      "ext4",
+      "51290592",
+      "37926444"
+    ],
+    "host_memory_bytes": 67025350656,
+    "kernel": "6.18.48-talos"
+  },
+  "result": "passed",
+  "source": {
+    "dashboard": "wanxiang/kubernetes/apps/monitoring/prometheus-stack/dashboards/wanxiang-platform-overview.json",
+    "longhorn_rules": "wanxiang/kubernetes/apps/storage/longhorn/app/prometheusrule.yaml",
+    "platform_rules": "wanxiang/kubernetes/apps/monitoring/prometheus-stack/app/prometheusrule.yaml",
+    "private_commit": "a53ffecd6b8070e5cab96f6375584080fd037ff2",
+    "private_template_path": "wanxiang/kubernetes/apps/monitoring/alertmanager-config/app/alertmanagerconfig.yaml",
+    "private_template_sha256": "2c2f7b885056ab583ab898e5ca133e0c616cc223547d2e6c78c86109387f66ca",
+    "public_commit": "3c5de8c75c7b84b53f8cdeec50ec4076f052a84d"
+  },
+  "started_at": "2026-10-16T09:31:14.871823+00:00",
+  "versions": {
+    "alertmanager": "alertmanager, version 0.31.1 (branch: unknown, revision: unknown)",
+    "prometheus": "prometheus, version 3.12.0 (branch: unknown, revision: unknown)",
+    "victoriametrics": "1.146.0",
+    "vmagent": "1.146.0",
+    "vmalert": "1.146.0"
+  },
+  "workload": {
+    "churn_interval_seconds": 30,
+    "churn_series": 1000,
+    "dashboard_query_count": 14,
+    "dashboard_query_modes": {
+      "instant": 11,
+      "range": 3
+    },
+    "duration_seconds": 300,
+    "evaluation_interval_seconds": 5,
+    "exporter_bytes": {
+      "prometheus": 27044926,
+      "vmagent": 27502333
+    },
+    "exporter_scrapes": {
+      "prometheus": 592,
+      "vmagent": 600
+    },
+    "fault_window_seconds": [
+      75,
+      165
+    ],
+    "query_interval_seconds": 10,
+    "queue_outage_window_seconds": [
+      190,
+      210
+    ],
+    "retention": "1d",
+    "scrape_interval_seconds": 5,
+    "stable_series": 5000
+  }
+}

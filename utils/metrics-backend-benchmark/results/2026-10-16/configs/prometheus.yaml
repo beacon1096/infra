@@ -1,0 +1,93 @@
+global:
+  scrape_interval: 5s
+  scrape_timeout: 4s
+  evaluation_interval: 5s
+rule_files:
+- <repo>/utils/metrics-backend-benchmark/results/2026-10-16/configs/rules.yaml
+alerting:
+  alertmanagers:
+  - static_configs:
+    - targets:
+      - 127.0.0.1:53037
+scrape_configs:
+- job_name: node-exporter
+  metrics_path: /metrics/node
+  static_configs:
+  - targets:
+    - 127.0.0.1:42505
+    labels:
+      namespace: monitoring
+      pod: node-exporter-fixture
+- job_name: kube-state-metrics
+  metrics_path: /metrics/ksm
+  static_configs:
+  - targets:
+    - 127.0.0.1:42505
+    labels:
+      namespace: monitoring
+      pod: ksm-fixture
+  honor_labels: true
+- job_name: longhorn-backend
+  metrics_path: /metrics/longhorn
+  static_configs:
+  - targets:
+    - 127.0.0.1:42505
+    labels:
+      namespace: storage
+      pod: longhorn-manager-fixture
+- job_name: monitoring/cnpg-instances
+  metrics_path: /metrics/cnpg
+  static_configs:
+  - targets:
+    - 127.0.0.1:42505
+    labels:
+      namespace: database
+      pod: fixture-pg-1
+- job_name: monitoring/cnpg-operator
+  metrics_path: /metrics/cnpg-operator
+  static_configs:
+  - targets:
+    - 127.0.0.1:42505
+    labels:
+      namespace: database
+      pod: cnpg-operator-fixture
+- job_name: network/envoy-proxy
+  metrics_path: /metrics/envoy
+  static_configs:
+  - targets:
+    - 127.0.0.1:42505
+    labels:
+      namespace: network
+      pod: envoy-fixture
+- job_name: cert-manager
+  metrics_path: /metrics/cert-manager
+  static_configs:
+  - targets:
+    - 127.0.0.1:42505
+    labels:
+      namespace: cert-manager
+      pod: cert-manager-fixture
+- job_name: cainjector
+  metrics_path: /metrics/cainjector
+  static_configs:
+  - targets:
+    - 127.0.0.1:42505
+    labels:
+      namespace: cert-manager
+      pod: cainjector-fixture
+- job_name: webhook
+  metrics_path: /metrics/webhook
+  static_configs:
+  - targets:
+    - 127.0.0.1:42505
+    labels:
+      namespace: cert-manager
+      pod: webhook-fixture
+- job_name: synthetic-load
+  metrics_path: /metrics/synthetic
+  static_configs:
+  - targets:
+    - 127.0.0.1:42505
+    labels:
+      namespace: benchmark
+      pod: synthetic-fixture

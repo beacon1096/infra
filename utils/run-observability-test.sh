@@ -41,4 +41,5 @@ if (( $# > 0 )); then
 fi
 
 "$python_path/bin/python3" "$root/utils/test-observability-prep.py"
+"$python_path/bin/python3" -m py_compile "$root/utils/metrics-backend-benchmark/run.py"
 exec "$python_path/bin/python3" "$root/utils/test-observability-dashboard.py"

@@ -1,0 +1,424 @@
+{
+  "acceptance": {
+    "dashboard_queries_succeeded": true,
+    "final_data_equal_at_common_historical_time": true,
+    "freshness_within_documented_bounds": true,
+    "normal_windows_have_successful_error_free_polls_and_no_firing_alerts": true,
+    "queue_outage_exercised_and_replayed": true,
+    "required_notifications_observed": true,
+    "resource_budgets_respected": true,
+    "run_completed": true
+  },
+  "all_required_notifications_observed": true,
+  "budget_violation": null,
+  "completeness": {
+    "prometheus": {
+      "failed_dashboard_queries": 0,
+      "final": {
+        "active_series": {
+          "evaluation_time": 1792143335,
+          "latency_ms": 8.919688989408314,
+          "result": [
+            {
+              "metric": {},
+              "value": [
+                1792143335,
+                "6000"
+              ]
+            }
+          ]
+        },
+        "freshness": {
+          "evaluation_time": 1792143375.6117554,
+          "latency_ms": 22.907548991497606,
+          "latest_sample_timestamp": 1792143375.226,
+          "observed_wall_time": 1792143375.6346982,
+          "result": [
+            {
+              "metric": {},
+              "value": [
+                1792143375.612,
+                "1792143375.226"
+              ]
+            }
+          ],
+          "wall_clock_freshness_seconds": 0.40869808197021484
+        },
+        "samples_last_2m": {
+          "evaluation_time": 1792143335,
+          "latency_ms": 14.324948017019778,
+          "result": [
+            {
+              "metric": {},
+              "value": [
+                1792143335,
+                "144000"
+              ]
+            }
+          ]
+        }
+      },
+      "successful_dashboard_queries": 420
+    },
+    "victoriametrics": {
+      "failed_dashboard_queries": 0,
+      "final": {
+        "active_series": {
+          "evaluation_time": 1792143335,
+          "latency_ms": 72.89755699457601,
+          "result": [
+            {
+              "metric": {},
+              "value": [
+                1792143335,
+                "6000"
+              ]
+            }
+          ]
+        },
+        "freshness": {
+          "evaluation_time": 1792143375.6117554,
+          "latency_ms": 26.42244700109586,
+          "latest_sample_timestamp": 1792143341.479,
+          "observed_wall_time": 1792143375.6611898,
+          "result": [
+            {
+              "metric": {},
+              "value": [
+                1792143375.612,
+                "1792143341.479"
+              ]
+            }
+          ],
+          "wall_clock_freshness_seconds": 34.18218970298767
+        },
+        "samples_last_2m": {
+          "evaluation_time": 1792143335,
+          "latency_ms": 21.080238977447152,
+          "result": [
+            {
+              "metric": {},
+              "value": [
+                1792143335,
+                "144000"
+              ]
+            }
+          ]
+        }
+      },
+      "successful_dashboard_queries": 420
+    }
+  },
+  "dashboard_snapshot_shape_differences": [
+    {
+      "panel": "Node filesystem free",
+      "prometheus": 11,
+      "reason": "point_count",
+      "snapshot": "normal",
+      "victoriametrics": 13
+    },
+    {
+      "panel": "CNPG replication lag",
+      "prometheus": 12,
+      "reason": "point_count",
+      "snapshot": "normal",
+      "victoriametrics": 13
+    },
+    {
+      "panel": "Certificate lifetime remaining",
+      "prometheus": 11,
+      "reason": "point_count",
+      "snapshot": "normal",
+      "victoriametrics": 13
+    },
+    {
+      "panel": "Node filesystem free",
+      "prometheus": 29,
+      "reason": "point_count",
+      "snapshot": "fault",
+      "victoriametrics": 31
+    },
+    {
+      "panel": "CNPG replication lag",
+      "prometheus": 30,
+      "reason": "point_count",
+      "snapshot": "fault",
+      "victoriametrics": 31
+    },
+    {
+      "panel": "Certificate lifetime remaining",
+      "prometheus": 29,
+      "reason": "point_count",
+      "snapshot": "fault",
+      "victoriametrics": 31
+    },
+    {
+      "absolute_tolerance": 0.05,
+      "panel": "Metric evidence state",
+      "prometheus": 0.0,
+      "reason": "value",
+      "snapshot": "recovered",
+      "victoriametrics": 3.0
+    },
+    {
+      "absolute_tolerance": 0.05,
+      "panel": "Active platform alerts",
+      "prometheus": 0.0,
+      "reason": "value",
+      "snapshot": "recovered",
+      "victoriametrics": 9.0
+    },
+    {
+      "panel": "Node filesystem free",
+      "prometheus": 34,
+      "reason": "point_count",
+      "snapshot": "recovered",
+      "victoriametrics": 36
+    },
+    {
+      "absolute_tolerance": 0.05,
+      "panel": "Longhorn volume robustness",
+      "prometheus": 0.0,
+      "reason": "value",
+      "snapshot": "recovered",
+      "victoriametrics": 1.0
+    },
+    {
+      "absolute_tolerance": 0.05,
+      "panel": "Per-volume backup freshness",
+      "prometheus": 1.0012336111068725,
+      "reason": "value",
+      "snapshot": "recovered",
+      "victoriametrics": 72.00111722224288
+    },
+    {
+      "absolute_tolerance": 0.05,
+      "panel": "Backup execution state",
+      "prometheus": 1.0,
+      "reason": "value",
+      "snapshot": "recovered",
+      "victoriametrics": 4.0
+    },
+    {
+      "absolute_tolerance": 0.05,
+      "panel": "CNPG collector state",
+      "prometheus": 0.0,
+      "reason": "value",
+      "snapshot": "recovered",
+      "victoriametrics": 1.0
+    },
+    {
+      "panel": "CNPG replication lag",
+      "prometheus": 35,
+      "reason": "point_count",
+      "snapshot": "recovered",
+      "victoriametrics": 36
+    },
+    {
+      "absolute_tolerance": 0.05,
+      "panel": "Gateway live state",
+      "prometheus": 1.0,
+      "reason": "value",
+      "snapshot": "recovered",
+      "victoriametrics": 0.0
+    },
+    {
+      "panel": "Certificate lifetime remaining",
+      "prometheus": 34,
+      "reason": "point_count",
+      "snapshot": "recovered",
+      "victoriametrics": 36
+    },
+    {
+      "absolute_tolerance": 0.05,
+      "panel": "Metric evidence state",
+      "prometheus": 0.0,
+      "reason": "value",
+      "snapshot": "queue_outage",
+      "victoriametrics": 3.0
+    },
+    {
+      "absolute_tolerance": 0.05,
+      "panel": "Active platform alerts",
+      "prometheus": 0.0,
+      "reason": "value",
+      "snapshot": "queue_outage",
+      "victoriametrics": 9.0
+    },
+    {
+      "panel": "Node filesystem free",
+      "prometheus": 37,
+      "reason": "point_count",
+      "snapshot": "queue_outage",
+      "victoriametrics": 39
+    },
+    {
+      "absolute_tolerance": 0.05,
+      "panel": "Longhorn volume robustness",
+      "prometheus": 0.0,
+      "reason": "value",
+      "snapshot": "queue_outage",
+      "victoriametrics": 1.0
+    },
+    {
+      "absolute_tolerance": 0.05,
+      "panel": "Per-volume backup freshness",
+      "prometheus": 1.0012333333492278,
+      "reason": "value",
+      "snapshot": "queue_outage",
+      "victoriametrics": 72.00112111111481
+    },
+    {
+      "absolute_tolerance": 0.05,
+      "panel": "Backup execution state",
+      "prometheus": 1.0,
+      "reason": "value",
+      "snapshot": "queue_outage",
+      "victoriametrics": 4.0
+    },
+    {
+      "absolute_tolerance": 0.05,
+      "panel": "CNPG collector state",
+      "prometheus": 0.0,
+      "reason": "value",
+      "snapshot": "queue_outage",
+      "victoriametrics": 1.0
+    },
+    {
+      "panel": "CNPG replication lag",
+      "prometheus": 38,
+      "reason": "point_count",
+      "snapshot": "queue_outage",
+      "victoriametrics": 39
+    },
+    {
+      "absolute_tolerance": 0.05,
+      "panel": "Gateway live state",
+      "prometheus": 1.0,
+      "reason": "value",
+      "snapshot": "queue_outage",
+      "victoriametrics": 0.0
+    },
+    {
+      "panel": "Certificate lifetime remaining",
+      "prometheus": 37,
+      "reason": "point_count",
+      "snapshot": "queue_outage",
+      "victoriametrics": 39
+    },
+    {
+      "panel": "Node filesystem free",
+      "prometheus": 44,
+      "reason": "point_count",
+      "snapshot": "queue_drained",
+      "victoriametrics": 46
+    },
+    {
+      "panel": "CNPG replication lag",
+      "prometheus": 45,
+      "reason": "point_count",
+      "snapshot": "queue_drained",
+      "victoriametrics": 46
+    },
+    {
+      "panel": "Certificate lifetime remaining",
+      "prometheus": 44,
+      "reason": "point_count",
+      "snapshot": "queue_drained",
+      "victoriametrics": 46
+    }
+  ],
+  "engine_counters": {
+    "prometheus_head_samples_appended_total": 435774.0,
+    "victoriametrics_rows_inserted_total": 444136.0,
+    "vmagent_pending_data_bytes": 0.0,
+    "vmagent_queue_bytes_dropped_total": 0.0,
+    "vmagent_queue_bytes_read_total": 162111.0,
+    "vmagent_queue_bytes_written_total": 162111.0,
+    "vmagent_rows_inserted_total": 0.0,
+    "vmagent_rows_pushed_total": 443683.0,
+    "vmagent_scraped_samples_total": 421482.0
+  },
+  "final_data_equal": true,
+  "healthy_window_alert_polls": {
+    "prometheus": {
+      "baseline": {
+        "errors": 0,
+        "successful": 6
+      },
+      "recovered": {
+        "errors": 0,
+        "successful": 12
+      }
+    },
+    "victoriametrics": {
+      "baseline": {
+        "errors": 0,
+        "successful": 6
+      },
+      "recovered": {
+        "errors": 0,
+        "successful": 12
+      }
+    }
+  },
+  "normal_window_firing_alerts": {
+    "prometheus": [],
+    "victoriametrics": []
+  },
+  "notification_matrix": {
+    "prometheus": {
+      "backup_failed": [
+        "firing",
+        "resolved"
+      ],
+      "fault": [
+        "firing",
+        "resolved"
+      ],
+      "missing": [
+        "firing",
+        "resolved"
+      ],
+      "stale": [
+        "firing",
+        "resolved"
+      ]
+    },
+    "victoriametrics": {
+      "backup_failed": [
+        "firing",
+        "resolved"
+      ],
+      "fault": [
+        "firing",
+        "resolved"
+      ],
+      "missing": [
+        "firing",
+        "resolved"
+      ],
+      "stale": [
+        "firing",
+        "resolved"
+      ]
+    }
+  },
+  "queue_outage": {
+    "cleanup_proxy_errors": [],
+    "forwarded_bytes": 1968852,
+    "forwarded_requests": 449,
+    "pending_data_bytes": 0.0,
+    "proxy_errors": [],
+    "queue_final_bytes": 162441,
+    "queue_peak_bytes": 162441,
+    "rejected_bytes": 7494,
+    "rejected_requests": 12,
+    "window_seconds": [
+      190,
+      210
+    ]
+  },
+  "rate_increase_expressions": [],
+  "result": "passed"
+}

@@ -1,0 +1,101 @@
+{
+  "engine_counters": {
+    "prometheus_head_samples_appended_total": 435774.0,
+    "victoriametrics_rows_inserted_total": 444136.0,
+    "vmagent_pending_data_bytes": 0.0,
+    "vmagent_queue_bytes_dropped_total": 0.0,
+    "vmagent_queue_bytes_read_total": 162111.0,
+    "vmagent_queue_bytes_written_total": 162111.0,
+    "vmagent_rows_inserted_total": 0.0,
+    "vmagent_rows_pushed_total": 443683.0,
+    "vmagent_scraped_samples_total": 421482.0
+  },
+  "prometheus": {
+    "active_series": {
+      "evaluation_time": 1792143335,
+      "latency_ms": 8.919688989408314,
+      "result": [
+        {
+          "metric": {},
+          "value": [
+            1792143335,
+            "6000"
+          ]
+        }
+      ]
+    },
+    "freshness": {
+      "evaluation_time": 1792143375.6117554,
+      "latency_ms": 22.907548991497606,
+      "latest_sample_timestamp": 1792143375.226,
+      "observed_wall_time": 1792143375.6346982,
+      "result": [
+        {
+          "metric": {},
+          "value": [
+            1792143375.612,
+            "1792143375.226"
+          ]
+        }
+      ],
+      "wall_clock_freshness_seconds": 0.40869808197021484
+    },
+    "samples_last_2m": {
+      "evaluation_time": 1792143335,
+      "latency_ms": 14.324948017019778,
+      "result": [
+        {
+          "metric": {},
+          "value": [
+            1792143335,
+            "144000"
+          ]
+        }
+      ]
+    }
+  },
+  "victoriametrics": {
+    "active_series": {
+      "evaluation_time": 1792143335,
+      "latency_ms": 72.89755699457601,
+      "result": [
+        {
+          "metric": {},
+          "value": [
+            1792143335,
+            "6000"
+          ]
+        }
+      ]
+    },
+    "freshness": {
+      "evaluation_time": 1792143375.6117554,
+      "latency_ms": 26.42244700109586,
+      "latest_sample_timestamp": 1792143341.479,
+      "observed_wall_time": 1792143375.6611898,
+      "result": [
+        {
+          "metric": {},
+          "value": [
+            1792143375.612,
+            "1792143341.479"
+          ]
+        }
+      ],
+      "wall_clock_freshness_seconds": 34.18218970298767
+    },
+    "samples_last_2m": {
+      "evaluation_time": 1792143335,
+      "latency_ms": 21.080238977447152,
+      "result": [
+        {
+          "metric": {},
+          "value": [
+            1792143335,
+            "144000"
+          ]
+        }
+      ]
+    }
+  }
+}

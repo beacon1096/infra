@@ -1,0 +1,12 @@
+{
+  "promtool": {
+    "returncode": 0,
+    "stdout": "Checking <repo>/utils/metrics-backend-benchmark/results/2026-10-16/configs/rules.yaml\n  SUCCESS: 21 rules found\n\n",
+    "stderr": ""
+  },
+  "vmalert": {
+    "returncode": 0,
+    "stdout": "",
+    "stderr": "2026-10-16T09:31:14.933Z\tinfo\tVictoriaMetrics/lib/logger/flag.go:12\tbuild version: 1.146.0\n2026-10-16T09:31:14.933Z\tinfo\tVictoriaMetrics/lib/logger/flag.go:13\tcommand-line flags\n2026-10-16T09:31:14.933Z\tinfo\tVictoriaMetrics/lib/logger/flag.go:20\t  -dryRun=\"true\"\n2026-10-16T09:31:14.933Z\tinfo\tVictoriaMetrics/lib/logger/flag.go:20\t  -rule=\"<repo>/utils/metrics-backend-benchmark/results/2026-10-16/configs/rules.yaml\"\n2026-10-16T09:31:14.933Z\tinfo\tVictoriaMetrics/app/vmalert/config/log/logger.go:52\tfound 1 files to read from \"Local FS{MatchPattern: \\\"<repo>/utils/metrics-backend-benchmark/results/2026-10-16/configs/rules.yaml\\\"}\"\n2026-10-16T09:31:14.933Z\tinfo\tVictoriaMetrics/app/vmalert/config/log/logger.go:52\tfinished reading 1 files in 33.327\u00b5s from \"Local FS{MatchPattern: \\\"<repo>/utils/metrics-backend-benchmark/results/2026-10-16/configs/rules.yaml\\\"}\"\n"
+  }
+}

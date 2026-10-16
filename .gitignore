@@ -38,3 +38,10 @@ result-*
 .env.*
 !.env.example
 secrets/local/
+
+# Metrics benchmark evidence is archived outside Git. Keep curated summaries
+# and generated public configurations reviewable while excluding high-volume
+# samples, process logs, and transient backend state from future commits.
+/utils/metrics-backend-benchmark/results/*/raw/
+/utils/metrics-backend-benchmark/results/*/logs/
+/utils/metrics-backend-benchmark/results/*/data/
