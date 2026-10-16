@@ -86,6 +86,12 @@
       inherit system;
       overlays = [ tailscaleOverlay ];
     };
+    stalwartProvider = system: (fleetPkgs system).callPackage ./packages/terraform-provider-stalwart {
+      # Upstream v0.2.4 needs Go 1.26.6; the stable pin provides 1.26.5.
+      buildGoModule = (fleetPkgs system).buildGoModule.override {
+        go = inputs.nixpkgs-unstable.legacyPackages.${system}.go;
+      };
+    };
     baseOverlay = {
       nixpkgs.overlays = [ llmAgents.overlays.shared-nixpkgs tailscaleOverlay ];
     };
@@ -349,6 +355,7 @@
       in {
       inherit (pkgs) tailscale;
       inherit talosctl;
+      terraform-provider-stalwart = stalwartProvider "x86_64-linux";
 
       # Direct aliases let the observability harness resolve each tool through
       # this repository's flake.lock without constructing an unpinned
@@ -735,6 +742,8 @@
     packages.aarch64-linux = {
       inherit (fleetPkgs "aarch64-linux") tailscale;
 
+      terraform-provider-stalwart = stalwartProvider "aarch64-linux";
+
       talosctl = (fleetPkgs "aarch64-linux").callPackage ./packages/talosctl { };
 
       r8127-mac-diagnostics =
@@ -764,6 +773,7 @@
     packages.aarch64-darwin.omlx = (fleetPkgs "aarch64-darwin").callPackage ./packages/omlx { };
     packages.aarch64-darwin.talosctl = (fleetPkgs "aarch64-darwin").callPackage ./packages/talosctl { };
     packages.x86_64-darwin.talosctl = (fleetPkgs "x86_64-darwin").callPackage ./packages/talosctl { };
+    packages.aarch64-darwin.terraform-provider-stalwart = stalwartProvider "aarch64-darwin";
 
     packages.aarch64-darwin.common-darwin-closure =
       (nix-darwin.lib.darwinSystem {
