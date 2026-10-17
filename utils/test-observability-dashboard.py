@@ -145,15 +145,14 @@ def validate_dashboard(dashboard, panels):
     if release["spec"]["values"]["grafana"]["enabled"] is not False:
         raise AssertionError("the dashboard preparation must not enable Grafana")
     parent = yaml.safe_load(PARENT_KUSTOMIZATION.read_text(encoding="utf-8"))
-    if any("prometheus-stack" in resource for resource in parent.get("resources", [])):
-        raise AssertionError("dashboard preparation must not connect the monitoring stack to Flux")
+    if "./prometheus-stack/ks.yaml" not in parent.get("resources", []):
+        raise AssertionError("enabled monitoring parent must reference prometheus-stack")
     patch = ENABLEMENT_PATCH.read_text(encoding="utf-8")
     if "prometheus-stack/ks.yaml" not in patch:
-        raise AssertionError("enablement patch must add the existing prometheus-stack Flux reference")
+        raise AssertionError("enablement patch must record the prometheus-stack Flux reference")
     for kustomization in (ROOT / "wanxiang/kubernetes/apps/monitoring").rglob("kustomization.yaml"):
         if "enable-parent.diff" in kustomization.read_text(encoding="utf-8"):
             raise AssertionError(f"{kustomization} must not consume the enablement patch")
-    run("git", "-C", str(ROOT), "apply", "--check", str(ENABLEMENT_PATCH))
 
 
 def expression_case(expression, labels, values):

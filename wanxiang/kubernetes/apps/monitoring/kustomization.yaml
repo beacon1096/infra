@@ -9,3 +9,4 @@ components:
 resources:
   - ./namespace.yaml
   - ./openstatus/ks.yaml
+  - ./prometheus-stack/ks.yaml

@@ -105,8 +105,8 @@ def validate_manifests():
         raise AssertionError(f"unexpected rendered kinds: {counts}")
 
     parent = one(MONITORING_KUSTOMIZATION, "Kustomization")
-    if any("prometheus-stack" in resource for resource in parent["resources"]):
-        raise AssertionError("prometheus-stack must remain disconnected from production Flux")
+    if "./prometheus-stack/ks.yaml" not in parent["resources"]:
+        raise AssertionError("enabled monitoring parent must reference prometheus-stack")
     stack = one(STACK_KS, "Kustomization")
     if stack["spec"]["path"] != "./wanxiang/kubernetes/apps/monitoring/prometheus-stack/app":
         raise AssertionError("unexpected prepared Flux path")
@@ -765,7 +765,7 @@ def main():
     validate_rules()
     validate_alert_delivery()
     print(
-        "observability preparation passed: manifests disconnected; rules fire/resolve; "
+        "observability preparation passed: parent references prometheus-stack; rules fire/resolve; "
         "Alertmanager delivered firing/resolved only to loopback stub"
     )
 
