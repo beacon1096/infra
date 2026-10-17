@@ -76,29 +76,3 @@ subjects:
   - kind: ServiceAccount
     name: agent-prober
     namespace: development
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: agent-prober-longhorn-observer
-  namespace: storage
-rules:
-  - apiGroups: ["longhorn.io"]
-    resources:
-      - backups
-      - backuptargets
-    verbs: ["get", "list"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: agent-prober-longhorn-observer
-  namespace: storage
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: agent-prober-longhorn-observer
-subjects:
-  - kind: ServiceAccount
-    name: agent-prober
-    namespace: development
