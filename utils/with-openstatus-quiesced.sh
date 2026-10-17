@@ -11,12 +11,26 @@ Usage:
   REPLICA_STATE_FILE=... EXPECTED_REPLICA_STATE_SHA256=... \
     bash utils/with-openstatus-quiesced.sh -- command [args...]
 
-Installs the recovery trap and the one maintenance deadline before asking the
-quiesce helper to make its first change. The command and every stop operation
-share that deadline. Replica and Flux restoration runs on success, error,
-timeout, SIGINT and SIGTERM.
+Installs the recovery trap before the quiesce helper's first mutation. The
+work window defaults to 600 seconds and can be set from 1 to 600 with
+OPENSTATUS_MAINTENANCE_WINDOW_SECONDS. It bounds writer stop and the payload
+through snapshot ready and Backup registration. It does not include upload or
+the Completed check, and it does not mean services are back at 600 seconds.
+
+Replica and Flux restoration runs after success, failure, timeout, SIGINT, and
+SIGTERM. That restoration has a separate budget, OPENSTATUS_RECOVERY_MAX_SECONDS,
+default 300 and allowed 30-600. If the API stays unreachable or a Pod does not
+become Ready inside that budget, restoration fails closed and leaves ownership
+at acquired. The trap does not remove temporary backup labels or jobs; those
+remain an explicit cleanup obligation for the same run. This wrapper does not
+itself initialize Tinybird.
 EOF
 }
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
 
 [[ "${1:-}" == "--" ]] || {
   usage
@@ -124,4 +138,4 @@ resume_once
   exit 1
 }
 trap - EXIT INT TERM
-echo "OpenStatus maintenance window: payload completed inside ${window_seconds}s and recovery completed"
+echo "OpenStatus maintenance window: payload finished inside the ${window_seconds}s work window and replica/Flux recovery completed on its separate budget"

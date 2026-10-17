@@ -79,6 +79,10 @@ if [[ "$*" == '-n monitoring get pod openstatus-backup-holder-fixture --ignore-n
   exit 0
 fi
 if [[ "$*" == *' patch kustomization.kustomize.toolkit.fluxcd.io openstatus '* ]]; then
+  if [[ "$MOCK_MODE" == "recovery-api-down" && "$*" == *'"suspend":false'* ]]; then
+    echo "api unavailable" >&2
+    exit 1
+  fi
   if [[ "$*" == *'"suspend":true'* ]]; then
     printf '%s\n' true >"$MOCK_STATE_DIR/flux-suspend"
     if [[ "$MOCK_MODE" == "first-mutation-failure" && ! -e "$MOCK_STATE_DIR/failed-once" ]]; then
@@ -201,6 +205,13 @@ run_case deadline-timeout normal 124 sleep 3
 assert_recovered
 run_case interrupt normal 143 bash -c 'kill -TERM "$OPENSTATUS_WINDOW_PID"; sleep 1'
 assert_recovered
+run_case recovery-api-down recovery-api-down 1 bash -c 'echo payload >>"$PAYLOAD_LOG"'
+jq -e --arg sha "$state_sha" \
+  '.schema_version == 1 and .state_sha256 == $sha and .phase == "acquired"' \
+  "$case_dir/ownership.json" >/dev/null
+[[ "$(<"$case_dir/flux-suspend")" == "true" ]]
+grep -q 'one or more checks failed' "$case_dir/err.log"
+grep -q '^payload$' "$payload_log"
 run_case success normal 0 bash -c 'echo payload >>"$PAYLOAD_LOG"'
 assert_recovered
 grep -q '^payload$' "$payload_log"
@@ -216,4 +227,10 @@ jq -e '
   (.[0].value | endswith("@sha256:107829e9143df641e81c7339b0fd7bf9ed97bcea8841f1bb7e9b2fc966049b20"))
 ' "$runtime_patch" >/dev/null
 
-echo "OpenStatus quiesce fixtures: real wrapper/helper preflight ownership, mutation failure, signal/timeout recovery and runtime gate passed"
+help_text="$(bash "$script_dir/with-openstatus-quiesced.sh" --help 2>&1)"
+grep -q 'default 300' <<<"$help_text"
+grep -q 'Backup registration' <<<"$help_text"
+grep -q 'fails closed' <<<"$help_text"
+! grep -q 'within 10 minutes' <<<"$help_text"
+
+echo "OpenStatus quiesce fixtures: real wrapper/helper preflight ownership, mutation failure, signal/timeout/recovery-failure and runtime gate passed"

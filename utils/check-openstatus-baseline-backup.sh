@@ -128,6 +128,13 @@ if [[ "$phase" == "plan" ]]; then
     {run_id:$run,job:$job,scope_sha256:$sha,bindings:$bindings,
      selector:{kind:"direct recurring-job label",groups:[],selected_volume_count:3},
      stop_write_max_seconds:600,
+     work_window_covers:"snapshot readyToUse and backup registration",
+     upload_acceptance:"after writer and Flux recovery",
+     recovery_budget_seconds_default:300,
+     recovery_budget_seconds_min:30,
+     recovery_budget_seconds_max:600,
+     bounded_failure:"API loss or Pod not Ready keeps ownership acquired",
+     initializes_datasource:false,
      stop_conditions:["binding drift","extra selected volume","unhealthy volume","snapshot error","backup registration missing"]}'
   exit 0
 fi
@@ -199,7 +206,7 @@ jq -e --argjson scope "$scope" --argjson snapshots "$selected_snapshots" '
   exit 1
 }
 [[ "$phase" == "snapshots" ]] && {
-  echo "baseline backup check: exact three snapshots are ready and backups registered; writers may be resumed"
+  echo "baseline backup check: exact three snapshots are ready and backups are registered; writers may be resumed before upload completion"
   exit 0
 }
 

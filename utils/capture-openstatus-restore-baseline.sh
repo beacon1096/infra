@@ -4,18 +4,23 @@ set -euo pipefail
 openstatus_namespace="${OPENSTATUS_NAMESPACE:-monitoring}"
 upstream_revision="${OPENSTATUS_UPSTREAM_REVISION:-ef7691ad18971c14b9bd1a306b4bd0cf20b6e411}"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=utils/openstatus-tinybird-auth.sh
+source "$script_dir/openstatus-tinybird-auth.sh"
 
 usage() {
   cat >&2 <<'EOF'
 Capture a read-only pre-backup OpenStatus data baseline as JSON on stdout.
 
 Usage:
-  TINYBIRD_READ_TOKEN=... bash utils/capture-openstatus-restore-baseline.sh \
-    > openstatus-baseline.json
+  TINYBIRD_ADMIN_TOKEN_FILE=... \
+    bash utils/capture-openstatus-restore-baseline.sh > openstatus-baseline.json
 
-The script fails after writing evidence when ping_response__v8 is not
-initialized. Capture while production writers are quiescent, then require the
-selected backup snapshot timestamps to be at or after captured_at.
+Presence comes from the management datasource list. A read credential is
+required only after that list shows ping_response__v8, and only to distinguish
+empty from ingested. The application key is not a management identity. The
+script fails after writing evidence when the datasource is absent. Capture
+while production writers are quiescent, then require the selected backup
+snapshot timestamps to be at or after captured_at.
 EOF
 }
 
@@ -23,10 +28,23 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
   exit 0
 fi
-[[ -n "${TINYBIRD_READ_TOKEN:-}" ]] || {
-  echo "baseline capture: TINYBIRD_READ_TOKEN is required" >&2
+openstatus_tinybird_prepare_credential admin || exit 2
+if [[ "$openstatus_credential_state" != "ready" ]]; then
+  openstatus_tinybird_explain_credential admin
+  echo "baseline capture: management identity is missing or unusable; no query" >&2
   exit 2
-}
+fi
+unset openstatus_credential_value
+openstatus_tinybird_prepare_credential read || exit 2
+case "$openstatus_credential_state" in
+  ready | absent) ;;
+  *)
+    openstatus_tinybird_explain_credential read
+    echo "baseline capture: read credential source is unusable; no query" >&2
+    exit 2
+    ;;
+esac
+unset openstatus_credential_value
 for command in kubectl jq curl date; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "baseline capture: $command is required" >&2
@@ -36,8 +54,6 @@ done
 
 capture_tmp_dir="$(mktemp -d)"
 umask 077
-printf 'Authorization: Bearer %s\n' "$TINYBIRD_READ_TOKEN" \
-  >"$capture_tmp_dir/tinybird-auth-header"
 libsql_pid=""
 tinybird_pid=""
 cleanup_port_forwards() {
@@ -52,6 +68,15 @@ cleanup_port_forwards() {
   rm -rf -- "$capture_tmp_dir"
 }
 trap cleanup_port_forwards EXIT
+openstatus_tinybird_require_credential admin "$capture_tmp_dir/admin-header" || exit 2
+read_header_ready=0
+if openstatus_tinybird_optional_header read "$capture_tmp_dir/read-header"; then
+  read_header_ready=1
+else
+  optional_rc=$?
+  [[ "$optional_rc" == "1" ]] || exit 2
+fi
+openstatus_tinybird_release_exported_tokens
 
 kubectl -n "$openstatus_namespace" port-forward service/openstatus-libsql 18083:8080 \
   >"$capture_tmp_dir/libsql-port-forward.log" 2>&1 &
@@ -84,22 +109,47 @@ jq -e '
   exit 1
 }
 
-tinybird_sql='SELECT count() AS result_count, uniqExact(cronTimestamp) AS distinct_intervals, uniqExact(monitorId) AS monitors, uniqExact(region) AS regions FROM ping_response__v8'
-tinybird_http_code="$(curl -sS -G http://127.0.0.1:17183/v0/sql \
-  -H "@$capture_tmp_dir/tinybird-auth-header" \
-  --data-urlencode "q=$tinybird_sql" \
-  -o "$capture_tmp_dir/tinybird-response.json" -w '%{http_code}')"
-tinybird_state="uninitialized"
+list_http_code="$(curl -sS http://127.0.0.1:17183/v0/datasources \
+  -H "@$capture_tmp_dir/admin-header" \
+  -o "$capture_tmp_dir/list-response.json" -w '%{http_code}')" || {
+  echo "baseline capture: datasource list request failed; refusing to guess presence" >&2
+  exit 1
+}
+set +e
+list_state="$(bash "$script_dir/classify-openstatus-tinybird-datasources.sh" \
+  "$list_http_code" "$capture_tmp_dir/list-response.json")"
+set -e
+tinybird_state="query-failed"
 tinybird_rows=0
 tinybird_intervals=0
 tinybird_monitors=0
 tinybird_regions=0
-set +e
-tinybird_state="$(bash "$script_dir/classify-openstatus-tinybird-query.sh" \
-  "$tinybird_http_code" "$capture_tmp_dir/tinybird-response.json")"
-tinybird_state_rc=$?
-set -e
-if [[ "$tinybird_state_rc" == "0" ]]; then
+case "$list_state" in
+  absent) tinybird_state="uninitialized" ;;
+  authentication-failed) tinybird_state="authentication-failed" ;;
+  identity-unknown) tinybird_state="identity-unknown" ;;
+  present)
+    if (( read_header_ready == 0 )); then
+      tinybird_state="present-unreadable"
+    else
+      tinybird_sql='SELECT count() AS result_count, uniqExact(cronTimestamp) AS distinct_intervals, uniqExact(monitorId) AS monitors, uniqExact(region) AS regions FROM ping_response__v8'
+      tinybird_http_code="$(curl -sS -G http://127.0.0.1:17183/v0/sql \
+        -H "@$capture_tmp_dir/read-header" \
+        --data-urlencode "q=$tinybird_sql" \
+        -o "$capture_tmp_dir/tinybird-response.json" -w '%{http_code}')" || {
+        echo "baseline capture: row query failed; refusing to guess empty or ingested" >&2
+        exit 1
+      }
+      set +e
+      tinybird_state="$(bash "$script_dir/classify-openstatus-tinybird-query.sh" \
+        "$tinybird_http_code" "$capture_tmp_dir/tinybird-response.json")"
+      tinybird_state_rc=$?
+      set -e
+    fi
+    ;;
+  *) tinybird_state="query-failed" ;;
+esac
+if [[ "${tinybird_state_rc:-}" == "0" ]]; then
   tinybird_rows="$(jq -r '.data[0].result_count | tonumber' "$capture_tmp_dir/tinybird-response.json")"
   tinybird_intervals="$(jq -r '.data[0].distinct_intervals | tonumber' "$capture_tmp_dir/tinybird-response.json")"
   tinybird_monitors="$(jq -r '.data[0].monitors | tonumber' "$capture_tmp_dir/tinybird-response.json")"
@@ -145,8 +195,16 @@ case "$tinybird_state" in
     exit 4
     ;;
   authentication-failed)
-    echo "baseline capture: Tinybird read authentication failed" >&2
+    echo "baseline capture: Tinybird authentication failed" >&2
     exit 3
+    ;;
+  present-unreadable)
+    echo "baseline capture: datasource is present but no accurate read credential was supplied" >&2
+    exit 5
+    ;;
+  identity-unknown)
+    echo "baseline capture: datasource identity is ambiguous; refusing to guess" >&2
+    exit 1
     ;;
   *)
     echo "baseline capture: Tinybird query failed for a reason other than an absent datasource" >&2

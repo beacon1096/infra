@@ -174,28 +174,50 @@ First classify the workspace without mutation:
 
 ```bash
 bash utils/initialize-openstatus-tinybird.sh --plan
-TINYBIRD_READ_TOKEN='<DATASOURCES:READ:ping_response__v8 token>' \
+TINYBIRD_ADMIN_TOKEN_FILE='<mode-0600 management identity>' \
   bash utils/initialize-openstatus-tinybird.sh --check
 ```
 
-The check returns `initialized-empty` or `ingested` with exit 0,
-`authentication-failed` with exit 3, `uninitialized` with exit 4, and an
-unclassified query failure with exit 1. Never treat authentication failure as
-an absent datasource. Initialization requires two ephemeral credentials from
-the approved channel: `DATASOURCES:CREATE` and a separate
-`DATASOURCES:READ:ping_response__v8`; neither belongs in a Kubernetes Secret or
-Git. The command below remains blocked until the pre-initialization backup
-succeeds and a separately reviewed GitOps commit adds
-`tinybird-runtime-pin.patch.json` to `app/kustomization.yaml`. Reconcile that
-commit and verify both the Deployment image and running `imageID` end in the
-required digest before supplying these exact stage-2 payload settings:
+`--check` lists datasources with the management identity. It returns
+`uninitialized` with exit 4 when `ping_response__v8` is absent, without a
+`DATASOURCES:READ:ping_response__v8` token. That scoped token cannot be issued
+until the datasource exists, so it is not a pre-initialization requirement.
+When the list shows the target and `TINYBIRD_READ_TOKEN` or
+`TINYBIRD_READ_TOKEN_FILE` is also present, the check then returns
+`initialized-empty` or `ingested` with exit 0. A present target without a read
+credential returns `present-unreadable` with exit 5. `authentication-failed`
+(HTTP 401/403) is exit 3 even if the body mentions a missing table. Transport
+errors, non-JSON bodies, and ambiguous names are exit 1 and are not treated as
+absence.
+
+The management identity is `TINYBIRD_ADMIN_TOKEN` or
+`TINYBIRD_ADMIN_TOKEN_FILE`, never both. `monitoring/openstatus-secret` key
+`TINY_BIRD_API_KEY` is the application ingest credential and is not accepted as
+admin. There is still no declarative SOPS or Secret source for the Tinybird
+Local management credential; do not scrape the container, copy a credential
+from `/docs`, or invent that Secret. Without a usable management file or
+environment value, `--execute` and the baseline payload refuse before their
+first mutation.
+
+Set either the environment variable or the `*_FILE` path for admin, read,
+create, and restore credentials. A missing, empty, unreadable, or multi-line
+file fails closed and does not fall back to the other source. The process
+writes the value only to a mode-0600 header file and removes that directory on
+every exit path. Initialization still requires a separate create credential
+and remains blocked until the pre-initialization backup succeeds and a
+separately reviewed GitOps commit adds `tinybird-runtime-pin.patch.json` to
+`app/kustomization.yaml`. Reconcile that commit and verify both the Deployment
+image and running `imageID` end in the required digest before supplying these
+exact stage-2 payload settings:
 
 ```bash
 export BASELINE_PURPOSE=post-init
 export INITIALIZE_TINYBIRD=execute
 export CONFIRM_TINYBIRD_INITIALIZE=ping_response__v8@ef7691ad
-# Supply TINYBIRD_CREATE_TOKEN and TINYBIRD_READ_TOKEN only to the bounded
-# with-openstatus-quiesced.sh invocation documented below.
+# Supply TINYBIRD_ADMIN_TOKEN_FILE, TINYBIRD_CREATE_TOKEN_FILE, and, once a
+# read credential can actually query the new datasource,
+# TINYBIRD_READ_TOKEN_FILE only to the bounded with-openstatus-quiesced.sh
+# invocation documented below. Stage 1 does not initialize.
 ```
 
 The pin commit is an intentional `Recreate` rollout and is not part of this
@@ -252,19 +274,24 @@ phase mounts only `openstatus-workflows-data` read-only in that Pod; its command
 is `sleep 900`, so it cannot extend attachment indefinitely.
 
 After approval, use the wrapper below rather than calling `--stop` directly.
-It installs recovery handling and starts one 600-second deadline before the
-first mutation. It suspends only Flux `Kustomization/monitoring/openstatus`,
-stops all six Deployments, proves every selected writer Pod exited, creates the
-reviewed holder, captures the baseline and starts only the exact three-volume
-backup. A pre-initialization run must classify `uninitialized`; a later run
-must classify `initialized-empty` or `ingested`:
+It installs recovery handling and starts one work-window deadline before the
+first mutation. The default window is 600 seconds and the allowed range is
+1–600. It suspends only Flux `Kustomization/monitoring/openstatus`, stops all
+six Deployments, proves every selected writer Pod exited, creates the reviewed
+holder, captures the baseline, and starts only the exact three-volume backup.
+Inside that window the payload waits until three snapshots are `readyToUse`
+and three Backup objects are registered as `InProgress` or `Completed`. It
+does not wait for upload. A pre-initialization run must classify
+`uninitialized` and must leave `INITIALIZE_TINYBIRD=never`; a later run must
+classify `initialized-empty` or `ingested`:
 
 ```bash
 export BASELINE_FILE="./openstatus-baseline-${RUN_ID}.json"
 export BACKUP_MANIFEST="./openstatus-backup-${RUN_ID}.yaml"
 export BACKUP_SCOPE_FILE="./openstatus-backup-scope-${RUN_ID}.json"
 export BASELINE_PURPOSE=pre-init
-TINYBIRD_READ_TOKEN='<from approved secret channel>' \
+export INITIALIZE_TINYBIRD=never
+TINYBIRD_ADMIN_TOKEN_FILE='<mode-0600 management identity>' \
 REPLICA_STATE_FILE="$REPLICA_STATE_FILE" \
 EXPECTED_REPLICA_STATE_SHA256="$EXPECTED_REPLICA_STATE_SHA256" \
   bash utils/with-openstatus-quiesced.sh -- \
@@ -272,9 +299,19 @@ EXPECTED_REPLICA_STATE_SHA256="$EXPECTED_REPLICA_STATE_SHA256" \
 ```
 
 `with-openstatus-quiesced.sh` owns the EXIT/INT/TERM recovery trap from before
-the first mutation. Its child and every blocking `kubectl` call are limited by
-the same absolute deadline. Baseline failure, manifest or Job creation
-failure, timeout, or interruption therefore enters replica and Flux recovery.
+the first mutation. Its child and every blocking `kubectl` call in the work
+window share that absolute deadline. Baseline failure, manifest or Job
+creation failure, timeout, or interruption therefore enters replica and Flux
+recovery. Recovery does not spend the original 600 seconds. It opens a
+separate budget, `OPENSTATUS_RECOVERY_MAX_SECONDS`, default 300 and allowed
+30–600. Success, failure, timeout, and signal all attempt that recovery.
+Kubernetes API loss or a Pod that never becomes Ready is a bounded failure:
+the script exits non-zero, leaves the ownership marker at `acquired`, and does
+not claim the writers or Flux were restored. Temporary backup labels, the
+Job, CronJob, and RecurringJob are not deleted by the recovery trap; the same
+run's cleanup plan remains an operator obligation. A 600-second window is not
+a promise that upload finishes, or that a fault restores service at the
+600-second mark.
 Resume preserves an unexpected holder but still attempts every recorded
 replica restore and `suspend=false`; it exits non-zero so the unknown object is
 investigated rather than deleted.
@@ -304,9 +341,9 @@ manifest and authoritative scope file,
 re-resolves all three PVC→PV→Volume bindings, applies only the temporary
 `groups: []` RecurringJob and its three direct labels, and starts only the
 generated CronJob. It returns after exactly three new snapshots and their
-Backup CRs are registered without errors. The wrapper then restores writers
-and Flux immediately. Backup upload continues afterward, so no 51-volume
-operation can extend the stop-write window. Verify completion separately:
+Backup CRs are registered without errors. The wrapper then restores writers and Flux on the separate recovery budget.
+Backup upload continues afterward, so upload cannot extend the stop-write
+window. Verify completion only after that recovery:
 
 ```bash
 export JOB_NAME="osb-${RUN_ID}"
@@ -354,8 +391,9 @@ three exported initialization values shown above, and invoke the same wrapper
 with both ephemeral tokens on its environment:
 
 ```bash
-TINYBIRD_CREATE_TOKEN='<DATASOURCES:CREATE token>' \
-TINYBIRD_READ_TOKEN='<DATASOURCES:READ:ping_response__v8 token>' \
+TINYBIRD_ADMIN_TOKEN_FILE='<mode-0600 management identity>' \
+TINYBIRD_CREATE_TOKEN_FILE='<DATASOURCES:CREATE credential>' \
+TINYBIRD_READ_TOKEN_FILE='<read credential issued only after the datasource exists>' \
 REPLICA_STATE_FILE="$REPLICA_STATE_FILE" \
 EXPECTED_REPLICA_STATE_SHA256="$EXPECTED_REPLICA_STATE_SHA256" \
   bash utils/with-openstatus-quiesced.sh -- \
@@ -370,11 +408,13 @@ initialization error enters the same replica and Flux recovery path.
 Submit approvals in three bounded stages, not as a general storage or rollout
 approval:
 
-1. **Pre-initialization protection:** exact `RUN_ID`, replica-state SHA-256,
-   Flux revision, three binding rows and scope SHA-256, expected
-   `uninitialized` baseline, 600-second stop-write limit, exact read-only holder
-   name/image/PVC plus its 900-second self-stop, temporary storage resource
-   names, and the cleanup plan.
+1. **Pre-initialization protection, without initialization:** exact `RUN_ID`,
+   a fresh replica-state SHA-256 and scope SHA-256 taken at execution time,
+   Flux revision, three binding rows, expected `uninitialized` baseline, a
+   600-second work window plus the separate default 300-second recovery
+   budget, exact read-only holder name/image/PVC plus its 900-second
+   self-stop, temporary storage resource names, and the cleanup plan. Do not
+   reuse an older package's hashes as the approval target.
 2. **Pin, initialize and protect the empty datasource:** datasource SHA-256,
    inactive runtime-patch SHA-256, required Tinybird image digest, explicit
    approval for the `Recreate` rollout after stage 1, the two token scopes,
@@ -524,7 +564,7 @@ the canary failure and recovery timestamps and the time immediately before the
 controlled API-server restart. Then run:
 
 ```bash
-TINYBIRD_READ_TOKEN='<from approved secret channel>' \
+TINYBIRD_READ_TOKEN_FILE='<mode-0600 read credential>' \
 OBSERVATION_SINCE='2026-10-15T13:00:00Z' \
 REAL_MONITOR_ID=101 REAL_REGION_ID=7 \
 REAL_TARGET_URL='https://example-site.invalid/health' \

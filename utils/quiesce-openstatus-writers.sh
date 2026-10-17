@@ -25,7 +25,16 @@ legacy_writers=(
 case "$mode" in
   --plan | --stop | --resume) ;;
   -h | --help)
-    echo "usage: REPLICA_STATE_FILE=... quiesce-openstatus-writers.sh {--plan|--stop|--resume}" >&2
+    cat >&2 <<'EOF'
+usage: REPLICA_STATE_FILE=... quiesce-openstatus-writers.sh {--plan|--stop|--resume}
+
+--stop must run under with-openstatus-quiesced.sh. The work window is at most
+600 seconds and ends at snapshot readiness plus Backup registration. --resume
+uses a separate budget of OPENSTATUS_RECOVERY_MAX_SECONDS (default 300,
+allowed 30-600). API loss or a Pod that does not become Ready inside that
+budget is a bounded failure: ownership stays acquired, and temporary backup
+resources are not deleted by this helper.
+EOF
     exit 0
     ;;
   *) echo "OpenStatus quiesce: unknown mode $mode" >&2; exit 2 ;;

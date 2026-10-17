@@ -2,6 +2,8 @@
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=utils/openstatus-tinybird-auth.sh
+source "$script_dir/openstatus-tinybird-auth.sh"
 run_id="${RUN_ID:-}"
 baseline_purpose="${BASELINE_PURPOSE:-}"
 initialize_tinybird="${INITIALIZE_TINYBIRD:-never}"
@@ -18,13 +20,17 @@ usage() {
   cat >&2 <<'EOF'
 Run only as the payload of with-openstatus-quiesced.sh. Required environment:
   RUN_ID, BASELINE_PURPOSE, BASELINE_FILE, BACKUP_MANIFEST, BACKUP_SCOPE_FILE,
-  REPLICA_STATE_FILE, EXPECTED_REPLICA_STATE_SHA256 and TINYBIRD_READ_TOKEN.
+  REPLICA_STATE_FILE, EXPECTED_REPLICA_STATE_SHA256, and a Tinybird management
+  identity in TINYBIRD_ADMIN_TOKEN or TINYBIRD_ADMIN_TOKEN_FILE.
 
-The script captures the data baseline, selects exactly the three OpenStatus
-volumes, starts their temporary backup job and waits only for snapshot/backup
-registration. Set INITIALIZE_TINYBIRD=execute only for the approved post-init
-stage; initialization then runs before baseline capture while writers are
-stopped. Upload completion is verified after writers have resumed.
+pre-init does not initialize and does not require a
+DATASOURCES:READ:ping_response__v8 token. The application key is not accepted
+as the management identity. The surrounding work window (default 600 seconds,
+maximum 600) only waits until the three snapshots are ready and the Backup
+objects are registered. Upload and Completed acceptance happen after writer
+recovery. Recovery uses its own budget (default 300 seconds, allowed 30-600)
+and is not a promise that services return inside the work window. Set
+INITIALIZE_TINYBIRD=execute only for a separately approved post-init stage.
 EOF
 }
 
@@ -44,23 +50,32 @@ fi
   echo "OpenStatus baseline backup: INITIALIZE_TINYBIRD must be never or execute" >&2
   exit 2
 }
+openstatus_tinybird_require_credential admin || exit 2
+if [[ "$baseline_purpose" == "post-init" ]]; then
+  openstatus_tinybird_require_credential read || exit 2
+else
+  openstatus_tinybird_prepare_credential read || exit 2
+  case "$openstatus_credential_state" in
+    ready | absent) unset openstatus_credential_value ;;
+    *)
+      openstatus_tinybird_explain_credential read
+      exit 2
+      ;;
+  esac
+fi
 if [[ "$initialize_tinybird" == "execute" ]]; then
   [[ "$baseline_purpose" == "post-init" ]] || {
     echo "OpenStatus baseline backup: initialization requires BASELINE_PURPOSE=post-init" >&2
     exit 2
   }
-  [[ "${CONFIRM_TINYBIRD_INITIALIZE:-}" == "ping_response__v8@ef7691ad" &&
-    -n "${TINYBIRD_CREATE_TOKEN:-}" ]] || {
-    echo "OpenStatus baseline backup: approved initialization confirmation and create token are required" >&2
+  [[ "${CONFIRM_TINYBIRD_INITIALIZE:-}" == "ping_response__v8@ef7691ad" ]] || {
+    echo "OpenStatus baseline backup: approved initialization confirmation is required" >&2
     exit 2
   }
+  openstatus_tinybird_require_credential create || exit 2
 fi
 [[ -n "$baseline_file" && -n "$backup_manifest" && -n "$scope_file" ]] || {
   echo "OpenStatus baseline backup: output file paths are required" >&2
-  exit 2
-}
-[[ -n "${TINYBIRD_READ_TOKEN:-}" ]] || {
-  echo "OpenStatus baseline backup: TINYBIRD_READ_TOKEN is required" >&2
   exit 2
 }
 [[ "$deadline" =~ ^[0-9]+$ ]] && (( deadline > $(date -u +%s) )) || {

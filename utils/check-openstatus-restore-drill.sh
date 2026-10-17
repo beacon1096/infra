@@ -8,6 +8,8 @@ restore_namespace="openstatus-restore-${run_id}"
 restore_label="openstatus.beaco.works/restore-run"
 baseline_file="${BASELINE_FILE:-}"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=utils/openstatus-tinybird-auth.sh
+source "$script_dir/openstatus-tinybird-auth.sh"
 
 usage() {
   cat >&2 <<'EOF'
@@ -16,7 +18,7 @@ Validate an applied OpenStatus restore drill without changing it.
 Usage:
   RUN_ID=20261015a PHASE=storage bash utils/check-openstatus-restore-drill.sh
 
-  TINYBIRD_RESTORE_TOKEN=... BASELINE_FILE=./openstatus-baseline.json \
+  TINYBIRD_RESTORE_TOKEN_FILE=... BASELINE_FILE=./openstatus-baseline.json \
     RUN_ID=20261015a PHASE=data \
     bash utils/check-openstatus-restore-drill.sh
 
@@ -131,10 +133,13 @@ if [[ "$phase" == "storage" ]]; then
   exit 0
 fi
 
-[[ -n "${TINYBIRD_RESTORE_TOKEN:-}" ]] || {
-  echo "restore check: TINYBIRD_RESTORE_TOKEN is required for PHASE=data" >&2
+openstatus_tinybird_prepare_credential restore || exit 2
+if [[ "$openstatus_credential_state" != "ready" ]]; then
+  openstatus_tinybird_explain_credential restore
+  echo "restore check: restore credential is missing or unusable for PHASE=data" >&2
   exit 2
-}
+fi
+unset openstatus_credential_value
 [[ -r "$baseline_file" ]] || {
   echo "restore check: BASELINE_FILE is required and must be readable for PHASE=data" >&2
   exit 2
@@ -160,8 +165,6 @@ grep -q '^RESTORE_WORKFLOWS_READABLE$' <<<"$workflows_log" || {
 
 check_tmp_dir="$(mktemp -d)"
 umask 077
-printf 'Authorization: Bearer %s\n' "$TINYBIRD_RESTORE_TOKEN" \
-  >"$check_tmp_dir/tinybird-auth-header"
 libsql_pid=""
 tinybird_pid=""
 cleanup_port_forwards() {
@@ -176,6 +179,8 @@ cleanup_port_forwards() {
   rm -rf -- "$check_tmp_dir"
 }
 trap cleanup_port_forwards EXIT
+openstatus_tinybird_require_credential restore "$check_tmp_dir/tinybird-auth-header" || exit 2
+openstatus_tinybird_release_exported_tokens
 
 kubectl -n "$restore_namespace" port-forward service/restore-libsql 18081:8080 \
   >"$check_tmp_dir/libsql-port-forward.log" 2>&1 &

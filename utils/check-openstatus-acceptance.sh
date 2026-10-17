@@ -18,6 +18,8 @@ minimum_real_intervals="${MINIMUM_REAL_INTERVALS:-2}"
 max_result_age_seconds="${MAX_RESULT_AGE_SECONDS:-300}"
 max_heartbeat_age_seconds="${MAX_HEARTBEAT_AGE_SECONDS:-300}"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=utils/openstatus-tinybird-auth.sh
+source "$script_dir/openstatus-tinybird-auth.sh"
 
 usage() {
   cat >&2 <<'EOF'
@@ -36,7 +38,10 @@ Required environment:
   RESTART_AFTER           RFC3339 time before the controlled app restart
   STATUS_PAGE_URL         published page to read
   STATUS_PAGE_EXPECT      literal non-secret text identifying the real service
-  TINYBIRD_READ_TOKEN     read-capable Tinybird Local token (never printed)
+  TINYBIRD_READ_TOKEN or TINYBIRD_READ_TOKEN_FILE
+                      read-capable Tinybird Local credential (never printed).
+                      Do not set both. A file must be a readable regular file
+                      with one token and at most one trailing newline.
 
 Optional freshness limits (both default to 300 seconds):
   MAX_RESULT_AGE_SECONDS
@@ -71,10 +76,13 @@ for value_name in real_monitor_id real_region_id canary_monitor_id canary_region
     exit 2
   }
 done
-[[ -n "${TINYBIRD_READ_TOKEN:-}" ]] || {
-  echo "acceptance: TINYBIRD_READ_TOKEN is required" >&2
+openstatus_tinybird_prepare_credential read || exit 2
+if [[ "$openstatus_credential_state" != "ready" ]]; then
+  openstatus_tinybird_explain_credential read
+  echo "acceptance: accurate read credential is missing or unusable" >&2
   exit 2
-}
+fi
+unset openstatus_credential_value
 [[ "$real_monitor_id" != "$canary_monitor_id" ]] || {
   echo "acceptance: the real-site and failure-canary monitors must be distinct" >&2
   exit 2
@@ -130,8 +138,6 @@ grep -q 'tinybird.success=true' <<<"$receiver_logs" || {
 
 acceptance_tmp_dir="$(mktemp -d)"
 umask 077
-printf 'Authorization: Bearer %s\n' "$TINYBIRD_READ_TOKEN" \
-  >"$acceptance_tmp_dir/tinybird-auth-header"
 libsql_pid=""
 tinybird_pid=""
 cleanup_port_forwards() {
@@ -146,6 +152,8 @@ cleanup_port_forwards() {
   rm -rf -- "$acceptance_tmp_dir"
 }
 trap cleanup_port_forwards EXIT
+openstatus_tinybird_require_credential read "$acceptance_tmp_dir/tinybird-auth-header" || exit 2
+openstatus_tinybird_release_exported_tokens
 
 kubectl -n "$openstatus_namespace" port-forward service/openstatus-libsql 18082:8080 \
   >"$acceptance_tmp_dir/libsql-port-forward.log" 2>&1 &
