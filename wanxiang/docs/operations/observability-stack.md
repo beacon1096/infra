@@ -167,7 +167,7 @@ Grafana 或 dashboard sidecar。
    不阻止这一步。
 
 停止条件：出现 cluster-wide Secret/ConfigMap 权限、非 monitoring 命名空间写入、PVC
-预算变化、Prometheus 超过 2Gi 内存、存储逼近 15GB 或预期 target/metric 缺失时，停止启用并保持/恢复父级不引用本目录。
+预算变化、Prometheus 超过 2Gi 内存、存储逼近 15GB 或预期 target/metric 缺失时，停止启用，并用下面的完整回滚恢复准备状态。只删掉父级一行会让测试仍要求该引用，回滚提交过不了 CI。
 
 ## 真实通知（独立后续）
 
@@ -186,8 +186,21 @@ Grafana 或 dashboard sidecar。
 
 ## 回滚
 
-1. 移除父级对 `./prometheus-stack/ks.yaml` 的引用并 reconcile；不要先手工删除 CR。
-2. 确认 Prometheus/Alertmanager/Operator、Service 与新增 CNPG PodMonitor/规则已由
-   Flux 清理，原有 Longhorn、Envoy、cert-manager Monitor/Rule 保持不变。
-3. 保留 Prometheus 20Gi 与 Alertmanager 2Gi PVC 供复盘；删除 PVC 属存储操作，需
-   单独批准。回滚期间不删除业务指标源、Longhorn Backup 或告警历史证据。
+未来的启用提交应当只包含 `prometheus-stack/enable-parent.diff`：父级加上
+`./prometheus-stack/ks.yaml`，并且 `utils/test-observability-dashboard.py` 与
+`utils/test-observability-prep.py` 从“不得引用”改成“必须引用”，包括 prep 的成功文案。
+回滚是对那个独立提交执行 `git revert`，等价于反向应用同一份 diff。只删除父级引用的提交
+不能通过 CI，因为两份测试仍会要求引用存在。
+
+```bash
+git revert <enablement-commit>
+# 启用提交尚未单独存在时，与上面等价：
+git apply -R wanxiang/kubernetes/apps/monitoring/prometheus-stack/enable-parent.diff
+```
+
+然后 reconcile。不要先手工删除 CR。确认 Prometheus/Alertmanager/Operator、Service 与新增
+CNPG PodMonitor/规则已由 Flux 清理，原有 Longhorn、Envoy、cert-manager Monitor/Rule 保持不变。
+
+保留 Prometheus 20Gi 与 Alertmanager 2Gi PVC。`longhorn-r3` 的 reclaimPolicy 是 Delete，
+误删 PVC 会丢掉卷。删除 PVC 属存储操作，需单独批准。回滚期间不删除业务指标源、Longhorn
+Backup 或告警历史证据。
