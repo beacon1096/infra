@@ -11,9 +11,11 @@ Usage:
   REPLICA_STATE_FILE=... EXPECTED_REPLICA_STATE_SHA256=... \
     bash utils/with-openstatus-quiesced.sh -- command [args...]
 
-Installs the recovery trap before the quiesce helper's first mutation. When
-the payload is start-openstatus-baseline-backup.sh, that script's read-only
-identity and deadline checks run before ownership or the first mutation.
+Installs the recovery trap before the quiesce helper's first mutation. The
+supported baseline payload is bash plus this directory's
+start-openstatus-baseline-backup.sh, optionally prefixed by env -u and
+NAME=value. That read-only preflight is killed at the work deadline, before
+ownership or the first mutation. A preflight failure has no recovery.
 The work window defaults to 600 seconds and can be set from 1 to 600 with
 OPENSTATUS_MAINTENANCE_WINDOW_SECONDS. It bounds writer stop and the payload
 through snapshot ready and Backup registration. It does not include upload or
@@ -125,18 +127,63 @@ trap restore_on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-run_known_payload_preflight() {
-  local arg found=0
-  local -a command=()
+baseline_script="$(realpath -- "$script_dir/start-openstatus-baseline-backup.sh")"
+payload_is_supported_baseline() {
+  local -a args=("$@")
+  local i=0 n=${#args[@]} name script_path resolved
+  (( n > 0 )) || return 1
+  if [[ "${args[0]}" == "env" ]]; then
+    i=1
+    while (( i < n )); do
+      if [[ "${args[$i]}" == "-u" ]]; then
+        (( i + 1 < n )) || return 1
+        name="${args[$((i + 1))]}"
+        [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
+        i=$((i + 2))
+        continue
+      fi
+      if [[ "${args[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+        i=$((i + 1))
+        continue
+      fi
+      break
+    done
+  fi
+  (( i + 2 == n )) || return 1
+  [[ "${args[$i]}" == "bash" ]] || return 1
+  script_path="${args[$((i + 1))]}"
+  [[ -f "$script_path" ]] || return 1
+  resolved="$(realpath -- "$script_path")"
+  [[ "$resolved" == "$baseline_script" ]]
+}
+payload_mentions_baseline() {
+  local arg
   for arg in "$@"; do
-    command+=("$arg")
-    if [[ "$found" == "0" && "$arg" == *start-openstatus-baseline-backup.sh ]]; then
-      command+=("--preflight")
-      found=1
-    fi
+    [[ "$(basename -- "$arg")" == "start-openstatus-baseline-backup.sh" ]] && return 0
   done
-  (( found )) || return 0
-  "${command[@]}"
+  return 1
+}
+run_known_payload_preflight() {
+  local remaining preflight_rc
+  if payload_is_supported_baseline "$@"; then
+    remaining=$((QUIESCE_DEADLINE_EPOCH - $(date -u +%s)))
+    if (( remaining <= 0 )); then
+      echo "OpenStatus maintenance window: work deadline expired before preflight; no mutation" >&2
+      exit 124
+    fi
+    set +e
+    timeout --kill-after=5s "${remaining}s" "$@" --preflight
+    preflight_rc=$?
+    set -e
+    if (( preflight_rc == 124 )); then
+      echo "OpenStatus maintenance window: preflight exceeded the work deadline before ownership; no mutation" >&2
+    fi
+    return "$preflight_rc"
+  fi
+  if payload_mentions_baseline "$@"; then
+    echo "OpenStatus maintenance window: baseline payload must be bash and this repository's start-openstatus-baseline-backup.sh; refusing before ownership" >&2
+    exit 2
+  fi
 }
 run_known_payload_preflight "$@"
 

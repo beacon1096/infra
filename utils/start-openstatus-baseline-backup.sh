@@ -118,9 +118,15 @@ if (( preflight )); then
     rm -rf -- "$preflight_dir"
   }
   trap cleanup_preflight EXIT
+  remaining=$((deadline - $(date -u +%s)))
+  if (( remaining <= 0 )); then
+    echo "openstatus baseline backup: work deadline expired before preflight; no mutation" >&2
+    exit 124
+  fi
   set +e
-  preflight_state="$(bash "$script_dir/initialize-openstatus-tinybird.sh" --check \
-    >"$preflight_dir/state" 2>"$preflight_dir/err")"
+  timeout --kill-after=5s "${remaining}s" \
+    bash "$script_dir/initialize-openstatus-tinybird.sh" --check \
+    >"$preflight_dir/state" 2>"$preflight_dir/err"
   preflight_rc=$?
   set -e
   preflight_state="$(<"$preflight_dir/state")"
@@ -134,6 +140,13 @@ if (( preflight )); then
   fi
   cat "$preflight_dir/err" >&2
   [[ -z "$preflight_state" ]] || printf '%s\n' "$preflight_state" >&2
+  if (( preflight_rc == 0 )); then
+    echo "openstatus baseline backup: preflight state ${preflight_state:-unknown} is not allowed for ${baseline_purpose}; no mutation" >&2
+    exit 1
+  fi
+  if (( preflight_rc == 124 )); then
+    echo "openstatus baseline backup: preflight exceeded the work deadline; no mutation" >&2
+  fi
   exit "$preflight_rc"
 fi
 

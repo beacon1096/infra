@@ -371,6 +371,82 @@ run_entry 3 auth403 env -u TINYBIRD_ADMIN_TOKEN \
   BACKUP_SCOPE_FILE="$work/out/entry-scope.json" \
   bash "$script_dir/start-openstatus-baseline-backup.sh"
 grep -q 'authentication-failed' "$work/out/stdout" "$work/out/stderr"
+for scenario in empty ingested; do
+  run_entry 1 "$scenario" env -u TINYBIRD_ADMIN_TOKEN \
+    TINYBIRD_ADMIN_TOKEN_FILE="$work/secrets/admin" TINYBIRD_READ_TOKEN_FILE="$work/secrets/read" \
+    RUN_ID=fixture BASELINE_PURPOSE=pre-init \
+    BASELINE_FILE="$work/out/entry-baseline.json" BACKUP_MANIFEST="$work/out/entry-backup.yaml" \
+    BACKUP_SCOPE_FILE="$work/out/entry-scope.json" \
+    bash "$script_dir/start-openstatus-baseline-backup.sh"
+  if [[ "$scenario" == "empty" ]]; then
+    grep -q 'initialized-empty' "$work/out/stderr"
+  else
+    grep -q 'ingested' "$work/out/stderr"
+  fi
+  ! grep -q 'authentication-failed' "$work/out/stderr"
+done
+
+mkdir -p "$work/hangbin" "$work/fakebin"
+cat >"$work/hangbin/kubectl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$MOCK_KUBECTL_LOG"
+sleep 60
+EOF
+chmod 700 "$work/hangbin/kubectl"
+cat >"$work/fakebin/start-openstatus-baseline-backup.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' executed >>"$MOCK_KUBECTL_LOG"
+exit 0
+EOF
+chmod 700 "$work/fakebin/start-openstatus-baseline-backup.sh"
+: >"$work/kubectl.log"
+rm -f -- "$work/out/entry-ownership.json"
+hang_started="$(date -u +%s)"
+set +e
+env -u TINYBIRD_ADMIN_TOKEN -u TINYBIRD_READ_TOKEN \
+  TMPDIR="$work/tmp" PATH="$work/hangbin:$work/bin:$PATH" \
+  MOCK_KUBECTL_LOG="$work/kubectl.log" \
+  OPENSTATUS_TINYBIRD_BASE_URL="http://127.0.0.1:${port}" \
+  OPENSTATUS_KUBECTL_BIN="$work/bin/kubectl" \
+  OPENSTATUS_MAINTENANCE_WINDOW_SECONDS=1 \
+  OPENSTATUS_RECOVERY_MAX_SECONDS=300 \
+  REPLICA_STATE_FILE="$replica_state" EXPECTED_REPLICA_STATE_SHA256="$replica_sha" \
+  OPENSTATUS_QUIESCE_OWNERSHIP_FILE="$work/out/entry-ownership.json" \
+  TINYBIRD_ADMIN_TOKEN_FILE="$work/secrets/admin" TINYBIRD_READ_TOKEN_FILE="$work/secrets/read" \
+  RUN_ID=fixture BASELINE_PURPOSE=pre-init \
+  BASELINE_FILE="$work/out/hang-baseline.json" BACKUP_MANIFEST="$work/out/hang-backup.yaml" \
+  BACKUP_SCOPE_FILE="$work/out/hang-scope.json" \
+  bash "$script_dir/with-openstatus-quiesced.sh" -- \
+    bash "$script_dir/start-openstatus-baseline-backup.sh" \
+    >"$work/out/stdout" 2>"$work/out/stderr"
+hang_rc=$?
+set -e
+hang_elapsed="$(( $(date -u +%s) - hang_started ))"
+[[ "$hang_rc" == "124" ]]
+(( hang_elapsed < 20 ))
+[[ ! -e "$work/out/entry-ownership.json" ]]
+! grep -Eq 'patch|scale |create |delete ' "$work/kubectl.log"
+grep -q 'work deadline' "$work/out/stderr"
+
+: >"$work/kubectl.log"
+rm -f -- "$work/out/entry-ownership.json"
+set +e
+env -u TINYBIRD_ADMIN_TOKEN \
+  TMPDIR="$work/tmp" PATH="$work/bin:$PATH" MOCK_KUBECTL_LOG="$work/kubectl.log" \
+  OPENSTATUS_KUBECTL_BIN="$work/bin/kubectl" \
+  OPENSTATUS_MAINTENANCE_WINDOW_SECONDS=30 \
+  OPENSTATUS_RECOVERY_MAX_SECONDS=30 \
+  REPLICA_STATE_FILE="$replica_state" EXPECTED_REPLICA_STATE_SHA256="$replica_sha" \
+  OPENSTATUS_QUIESCE_OWNERSHIP_FILE="$work/out/entry-ownership.json" \
+  bash "$script_dir/with-openstatus-quiesced.sh" -- \
+    bash "$work/fakebin/start-openstatus-baseline-backup.sh" \
+    >"$work/out/stdout" 2>"$work/out/stderr"
+fake_rc=$?
+set -e
+[[ "$fake_rc" == "2" ]]
+[[ ! -s "$work/kubectl.log" ]]
+[[ ! -e "$work/out/entry-ownership.json" ]]
+grep -q 'refusing before ownership' "$work/out/stderr"
 
 past_deadline="$(( $(date -u +%s) - 5 ))"
 : >"$work/kubectl.log"

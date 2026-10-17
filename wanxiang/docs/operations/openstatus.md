@@ -299,10 +299,14 @@ EXPECTED_REPLICA_STATE_SHA256="$EXPECTED_REPLICA_STATE_SHA256" \
 ```
 
 `with-openstatus-quiesced.sh` owns the EXIT/INT/TERM recovery trap from before
-the first mutation. When the payload is `start-openstatus-baseline-backup.sh`,
-the wrapper runs that script's read-only management-identity and deadline
-checks before it creates the ownership marker or stops writers. A missing,
-unreadable, or rejected identity leaves the cluster unchanged. Its child and every blocking `kubectl` call in the work
+the first mutation. The supported payload is `bash` plus this repository's
+`utils/start-openstatus-baseline-backup.sh`, optionally prefixed by `env -u`
+and `NAME=value`. The wrapper runs that script's read-only `--preflight` under
+the same absolute work deadline before it creates the ownership marker or
+stops writers. A missing, unreadable, or rejected identity, a pre-init
+datasource that is already empty or ingested, or a preflight that exceeds the
+work deadline leaves the cluster unchanged and does not start recovery. The
+separate 300-second recovery budget is not added to that deadline. Its child and every blocking `kubectl` call in the work
 window share that absolute deadline. Baseline failure, manifest or Job
 creation failure, timeout, or interruption therefore enters replica and Flux
 recovery. Recovery does not spend the original 600 seconds. It opens a
