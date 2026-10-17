@@ -55,7 +55,7 @@ let
   # URL servers; Cursor infers transport from command vs url.
   cursorAgentMcpEntry =
     server:
-    if server ? command then
+    if (server.command or null) != null then
       lib.filterAttrs (_: v: v != null && v != [ ] && v != { }) {
         command = server.command;
         args = server.args or [ ];
