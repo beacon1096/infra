@@ -299,7 +299,10 @@ EXPECTED_REPLICA_STATE_SHA256="$EXPECTED_REPLICA_STATE_SHA256" \
 ```
 
 `with-openstatus-quiesced.sh` owns the EXIT/INT/TERM recovery trap from before
-the first mutation. Its child and every blocking `kubectl` call in the work
+the first mutation. When the payload is `start-openstatus-baseline-backup.sh`,
+the wrapper runs that script's read-only management-identity and deadline
+checks before it creates the ownership marker or stops writers. A missing,
+unreadable, or rejected identity leaves the cluster unchanged. Its child and every blocking `kubectl` call in the work
 window share that absolute deadline. Baseline failure, manifest or Job
 creation failure, timeout, or interruption therefore enters replica and Flux
 recovery. Recovery does not spend the original 600 seconds. It opens a
@@ -307,7 +310,10 @@ separate budget, `OPENSTATUS_RECOVERY_MAX_SECONDS`, default 300 and allowed
 30–600. Success, failure, timeout, and signal all attempt that recovery.
 Kubernetes API loss or a Pod that never becomes Ready is a bounded failure:
 the script exits non-zero, leaves the ownership marker at `acquired`, and does
-not claim the writers or Flux were restored. Temporary backup labels, the
+not claim the writers or Flux were restored. `recovered` is written only after
+Flux Ready is True and every writer with a desired replica count above zero
+reports that many ready replicas. A matching spec with Ready false does not
+count. Temporary backup labels, the
 Job, CronJob, and RecurringJob are not deleted by the recovery trap; the same
 run's cleanup plan remains an operator obligation. A 600-second window is not
 a promise that upload finishes, or that a fault restores service at the

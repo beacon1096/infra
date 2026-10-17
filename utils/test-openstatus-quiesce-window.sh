@@ -43,8 +43,12 @@ set -euo pipefail
 printf '%s\n' "$*" >>"$MOCK_KUBECTL_LOG"
 
 if [[ "$*" == '-n monitoring get kustomization.kustomize.toolkit.fluxcd.io openstatus -o json' ]]; then
-  printf '{"spec":{"suspend":%s},"status":{"lastAppliedRevision":"%s","conditions":[{"type":"Ready","status":"True"}]}}\n' \
-    "$(<"$MOCK_STATE_DIR/flux-suspend")" "$(<"$MOCK_STATE_DIR/flux-revision")"
+  ready="$(<"$MOCK_STATE_DIR/flux-ready")"
+  if [[ "${MOCK_MODE:-}" == "flux-not-ready" || "${MOCK_MODE:-}" == "resume-interrupt" ]]; then
+    ready=False
+  fi
+  printf '{"spec":{"suspend":%s},"status":{"lastAppliedRevision":"%s","conditions":[{"type":"Ready","status":"%s"}]}}\n' \
+    "$(<"$MOCK_STATE_DIR/flux-suspend")" "$(<"$MOCK_STATE_DIR/flux-revision")" "$ready"
   exit 0
 fi
 if [[ "$*" == '-n monitoring get pod -l app.kubernetes.io/name=openstatus-workflows -o jsonpath={.items[0].status.containerStatuses[?(@.name=="workflows")].imageID}' ]]; then
@@ -54,6 +58,14 @@ fi
 for deployment in openstatus-server openstatus-dashboard openstatus-workflows openstatus-checker openstatus-private-location openstatus-probe-wanxiang; do
   if [[ "$*" == "-n monitoring get deployment $deployment -o jsonpath={.spec.replicas}" ]]; then
     cat "$MOCK_STATE_DIR/replica-$deployment"
+    exit 0
+  fi
+  if [[ "$*" == "-n monitoring get deployment $deployment -o jsonpath={.status.readyReplicas}" ]]; then
+    if [[ "${MOCK_MODE:-}" == "pod-not-ready" ]]; then
+      printf '0'
+    else
+      cat "$MOCK_STATE_DIR/replica-$deployment"
+    fi
     exit 0
   fi
   if [[ "$*" == "-n monitoring get pod -l app.kubernetes.io/name=$deployment -o json" ]]; then
@@ -114,6 +126,11 @@ if [[ "$*" == '-n monitoring delete pod openstatus-backup-holder-fixture --wait=
   printf '%s\n' none >"$MOCK_STATE_DIR/holder"
   exit 0
 fi
+if [[ "${MOCK_MODE:-}" == "resume-interrupt" && "$*" == *'rollout status'* && ! -e "$MOCK_STATE_DIR/signaled" ]]; then
+  : >"$MOCK_STATE_DIR/signaled"
+  kill -TERM "${OPENSTATUS_RESUME_PID:?}"
+  exit 143
+fi
 exit 0
 STUB
 chmod +x "$tmp_dir/kubectl"
@@ -129,6 +146,7 @@ initialize_case() {
   : >"$kubectl_log"
   : >"$payload_log"
   printf '%s\n' false >"$case_dir/flux-suspend"
+  printf '%s\n' True >"$case_dir/flux-ready"
   printf '%s\n' 'main@fixture' >"$case_dir/flux-revision"
   printf '%s\n' none >"$case_dir/holder"
   for deployment in openstatus-server openstatus-dashboard openstatus-workflows openstatus-checker; do
@@ -157,7 +175,7 @@ run_case() {
   REPLICA_STATE_FILE="$state_file" EXPECTED_REPLICA_STATE_SHA256="$state_sha" \
   OPENSTATUS_QUIESCE_OWNERSHIP_FILE="$case_dir/ownership.json" \
   OPENSTATUS_RECOVERY_MAX_SECONDS=30 \
-  OPENSTATUS_MAINTENANCE_WINDOW_SECONDS=2 \
+  OPENSTATUS_MAINTENANCE_WINDOW_SECONDS="${OPENSTATUS_MAINTENANCE_WINDOW_SECONDS:-2}" \
     bash "$script_dir/with-openstatus-quiesced.sh" -- "$@" >"$case_dir/out.log" 2>"$case_dir/err.log"
   case_rc=$?
   set -e
@@ -215,6 +233,65 @@ grep -q '^payload$' "$payload_log"
 run_case success normal 0 bash -c 'echo payload >>"$PAYLOAD_LOG"'
 assert_recovered
 grep -q '^payload$' "$payload_log"
+
+run_case missing-admin normal 2 env -u TINYBIRD_ADMIN_TOKEN -u TINYBIRD_ADMIN_TOKEN_FILE \
+  RUN_ID=fixture BASELINE_PURPOSE=pre-init \
+  bash "$script_dir/start-openstatus-baseline-backup.sh"
+assert_zero_mutations
+grep -q 'admin identity is absent' "$case_dir/err.log"
+
+bad_admin="$tmp_dir/admin-unreadable"
+mkdir -p "$bad_admin"
+run_case bad-admin-file normal 2 env -u TINYBIRD_ADMIN_TOKEN \
+  TINYBIRD_ADMIN_TOKEN_FILE="$bad_admin" \
+  RUN_ID=fixture BASELINE_PURPOSE=pre-init \
+  bash "$script_dir/start-openstatus-baseline-backup.sh"
+assert_zero_mutations
+grep -q 'not a readable regular file' "$case_dir/err.log"
+
+saved_window="${OPENSTATUS_MAINTENANCE_WINDOW_SECONDS:-}"
+OPENSTATUS_MAINTENANCE_WINDOW_SECONDS=601 \
+  run_case window-boundary normal 2 env -u TINYBIRD_ADMIN_TOKEN -u TINYBIRD_ADMIN_TOKEN_FILE \
+  RUN_ID=fixture BASELINE_PURPOSE=pre-init \
+  bash "$script_dir/start-openstatus-baseline-backup.sh"
+assert_zero_mutations
+grep -q 'duration must be 1-600' "$case_dir/err.log"
+unset OPENSTATUS_MAINTENANCE_WINDOW_SECONDS
+[[ -z "$saved_window" ]] || OPENSTATUS_MAINTENANCE_WINDOW_SECONDS="$saved_window"
+
+run_resume() {
+  local name="$1"
+  local mode="$2"
+  local expected_rc="$3"
+  initialize_case "$name" "$mode"
+  jq -nc --arg sha "$state_sha" \
+    '{schema_version:1,state_sha256:$sha,phase:"acquired"}' >"$case_dir/ownership.json"
+  set +e
+  OPENSTATUS_KUBECTL_BIN="$tmp_dir/kubectl" MOCK_MODE="$mode" \
+    MOCK_STATE_DIR="$case_dir" MOCK_KUBECTL_LOG="$kubectl_log" \
+    REPLICA_STATE_FILE="$state_file" EXPECTED_REPLICA_STATE_SHA256="$state_sha" \
+    OPENSTATUS_QUIESCE_OWNERSHIP_FILE="$case_dir/ownership.json" \
+    OPENSTATUS_RECOVERY_MAX_SECONDS=30 \
+    bash "$script_dir/quiesce-openstatus-writers.sh" --resume \
+    >"$case_dir/out.log" 2>"$case_dir/err.log"
+  case_rc=$?
+  set -e
+  [[ "$case_rc" == "$expected_rc" ]]
+  jq -e --arg sha "$state_sha" \
+    '.schema_version == 1 and .state_sha256 == $sha and .phase == "acquired"' \
+    "$case_dir/ownership.json" >/dev/null
+  ! grep -q 'phase":"recovered"' "$case_dir/ownership.json"
+}
+
+run_resume flux-not-ready flux-not-ready 1
+grep -q 'not Ready' "$case_dir/err.log"
+grep -q 'rollout status' "$kubectl_log"
+run_resume pod-not-ready pod-not-ready 1
+grep -q 'readyReplicas' "$kubectl_log"
+grep -q 'not Ready' "$case_dir/err.log"
+run_resume resume-interrupt resume-interrupt 143
+[[ -e "$case_dir/signaled" ]]
+[[ "$(grep -c 'rollout status' "$kubectl_log")" -ge 1 ]]
 
 runtime_manifest="$repo_dir/wanxiang/kubernetes/apps/monitoring/openstatus/app/tinybird.yaml"
 runtime_patch="$repo_dir/wanxiang/kubernetes/apps/monitoring/openstatus/app/tinybird-runtime-pin.patch.json"

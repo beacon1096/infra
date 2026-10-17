@@ -145,6 +145,11 @@ case "$list_state" in
         "$tinybird_http_code" "$capture_tmp_dir/tinybird-response.json")"
       tinybird_state_rc=$?
       set -e
+      if [[ "$tinybird_state" == "uninitialized" ]]; then
+        echo "baseline capture: management list says present but SQL reports the table missing; refusing to record absence" >&2
+        tinybird_state="query-failed"
+        tinybird_state_rc=1
+      fi
     fi
     ;;
   *) tinybird_state="query-failed" ;;

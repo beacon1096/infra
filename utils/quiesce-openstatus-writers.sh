@@ -287,15 +287,23 @@ restore_recorded_state() {
 
 recorded_state_is_restored() {
   local deadline="$1"
-  local flux_json holder_json deployment replicas current
+  local flux_json holder_json deployment replicas current ready_replicas
   flux_json="$(bounded "$deadline" 30 "${kubectl_command[@]}" -n "$namespace" get \
     kustomization.kustomize.toolkit.fluxcd.io openstatus -o json)" || return 1
-  jq -e '(.spec.suspend // false) == false' <<<"$flux_json" >/dev/null || return 1
+  jq -e '
+    (.spec.suspend // false) == false and
+    any(.status.conditions[]?; .type == "Ready" and .status == "True")
+  ' <<<"$flux_json" >/dev/null || return 1
   for deployment in "${state_writers[@]}"; do
     replicas="$(jq -r --arg name "$deployment" '.writers[] | select(.name == $name) | .replicas' "$state_file")"
     current="$(bounded "$deadline" 30 "${kubectl_command[@]}" -n "$namespace" get deployment \
       "$deployment" -o jsonpath='{.spec.replicas}')" || return 1
     [[ "$current" == "$replicas" ]] || return 1
+    if [[ "$replicas" != "0" ]]; then
+      ready_replicas="$(bounded "$deadline" 30 "${kubectl_command[@]}" -n "$namespace" get deployment \
+        "$deployment" -o jsonpath='{.status.readyReplicas}')" || return 1
+      [[ "$ready_replicas" == "$replicas" ]] || return 1
+    fi
   done
   holder_json="$(bounded "$deadline" 30 "${kubectl_command[@]}" -n "$namespace" get pod \
     "$holder_name" --ignore-not-found -o name)" || return 1
@@ -315,7 +323,12 @@ complete_recovery() {
     return 0
   fi
   restore_recorded_state "$deadline" || return $?
-  mark_recovery_complete
+  if recorded_state_is_restored "$deadline"; then
+    mark_recovery_complete
+    return 0
+  fi
+  echo "OpenStatus quiesce: desired spec may match but Flux or Pods are not Ready; ownership stays acquired" >&2
+  return 1
 }
 
 if [[ "$mode" == "--stop" ]]; then
@@ -416,6 +429,7 @@ if [[ "$phase" == "recovered" ]]; then
   echo "OpenStatus quiesce: recovery already completed; no mutation required"
   exit 0
 fi
+export OPENSTATUS_RESUME_PID="$$"
 
 resume_finished=false
 restore_on_resume_exit() {

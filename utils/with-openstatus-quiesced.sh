@@ -11,8 +11,10 @@ Usage:
   REPLICA_STATE_FILE=... EXPECTED_REPLICA_STATE_SHA256=... \
     bash utils/with-openstatus-quiesced.sh -- command [args...]
 
-Installs the recovery trap before the quiesce helper's first mutation. The
-work window defaults to 600 seconds and can be set from 1 to 600 with
+Installs the recovery trap before the quiesce helper's first mutation. When
+the payload is start-openstatus-baseline-backup.sh, that script's read-only
+identity and deadline checks run before ownership or the first mutation.
+The work window defaults to 600 seconds and can be set from 1 to 600 with
 OPENSTATUS_MAINTENANCE_WINDOW_SECONDS. It bounds writer stop and the payload
 through snapshot ready and Backup registration. It does not include upload or
 the Completed check, and it does not mean services are back at 600 seconds.
@@ -123,6 +125,26 @@ trap restore_on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+run_known_payload_preflight() {
+  local arg found=0
+  local -a command=()
+  for arg in "$@"; do
+    command+=("$arg")
+    if [[ "$found" == "0" && "$arg" == *start-openstatus-baseline-backup.sh ]]; then
+      command+=("--preflight")
+      found=1
+    fi
+  done
+  (( found )) || return 0
+  "${command[@]}"
+}
+run_known_payload_preflight "$@"
+
+remaining=$((QUIESCE_DEADLINE_EPOCH - $(date -u +%s)))
+(( remaining > 0 )) || {
+  echo "OpenStatus maintenance window: deadline expired before the first mutation" >&2
+  exit 124
+}
 bash "$quiesce_script" --stop
 
 remaining=$((QUIESCE_DEADLINE_EPOCH - $(date -u +%s)))

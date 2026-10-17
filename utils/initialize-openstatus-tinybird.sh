@@ -289,7 +289,15 @@ case "$list_state" in
       list_state="present-unreadable"
       list_rc=5
     else
-      IFS=$'\t' read -r list_state list_rc < <(query_state)
+      IFS=$'\t' read -r query_state query_rc < <(query_state)
+      if [[ "$query_state" == "uninitialized" ]]; then
+        echo "tinybird initialization: management list says present but SQL reports the table missing; refusing to treat that conflict as absence" >&2
+        list_state="query-failed"
+        list_rc=1
+      else
+        list_state="$query_state"
+        list_rc="$query_rc"
+      fi
     fi
     ;;
   authentication-failed | identity-unknown | query-failed) ;;

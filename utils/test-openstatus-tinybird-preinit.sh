@@ -75,13 +75,15 @@ const server = http.createServer((req, res) => {
     if (scenario === "auth403") return send(res, 403, '{"error":"Forbidden"}');
     if (scenario === "absent") return send(res, 200, absent);
     if (scenario === "badjson") return send(res, 200, "not-json");
-    if (["empty", "ingested", "noread", "sql403"].includes(scenario)) return send(res, 200, present);
+    if (["empty", "ingested", "noread", "sql403", "conflict404", "conflict400"].includes(scenario)) return send(res, 200, present);
     return send(res, 500, "{}");
   }
   if (req.method === "GET" && path === "/v0/sql") {
     if (scenario === "empty") return send(res, 200, fs.readFileSync(`${fixtures}/initialized-empty.json`));
     if (scenario === "ingested") return send(res, 200, fs.readFileSync(`${fixtures}/ingested.json`));
     if (scenario === "sql403") return send(res, 403, '{"error":"Table default.ping_response__v8 does not exist"}');
+    if (scenario === "conflict404") return send(res, 404, '{"error":"DB::Exception: Table default.ping_response__v8 doesn\'t exist (UNKNOWN_TABLE)"}');
+    if (scenario === "conflict400") return send(res, 400, '{"error":"Table default.ping_response__v8 does not exist"}');
     return send(res, 500, "{}");
   }
   if (req.method === "POST") {
@@ -300,5 +302,91 @@ set -e
 [[ ! -s "$work/kubectl.log" ]]
 ! grep -q 'synthetic-' "$work/out/stdout" "$work/out/stderr"
 grep -q 'admin identity is absent' "$work/out/stderr"
+
+assert_conflict() {
+  local scenario="$1"
+  mode="--check"
+  start_server "$scenario"
+  run_init 1 TINYBIRD_ADMIN_TOKEN_FILE="$work/secrets/admin" TINYBIRD_READ_TOKEN_FILE="$work/secrets/read"
+  [[ "$(<"$work/out/stdout")" == "query-failed" ]]
+  ! grep -q 'uninitialized' "$work/out/stdout"
+  mode="--execute"
+  start_server "$scenario"
+  run_init 1 CONFIRM_TINYBIRD_INITIALIZE='ping_response__v8@ef7691ad' \
+    TINYBIRD_ADMIN_TOKEN_FILE="$work/secrets/admin" \
+    TINYBIRD_CREATE_TOKEN_FILE="$work/secrets/create" \
+    TINYBIRD_READ_TOKEN_FILE="$work/secrets/read"
+  [[ "$(grep -c '^POST /v0/datasources' "$work/http.log")" == "0" ]]
+}
+assert_conflict conflict404
+assert_conflict conflict400
+
+mode="--check"
+start_server auth401
+run_init 3 TINYBIRD_ADMIN_TOKEN_FILE="$work/secrets/admin" TINYBIRD_READ_TOKEN_FILE="$work/secrets/read"
+[[ "$(<"$work/out/stdout")" == "authentication-failed" ]]
+
+replica_state="$work/out/replicas.json"
+printf '%s\n' '{}' >"$replica_state"
+replica_sha="$(sha256sum "$replica_state" | awk '{print $1}')"
+run_entry() {
+  local expected_rc="$1"
+  local scenario="$2"
+  shift 2
+  start_server "$scenario"
+  : >"$work/kubectl.log"
+  rm -f -- "$work/out/entry-ownership.json"
+  set +e
+  env -u TINYBIRD_ADMIN_TOKEN -u TINYBIRD_READ_TOKEN -u TINYBIRD_CREATE_TOKEN \
+    -u TINYBIRD_ADMIN_TOKEN_FILE -u TINYBIRD_READ_TOKEN_FILE -u TINYBIRD_CREATE_TOKEN_FILE \
+    TMPDIR="$work/tmp" PATH="$work/bin:$PATH" \
+    MOCK_KUBECTL_LOG="$work/kubectl.log" CURL_ARGV="$work/curl.argv" HTTP_LOG="$work/http.log" \
+    OPENSTATUS_TINYBIRD_BASE_URL="http://127.0.0.1:${port}" \
+    OPENSTATUS_KUBECTL_BIN="$work/bin/kubectl" \
+    OPENSTATUS_MAINTENANCE_WINDOW_SECONDS=30 \
+    OPENSTATUS_RECOVERY_MAX_SECONDS=30 \
+    REPLICA_STATE_FILE="$replica_state" EXPECTED_REPLICA_STATE_SHA256="$replica_sha" \
+    OPENSTATUS_QUIESCE_OWNERSHIP_FILE="$work/out/entry-ownership.json" \
+    bash "$script_dir/with-openstatus-quiesced.sh" -- \
+      "$@" \
+      >"$work/out/stdout" 2>"$work/out/stderr"
+  entry_rc=$?
+  set -e
+  [[ "$entry_rc" == "$expected_rc" ]]
+  ! grep -Eq 'patch|scale |create |delete ' "$work/kubectl.log"
+  ! grep -q '^POST ' "$work/http.log"
+  [[ ! -e "$work/out/entry-ownership.json" ]]
+}
+run_entry 3 auth401 env -u TINYBIRD_ADMIN_TOKEN \
+  TINYBIRD_ADMIN_TOKEN_FILE="$work/secrets/admin" TINYBIRD_READ_TOKEN_FILE="$work/secrets/read" \
+  RUN_ID=fixture BASELINE_PURPOSE=pre-init \
+  BASELINE_FILE="$work/out/entry-baseline.json" BACKUP_MANIFEST="$work/out/entry-backup.yaml" \
+  BACKUP_SCOPE_FILE="$work/out/entry-scope.json" \
+  bash "$script_dir/start-openstatus-baseline-backup.sh"
+grep -q 'authentication-failed' "$work/out/stdout" "$work/out/stderr"
+run_entry 3 auth403 env -u TINYBIRD_ADMIN_TOKEN \
+  TINYBIRD_ADMIN_TOKEN_FILE="$work/secrets/admin" TINYBIRD_READ_TOKEN_FILE="$work/secrets/read" \
+  RUN_ID=fixture BASELINE_PURPOSE=pre-init \
+  BASELINE_FILE="$work/out/entry-baseline.json" BACKUP_MANIFEST="$work/out/entry-backup.yaml" \
+  BACKUP_SCOPE_FILE="$work/out/entry-scope.json" \
+  bash "$script_dir/start-openstatus-baseline-backup.sh"
+grep -q 'authentication-failed' "$work/out/stdout" "$work/out/stderr"
+
+past_deadline="$(( $(date -u +%s) - 5 ))"
+: >"$work/kubectl.log"
+set +e
+env -u TINYBIRD_ADMIN_TOKEN \
+  TMPDIR="$work/tmp" PATH="$work/bin:$PATH" MOCK_KUBECTL_LOG="$work/kubectl.log" \
+  RUN_ID=fixture BASELINE_PURPOSE=pre-init \
+  BASELINE_FILE="$work/out/past-baseline.json" BACKUP_MANIFEST="$work/out/past-backup.yaml" \
+  BACKUP_SCOPE_FILE="$work/out/past-scope.json" QUIESCE_DEADLINE_EPOCH="$past_deadline" \
+  TINYBIRD_ADMIN_TOKEN_FILE="$work/secrets/admin" \
+  bash "$script_dir/start-openstatus-baseline-backup.sh" --preflight \
+  >"$work/out/stdout" 2>"$work/out/stderr"
+past_rc=$?
+set -e
+[[ "$past_rc" == "2" ]]
+[[ ! -s "$work/kubectl.log" ]]
+grep -q 'maintenance deadline' "$work/out/stderr"
 
 echo "OpenStatus Tinybird pre-init fixtures: presence, auth, rows, file credentials, and pre-mutation refusal passed"

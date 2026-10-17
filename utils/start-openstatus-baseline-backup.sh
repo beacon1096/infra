@@ -34,9 +34,13 @@ INITIALIZE_TINYBIRD=execute only for a separately approved post-init stage.
 EOF
 }
 
+preflight=0
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
   exit 0
+fi
+if [[ "${1:-}" == "--preflight" ]]; then
+  preflight=1
 fi
 [[ "$run_id" =~ ^[a-z0-9]([a-z0-9-]{0,18}[a-z0-9])?$ ]] || {
   echo "OpenStatus baseline backup: invalid RUN_ID" >&2
@@ -106,6 +110,31 @@ kubectl_path="${OPENSTATUS_KUBECTL_BIN:-$(command -v kubectl || true)}"
 kubectl_command=("$kubectl_path")
 if [[ "$(head -c 2 -- "$kubectl_path")" == '#!' ]]; then
   kubectl_command=(bash "$kubectl_path")
+fi
+
+if (( preflight )); then
+  preflight_dir="$(mktemp -d)"
+  cleanup_preflight() {
+    rm -rf -- "$preflight_dir"
+  }
+  trap cleanup_preflight EXIT
+  set +e
+  preflight_state="$(bash "$script_dir/initialize-openstatus-tinybird.sh" --check \
+    >"$preflight_dir/state" 2>"$preflight_dir/err")"
+  preflight_rc=$?
+  set -e
+  preflight_state="$(<"$preflight_dir/state")"
+  if [[ "$baseline_purpose" == "pre-init" && "$preflight_rc" == "4" && "$preflight_state" == "uninitialized" ]]; then
+    echo "openstatus baseline backup: preflight accepted uninitialized"
+    exit 0
+  fi
+  if [[ "$baseline_purpose" == "post-init" && "$preflight_rc" == "0" && "$preflight_state" =~ ^(initialized-empty|ingested)$ ]]; then
+    echo "openstatus baseline backup: preflight accepted $preflight_state"
+    exit 0
+  fi
+  cat "$preflight_dir/err" >&2
+  [[ -z "$preflight_state" ]] || printf '%s\n' "$preflight_state" >&2
+  exit "$preflight_rc"
 fi
 
 bounded() {
