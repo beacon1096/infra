@@ -2,8 +2,10 @@
 
 `infrastructure/infra` 的服务端 `pre-receive` hook 拒绝向分支引入新的多父提交。
 它覆盖普通分支、AGit 提交与 PR head；Forgejo 合并 PR 时执行的内部 Git push
-也经过同一个 hook。其他仓库与标签不在本次策略范围内，原有权限、审查、状态检查
-和生产发布审批仍由 Forgejo 与现有门禁执行。
+也经过同一个 hook。同一脚本也覆盖 `infrastructure/infra-private`；该仓库的历史
+基线由 `infra-private` 自己固定和管理，详见私有仓的
+`docs/operations/forgejo-linear-history-private.md`。标签、其他仓库不在本次策略
+范围内，原有权限、审查、状态检查和生产发布审批仍由 Forgejo 与现有门禁执行。
 
 ## 历史基线与拒绝条件
 
@@ -33,10 +35,21 @@ Kustomize 生成 `forgejo-linear-history` ConfigMap，HelmRelease 只读挂载�
 - 脚本 → `/data/git/gitea-repositories/infrastructure/infra.git/hooks/pre-receive.d/50-linear-history`
 - 基线 → 同一裸仓库的 `hooks/linear-history-baseline`
 
+同一脚本也挂载到 `infra-private.git` 的 `pre-receive.d/50-linear-history`。
+私有仓基线来自 `infra-private` 生成的 `forgejo-linear-history-private`
+ConfigMap（键 `infra-private-baseline`），本仓库只引用该名称，不保存私有基线。
+该 ConfigMap 必须先在私有仓创建，否则 Pod 因缺少挂载源而无法启动。
+
+hook 是 shell 代码，生成的 ConfigMap 带
+`kustomize.toolkit.fluxcd.io/substitute: disabled`，避免 Flux postBuild 把
+`$baseline` 等 shell 变量当成替换占位符（严格模式下会导致整个 Kustomization
+失败）。不要把该注解加到需要 `${SECRET_DOMAIN}` 等替换的资源上。
+
 保留 Forgejo 生成的 `hooks/pre-receive` dispatcher 和 `pre-receive.d/gitea`。
 无需开启允许用户编辑 Git hooks 的 `DISABLE_GIT_HOOKS=false`。
 ConfigMap 的 subPath 挂载需要重建 Pod 才能刷新，因此 Deployment 明确配置
-Reloader 监听此 ConfigMap。新增适用仓库时，必须单独核对其历史基线并增加挂载。
+Reloader 监听公开与私有两个 ConfigMap。新增适用仓库时，必须单独核对其历史
+基线并增加挂载；私有基线与私有接线不要复制进本仓库。
 
 首次上线可先由运维将相同脚本和基线原子写入现有 PVC 的对应路径，立即生效且
 无需重启 Forgejo；后续由上述 GitOps 挂载接管。不要覆盖未知的同名自定义 hook。
@@ -44,7 +57,8 @@ Reloader 监听此 ConfigMap。新增适用仓库时，必须单独核对其历�
 
 2026-10-15 已将本页对应的脚本与基线安装到运行中实例的 PVC，未重启服务。
 Forgejo 容器内的 19 项真实 receive-pack 测试通过，内置 dispatcher 与权限 hook
-的校验和保持一致。声明式挂载配置需随本变更合入后由 Flux 接管。
+的校验和保持一致。原声明式挂载因 postBuild 对 shell 变量做严格替换而失败；
+本次变更禁用该 ConfigMap 的替换并加入私有仓接线，合入后由 Flux 接管。
 
 本地验证：`bash utils/test-forgejo-linear-history.sh`。测试使用真实本地裸仓库
 和 `git push`，覆盖 quarantine 中的新对象、历史 merge、新建分支、隐藏的 merge、

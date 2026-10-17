@@ -16,3 +16,14 @@ configMapGenerator:
       - infra-baseline=hooks/infra-baseline
 generatorOptions:
   disableNameSuffixHash: true
+patches:
+  # The hook is shell code; Flux postBuild must not treat $baseline and the
+  # other shell variables as substitution placeholders.
+  - target:
+      kind: ConfigMap
+      name: forgejo-linear-history
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          kustomize.toolkit.fluxcd.io/substitute: disabled

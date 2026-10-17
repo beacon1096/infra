@@ -11,11 +11,18 @@ spec:
   values:
     deployment:
       annotations:
-        configmap.reloader.stakater.com/reload: forgejo-linear-history
+        # ConfigMaps are mounted with subPath, so changes need a Pod restart.
+        # The private baseline lives in infra-private; its ConfigMap is
+        # created there and only referenced here.
+        configmap.reloader.stakater.com/reload: forgejo-linear-history,forgejo-linear-history-private
     extraVolumes:
       - name: linear-history
         configMap:
           name: forgejo-linear-history
+          defaultMode: 0555
+      - name: linear-history-private
+        configMap:
+          name: forgejo-linear-history-private
           defaultMode: 0555
     # Keep Forgejo's generated dispatcher and permission hook intact. The
     # custom hook also runs on Forgejo's internal push when a PR is merged.
@@ -27,6 +34,14 @@ spec:
       - name: linear-history
         mountPath: /data/git/gitea-repositories/infrastructure/infra.git/hooks/linear-history-baseline
         subPath: infra-baseline
+        readOnly: true
+      - name: linear-history
+        mountPath: /data/git/gitea-repositories/infrastructure/infra-private.git/hooks/pre-receive.d/50-linear-history
+        subPath: require-linear-history.sh
+        readOnly: true
+      - name: linear-history-private
+        mountPath: /data/git/gitea-repositories/infrastructure/infra-private.git/hooks/linear-history-baseline
+        subPath: infra-private-baseline
         readOnly: true
     image:
       rootless: true
