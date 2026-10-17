@@ -74,7 +74,7 @@ in
   programs.mcp.servers = {
     n8n-mcp = {
       url = "https://automaton.beaco.works/mcp-server/http";
-      headers.Authorization = "{env:N8N_MCP_AUTHORIZATION}";
+      headers.Authorization = "\${env:N8N_MCP_AUTHORIZATION}";
     };
 
     grep = {
@@ -83,7 +83,7 @@ in
 
     outline = {
       url = outlineMcpUrl;
-      headers.Authorization = "Bearer {env:OUTLINE_MCP_BEARER}";
+      headers.Authorization = "Bearer \${env:OUTLINE_MCP_BEARER}";
     };
 
     playwright = {
@@ -97,7 +97,7 @@ in
   // lib.optionalAttrs (lib.hasAttrByPath tavilySecretAttr osConfig) {
     tavily = {
       url = "https://mcp.tavily.com/mcp/";
-      headers.Authorization = "Bearer {env:TAVILY_API_KEY}";
+      headers.Authorization = "Bearer \${env:TAVILY_API_KEY}";
     };
   };
 
