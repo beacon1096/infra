@@ -1,0 +1,8 @@
+diff --git a/wanxiang/kubernetes/apps/monitoring/kustomization.yaml b/wanxiang/kubernetes/apps/monitoring/kustomization.yaml
+--- a/wanxiang/kubernetes/apps/monitoring/kustomization.yaml
++++ b/wanxiang/kubernetes/apps/monitoring/kustomization.yaml
+@@ -9,3 +9,4 @@ resources:
+ resources:
+   - ./namespace.yaml
+   - ./openstatus/ks.yaml
++  - ./prometheus-stack/ks.yaml

@@ -166,7 +166,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "3 * absent(node_uname_info) or 3 * absent(kube_node_status_condition) or 3 * absent(longhorn_volume_last_backup_at) or 3 * absent(cnpg_collector_collection_duration_seconds) or 3 * absent(envoy_server_live) or 3 * absent(certmanager_certificate_expiration_timestamp_seconds) or 2 * ((count((up{job=\"node-exporter\"} == 1 unless on(job,instance,namespace,pod) node_uname_info{job=\"node-exporter\"}) or (longhorn_volume_capacity_bytes unless on(volume) longhorn_volume_last_backup_at) or (up{job=\"monitoring/cnpg-instances\"} == 1 unless on(job,instance,namespace,pod) cnpg_collector_collection_duration_seconds{job=\"monitoring/cnpg-instances\"})) or vector(0)) > bool 0)",
+          "expr": "3 * absent(node_uname_info) or 3 * absent(sum(node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"})) or 3 * absent(sum(node_memory_MemAvailable_bytes{job=\"node-exporter\"})) or 3 * absent(kube_node_status_condition) or 3 * absent(longhorn_volume_last_backup_at) or 3 * absent(cnpg_collector_collection_duration_seconds) or 3 * absent(envoy_server_live) or 3 * absent(certmanager_certificate_expiration_timestamp_seconds) or 2 * ((count((up{job=\"node-exporter\"} == 1 unless on(job,instance,namespace,pod) node_uname_info{job=\"node-exporter\"}) or (up{job=\"node-exporter\"} == 1 unless on(job,instance,namespace,pod) node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"}) or (up{job=\"node-exporter\"} == 1 unless on(job,instance,namespace,pod) node_memory_MemAvailable_bytes{job=\"node-exporter\"}) or (longhorn_volume_capacity_bytes unless on(volume) longhorn_volume_last_backup_at) or (up{job=\"monitoring/cnpg-instances\"} == 1 unless on(job,instance,namespace,pod) cnpg_collector_collection_duration_seconds{job=\"monitoring/cnpg-instances\"})) or vector(0)) > bool 0)",
           "instant": true,
           "legendFormat": "required metric families",
           "refId": "A"
@@ -332,6 +332,86 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "noValue": "Unknown",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 85 },
+              { "color": "red", "value": 95 }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 11 },
+      "id": 15,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"}[5m])))",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Node CPU busy",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "noValue": "Unknown",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 10 },
+              { "color": "green", "value": 20 }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 11 },
+      "id": 16,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "100 * node_memory_MemAvailable_bytes{job=\"node-exporter\"} / node_memory_MemTotal_bytes{job=\"node-exporter\"}",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Node memory available",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "description": "Hours since the last successful backup for every Longhorn volume. Missing volumes are Unknown, never fresh.",
       "fieldConfig": {
         "defaults": {
@@ -341,7 +421,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 11 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 17 },
       "id": 8,
       "options": { "footer": { "enablePagination": true, "fields": "", "reducer": ["lastNotNull"], "show": false }, "showHeader": true },
       "targets": [
@@ -370,7 +450,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 11 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 17 },
       "id": 9,
       "options": { "footer": { "enablePagination": true, "fields": "", "reducer": ["lastNotNull"], "show": false }, "showHeader": true },
       "targets": [
@@ -405,7 +485,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 18 },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 24 },
       "id": 10,
       "options": {
         "colorMode": "value",
@@ -438,7 +518,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 18 },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 24 },
       "id": 11,
       "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -471,7 +551,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 18 },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 24 },
       "id": 12,
       "options": {
         "colorMode": "value",
@@ -504,7 +584,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 24 },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 30 },
       "id": 13,
       "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "asc" } },
       "targets": [
@@ -537,7 +617,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 24 },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 30 },
       "id": 14,
       "options": {
         "colorMode": "value",

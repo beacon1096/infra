@@ -19,6 +19,9 @@ HELM_RELEASE = (
     / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/app/helmrelease.yaml"
 )
 PARENT_KUSTOMIZATION = ROOT / "wanxiang/kubernetes/apps/monitoring/kustomization.yaml"
+ENABLEMENT_PATCH = (
+    ROOT / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/enable-parent.diff"
+)
 
 REQUIRED_TITLES = {
     "Collection state",
@@ -26,6 +29,8 @@ REQUIRED_TITLES = {
     "Metric evidence state",
     "Active platform alerts",
     "Node readiness",
+    "Node CPU busy",
+    "Node memory available",
     "Node filesystem free",
     "Longhorn volume robustness",
     "Per-volume backup freshness",
@@ -42,6 +47,9 @@ REQUIRED_METRICS = {
     "up",
     "kube_pod_container_status_ready",
     "kube_node_status_condition",
+    "node_cpu_seconds_total",
+    "node_memory_MemAvailable_bytes",
+    "node_memory_MemTotal_bytes",
     "node_uname_info",
     "node_filesystem_avail_bytes",
     "node_filesystem_size_bytes",
@@ -134,6 +142,13 @@ def validate_dashboard(dashboard, panels):
     parent = yaml.safe_load(PARENT_KUSTOMIZATION.read_text(encoding="utf-8"))
     if any("prometheus-stack" in resource for resource in parent.get("resources", [])):
         raise AssertionError("dashboard preparation must not connect the monitoring stack to Flux")
+    patch = ENABLEMENT_PATCH.read_text(encoding="utf-8")
+    if "prometheus-stack/ks.yaml" not in patch:
+        raise AssertionError("enablement patch must add the existing prometheus-stack Flux reference")
+    for kustomization in (ROOT / "wanxiang/kubernetes/apps/monitoring").rglob("kustomization.yaml"):
+        if "enable-parent.diff" in kustomization.read_text(encoding="utf-8"):
+            raise AssertionError(f"{kustomization} must not consume the enablement patch")
+    run("git", "-C", str(ROOT), "apply", "--check", str(ENABLEMENT_PATCH))
 
 
 def expression_case(expression, labels, values):
@@ -159,6 +174,18 @@ def validate_queries(panels):
         {
             "series": 'node_uname_info{job="node-exporter",namespace="monitoring",pod="node-exporter-ms01-a",instance="ms01-a:9100"}',
             "values": "1 1 stale 1",
+        },
+        {
+            "series": 'node_cpu_seconds_total{job="node-exporter",namespace="monitoring",pod="node-exporter-ms01-a",instance="ms01-a:9100",mode="idle",cpu="0"}',
+            "values": "0 30 stale 90",
+        },
+        {
+            "series": 'node_memory_MemAvailable_bytes{job="node-exporter",namespace="monitoring",pod="node-exporter-ms01-a",instance="ms01-a:9100"}',
+            "values": "800 200 stale 800",
+        },
+        {
+            "series": 'node_memory_MemTotal_bytes{job="node-exporter",namespace="monitoring",pod="node-exporter-ms01-a",instance="ms01-a:9100"}',
+            "values": "1000 1000 1000 1000",
         },
         {
             "series": 'kube_node_status_condition{node="ms01-a",condition="Ready",status="true"}',
@@ -217,6 +244,16 @@ def validate_queries(panels):
         [1, 0, None, 1],
     )
     tests += expression_case(
+        query(panels, "Node CPU busy"),
+        '{instance="ms01-a:9100"}',
+        [None, 90, 80, 70],
+    )
+    tests += expression_case(
+        query(panels, "Node memory available"),
+        '{instance="ms01-a:9100",job="node-exporter",namespace="monitoring",pod="node-exporter-ms01-a"}',
+        [80, 20, None, 80],
+    )
+    tests += expression_case(
         query(panels, "Node filesystem free"),
         '{fstype="ext4",instance="ms01-a:9100",mountpoint="/var"}',
         [80, 10, None, 80],
@@ -273,6 +310,22 @@ def validate_queries(panels):
         },
         {
             "series": 'node_uname_info{job="node-exporter",namespace="monitoring",pod="node-peer",instance="node-peer:9100"}',
+            "values": "1 1 1 1",
+        },
+        {
+            "series": 'node_cpu_seconds_total{job="node-exporter",namespace="monitoring",pod="node-partial",instance="node-partial:9100",mode="idle",cpu="0"}',
+            "values": "0 60 stale 180",
+        },
+        {
+            "series": 'node_cpu_seconds_total{job="node-exporter",namespace="monitoring",pod="node-peer",instance="node-peer:9100",mode="idle",cpu="0"}',
+            "values": "0 60 120 180",
+        },
+        {
+            "series": 'node_memory_MemAvailable_bytes{job="node-exporter",namespace="monitoring",pod="node-partial",instance="node-partial:9100"}',
+            "values": "1 stale 1 1",
+        },
+        {
+            "series": 'node_memory_MemAvailable_bytes{job="node-exporter",namespace="monitoring",pod="node-peer",instance="node-peer:9100"}',
             "values": "1 1 1 1",
         },
         {

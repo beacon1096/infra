@@ -96,8 +96,15 @@ CI 会实际渲染 chart 并拒绝 KSM Secret 权限、chart 默认 Operator Clu
 50m/128Mi、kube-state-metrics 50m/128Mi，以及每节点 node-exporter 20m/50Mi。
 单副本 Prometheus 保留 7 天且 `retentionSize=15GB`，20Gi PVC；Alertmanager 保留
 120 小时，2Gi PVC。两卷均为 `longhorn-r3`，因此逻辑 22Gi 对应最多约 66Gi 原始
-副本预算。容量或 series 增长逼近 15GB 时先缩短保留或减少无用 scrape，不能直接
-扩大 PVC。
+副本预算。启用前必须按节点、按盘读取 Longhorn `storageAvailable` 与调度条件：
+三副本要求每个将放置副本的磁盘都能放下对应的一份 22Gi，不能用集群空闲合计代替。
+CPU/内存按上面的 requests 合计，并与各节点 allocatable 分开核对。容量或 series
+增长逼近 15GB 时先缩短保留或减少无用 scrape，不能直接扩大 PVC。
+
+采集范围只含集群内对象：node-exporter DaemonSet 落在当时 Ready 的 Kubernetes
+节点上，再加上 kubelet、仅 nodes/pods 的 kube-state-metrics，以及已有的 Longhorn、
+CNPG、Envoy、cert-manager Monitor。inventory 里的集群外 NixOS 与站点主机没有
+ServiceMonitor，不会因为启用本栈而被自动采集。
 
 ## 离线规则与通知验收
 
@@ -134,16 +141,29 @@ Grafana 或 dashboard sidecar。
 准备 PR 合并后仍无运行态影响。生产启用需要另一个精确提交和对应批准：
 
 1. 重新渲染 chart `83.7.0`，确认 ClusterRole、镜像、20Gi+2Gi PVC、资源 requests
-   与本页一致；确认 Longhorn 至少还有 66Gi 原始可调度余量。
+   与本页一致；按节点、按盘确认每个副本落点都有 22Gi 可调度余量，不能只引用历史总量。
 2. 审阅 `infra-private` 的
    `wanxiang/kubernetes/apps/monitoring/alertmanager-config/app/alertmanagerconfig.yaml`。
    该未引用模板位于 `monitoring` 且带上述 selector label；route 不添加 namespace
    matcher，按 severity/alertname 分组，webhook URL 与 token 仅引用同 namespace Secret。
    私有 harness 从该模板派生实际 Alertmanager 路由，并只向 loopback stub 验证
    firing/resolved。真实 Secret、渠道和父级引用仍必须另行批准。
-3. 只在获批提交中，把 `./prometheus-stack/ks.yaml` 加到
-   `kubernetes/apps/monitoring/kustomization.yaml`。确认同环境无并发 Flux/存储变更，
-   再 reconcile。
+3. 只在获批提交中应用 `prometheus-stack/enable-parent.diff`。该补丁只增加父级资源
+   `./prometheus-stack/ks.yaml`，当前父级和任何 Kustomization 都不引用这个 diff。
+   适用基线是父级仍只有 `./namespace.yaml` 与 `./openstatus/ks.yaml` 的提交；检验：
+
+   ```bash
+   git apply --check wanxiang/kubernetes/apps/monitoring/prometheus-stack/enable-parent.diff
+   ```
+
+   `--check` 通过只说明补丁能贴上，不表示已经启用。确认同环境无并发 Flux/存储变更后，
+   再在获批提交里真正应用并 reconcile。本准备合并不得执行这一步。
+   Grafana 保持 `enabled: false`。合并后的可视入口是：已有 kubectl 权限的人把
+   Prometheus Service 转到本机回环（chart 默认名为
+   `kube-prometheus-stack-prometheus`，端口 9090；以当时 `monitoring` 里的 Service
+   名为准），用 expression browser，或把 JSON 导入操作者本机的隔离 Grafana。
+   不默认批准 Grafana 持久部署、额外存储或公开入口。null receiver 只表示通知未送达，
+   不阻止采集与看板准备。
 4. 验收 Prometheus/Alertmanager/Operator Ready、PVC Bound、所有预期 targets up、
    `longhorn-backup` 与 `wanxiang-platform-health` 成功加载且无 rule evaluation error。
 5. 先用合成 alert 对获批渠道验证 firing/resolved；再选择不会损坏业务的一个受控
