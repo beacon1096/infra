@@ -166,7 +166,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "3 * absent(node_uname_info) or 3 * absent(sum(node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"})) or 3 * absent(sum(node_memory_MemAvailable_bytes{job=\"node-exporter\"})) or 3 * absent(kube_node_status_condition) or 3 * absent(longhorn_volume_last_backup_at) or 3 * absent(cnpg_collector_collection_duration_seconds) or 3 * absent(envoy_server_live) or 3 * absent(certmanager_certificate_expiration_timestamp_seconds) or 2 * ((count((up{job=\"node-exporter\"} == 1 unless on(job,instance,namespace,pod) node_uname_info{job=\"node-exporter\"}) or (up{job=\"node-exporter\"} == 1 unless on(job,instance,namespace,pod) node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"}) or (up{job=\"node-exporter\"} == 1 unless on(job,instance,namespace,pod) node_memory_MemAvailable_bytes{job=\"node-exporter\"}) or (longhorn_volume_capacity_bytes unless on(volume) longhorn_volume_last_backup_at) or (up{job=\"monitoring/cnpg-instances\"} == 1 unless on(job,instance,namespace,pod) cnpg_collector_collection_duration_seconds{job=\"monitoring/cnpg-instances\"})) or vector(0)) > bool 0)",
+          "expr": "3 * absent(node_uname_info) or 3 * absent(sum(node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"})) or 3 * absent(sum(node_memory_MemAvailable_bytes{job=\"node-exporter\"})) or 3 * absent(sum(node_memory_MemTotal_bytes{job=\"node-exporter\"})) or 3 * absent(kube_node_status_condition) or 3 * absent(longhorn_volume_last_backup_at) or 3 * absent(cnpg_collector_collection_duration_seconds) or 3 * absent(envoy_server_live) or 3 * absent(certmanager_certificate_expiration_timestamp_seconds) or 2 * ((count((up{job=\"node-exporter\"} == 1 unless on(job,instance,namespace,pod) node_uname_info{job=\"node-exporter\"}) or (up{job=\"node-exporter\"} == 1 unless on(job,instance,namespace,pod) node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"}) or (up{job=\"node-exporter\"} == 1 unless on(job,instance,namespace,pod) node_memory_MemAvailable_bytes{job=\"node-exporter\"}) or (up{job=\"node-exporter\"} == 1 unless on(job,instance,namespace,pod) node_memory_MemTotal_bytes{job=\"node-exporter\"}) or (longhorn_volume_capacity_bytes unless on(volume) longhorn_volume_last_backup_at) or (up{job=\"monitoring/cnpg-instances\"} == 1 unless on(job,instance,namespace,pod) cnpg_collector_collection_duration_seconds{job=\"monitoring/cnpg-instances\"})) or vector(0)) > bool 0)",
           "instant": true,
           "legendFormat": "required metric families",
           "refId": "A"
@@ -362,7 +362,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"}[5m])))",
+          "expr": "(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"}[5m])))) and on(instance) (max by (instance) (up{job=\"node-exporter\"} == 1)) and on(instance) (count by (instance) (node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"}))",
+          "instant": true,
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
@@ -402,7 +403,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "100 * node_memory_MemAvailable_bytes{job=\"node-exporter\"} / node_memory_MemTotal_bytes{job=\"node-exporter\"}",
+          "expr": "(100 * node_memory_MemAvailable_bytes{job=\"node-exporter\"} / node_memory_MemTotal_bytes{job=\"node-exporter\"}) and on(instance) (max by (instance) (up{job=\"node-exporter\"} == 1))",
+          "instant": true,
           "legendFormat": "{{instance}}",
           "refId": "A"
         }

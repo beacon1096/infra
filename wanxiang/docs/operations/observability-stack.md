@@ -136,43 +136,53 @@ HelmRelease 的默认 receiver 是无外发配置的 `null`。上述 stub 只存
 `observability-dashboard.md`。该 JSON 只作为 import artifact 保存，不在本 PR 中启用
 Grafana 或 dashboard sidecar。
 
-## 分阶段启用与验收
+## 采集与可视化启用
 
-准备 PR 合并后仍无运行态影响。生产启用需要另一个精确提交和对应批准：
+准备 PR 合并后仍无运行态影响，也不会创建 Prometheus Service。生产启用需要另一个精确提交和对应批准，而且不依赖真实通知渠道：
 
 1. 重新渲染 chart `83.7.0`，确认 ClusterRole、镜像、20Gi+2Gi PVC、资源 requests
    与本页一致；按节点、按盘确认每个副本落点都有 22Gi 可调度余量，不能只引用历史总量。
-2. 审阅 `infra-private` 的
-   `wanxiang/kubernetes/apps/monitoring/alertmanager-config/app/alertmanagerconfig.yaml`。
-   该未引用模板位于 `monitoring` 且带上述 selector label；route 不添加 namespace
-   matcher，按 severity/alertname 分组，webhook URL 与 token 仅引用同 namespace Secret。
-   私有 harness 从该模板派生实际 Alertmanager 路由，并只向 loopback stub 验证
-   firing/resolved。真实 Secret、渠道和父级引用仍必须另行批准。
-3. 只在获批提交中应用 `prometheus-stack/enable-parent.diff`。该补丁只增加父级资源
-   `./prometheus-stack/ks.yaml`，当前父级和任何 Kustomization 都不引用这个 diff。
-   适用基线是父级仍只有 `./namespace.yaml` 与 `./openstatus/ks.yaml` 的提交；检验：
+2. 只在获批提交中应用完整的 `prometheus-stack/enable-parent.diff`。它同时做两件事：
+   给父级加上 `./prometheus-stack/ks.yaml`，并把
+   `utils/test-observability-prep.py` 与 `utils/test-observability-dashboard.py`
+   从“父级不得引用”切换成“父级必须引用 `./prometheus-stack/ks.yaml`”。Grafana 仍是
+   `enabled: false`。只改父级那一行不能通过现行测试；补丁已经贴上之后，再对同一 diff
+   执行 `git apply --check` 也会失败。适用基线是父级仍只有 `./namespace.yaml` 与
+   `./openstatus/ks.yaml`、且上述两个测试仍拒绝父级引用的提交。未应用时检验：
 
    ```bash
    git apply --check wanxiang/kubernetes/apps/monitoring/prometheus-stack/enable-parent.diff
    ```
 
    `--check` 通过只说明补丁能贴上，不表示已经启用。确认同环境无并发 Flux/存储变更后，
-   再在获批提交里真正应用并 reconcile。本准备合并不得执行这一步。
-   Grafana 保持 `enabled: false`。合并后的可视入口是：已有 kubectl 权限的人把
-   Prometheus Service 转到本机回环（chart 默认名为
+   再在获批提交里应用整份补丁并 reconcile。本准备合并不得执行这一步。
+3. 该提交合入并且部署验收通过之后，才有可视入口。已有 `port-forward` 权限的人把
+   Prometheus Service 转到 127.0.0.1（chart 默认名
    `kube-prometheus-stack-prometheus`，端口 9090；以当时 `monitoring` 里的 Service
    名为准），用 expression browser，或把 JSON 导入操作者本机的隔离 Grafana。
-   不默认批准 Grafana 持久部署、额外存储或公开入口。null receiver 只表示通知未送达，
-   不阻止采集与看板准备。
-4. 验收 Prometheus/Alertmanager/Operator Ready、PVC Bound、所有预期 targets up、
-   `longhorn-backup` 与 `wanxiang-platform-health` 成功加载且无 rule evaluation error。
-5. 先用合成 alert 对获批渠道验证 firing/resolved；再选择不会损坏业务的一个受控
-   目标失败/恢复。逐卷备份新鲜度必须查看每个 volume 的时间序列，不能以 Job
-   succeeded、BackupTarget available 或其它卷健康代替。
+   不默认批准 Grafana 持久部署、额外存储或公开入口。
+4. 采集验收：Prometheus/Alertmanager/Operator Ready、PVC Bound、所有预期 targets up、
+   `longhorn-backup` 与 `wanxiang-platform-health` 成功加载且无 rule evaluation error，
+   看板即时查询在正常、目标 down、单指标缺失和恢复时符合预期。null receiver 表示通知尚未送达，
+   不阻止这一步。
 
 停止条件：出现 cluster-wide Secret/ConfigMap 权限、非 monitoring 命名空间写入、PVC
-预算变化、Prometheus 超过 2Gi 内存、存储逼近 15GB、预期 target/metric 缺失或通知
-指向非批准端点时，停止启用并保持/恢复父级不引用本目录。
+预算变化、Prometheus 超过 2Gi 内存、存储逼近 15GB 或预期 target/metric 缺失时，停止启用并保持/恢复父级不引用本目录。
+
+## 真实通知（独立后续）
+
+真实送达不作为首轮采集和可视化的前置。Alertmanager 保持 null receiver，直到另行批准：
+
+1. 审阅 `infra-private` 的
+   `wanxiang/kubernetes/apps/monitoring/alertmanager-config/app/alertmanagerconfig.yaml`。
+   该未引用模板位于 `monitoring` 且带上述 selector label；route 不添加 namespace
+   matcher，按 severity/alertname 分组，webhook URL 与 token 仅引用同 namespace Secret。
+   私有 harness 从该模板派生实际 Alertmanager 路由，并只向 loopback stub 验证
+   firing/resolved。真实 Secret、渠道和父级引用仍必须另行批准。
+2. 用合成 alert 对获批渠道验证 firing/resolved。通知指向非批准端点时，停止通知变更；
+   这不撤销已经验收的采集，除非该变更本身改到了采集配置。
+
+受控目标失败/恢复仍然属于采集验收，不能用 Job succeeded、BackupTarget available 或其它卷健康代替逐卷备份时间序列。
 
 ## 回滚
 

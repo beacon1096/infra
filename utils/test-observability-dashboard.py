@@ -107,6 +107,11 @@ def validate_dashboard(dashboard, panels):
             raise AssertionError(f"{title!r} could render missing evidence as an implicit healthy value")
         expressions.append(query(panels, title))
 
+    for title in ("Node CPU busy", "Node memory available"):
+        target = panels[title]["targets"][0]
+        if target.get("instant") is not True:
+            raise AssertionError(f"{title} must evaluate the current instant, not the last value in a range")
+
     joined = "\n".join(expressions)
     missing_metrics = {metric for metric in REQUIRED_METRICS if metric not in joined}
     if missing_metrics:
@@ -246,12 +251,12 @@ def validate_queries(panels):
     tests += expression_case(
         query(panels, "Node CPU busy"),
         '{instance="ms01-a:9100"}',
-        [None, 90, 80, 70],
+        [None, None, None, 70],
     )
     tests += expression_case(
         query(panels, "Node memory available"),
         '{instance="ms01-a:9100",job="node-exporter",namespace="monitoring",pod="node-exporter-ms01-a"}',
-        [80, 20, None, 80],
+        [80, None, None, 80],
     )
     tests += expression_case(
         query(panels, "Node filesystem free"),
@@ -329,6 +334,14 @@ def validate_queries(panels):
             "values": "1 1 1 1",
         },
         {
+            "series": 'node_memory_MemTotal_bytes{job="node-exporter",namespace="monitoring",pod="node-partial",instance="node-partial:9100"}',
+            "values": "100 100 100 100",
+        },
+        {
+            "series": 'node_memory_MemTotal_bytes{job="node-exporter",namespace="monitoring",pod="node-peer",instance="node-peer:9100"}',
+            "values": "100 100 100 100",
+        },
+        {
             "series": 'kube_node_status_condition{node="node-peer",condition="Ready",status="true"}',
             "values": "1 1 1 1",
         },
@@ -369,6 +382,167 @@ def validate_queries(panels):
         query(panels, "Metric evidence state"), "{}", [0, 2, 2, 2]
     )
 
+    memtotal_series = [
+        {
+            "series": 'up{job="node-exporter",namespace="monitoring",pod="node-partial",instance="node-partial:9100"}',
+            "values": "1 1",
+        },
+        {
+            "series": 'up{job="node-exporter",namespace="monitoring",pod="node-peer",instance="node-peer:9100"}',
+            "values": "1 1",
+        },
+        {
+            "series": 'node_uname_info{job="node-exporter",namespace="monitoring",pod="node-partial",instance="node-partial:9100"}',
+            "values": "1 1",
+        },
+        {
+            "series": 'node_uname_info{job="node-exporter",namespace="monitoring",pod="node-peer",instance="node-peer:9100"}',
+            "values": "1 1",
+        },
+        {
+            "series": 'node_cpu_seconds_total{job="node-exporter",namespace="monitoring",pod="node-partial",instance="node-partial:9100",mode="idle",cpu="0"}',
+            "values": "1 1",
+        },
+        {
+            "series": 'node_cpu_seconds_total{job="node-exporter",namespace="monitoring",pod="node-peer",instance="node-peer:9100",mode="idle",cpu="0"}',
+            "values": "1 1",
+        },
+        {
+            "series": 'node_memory_MemAvailable_bytes{job="node-exporter",namespace="monitoring",pod="node-partial",instance="node-partial:9100"}',
+            "values": "800 800",
+        },
+        {
+            "series": 'node_memory_MemAvailable_bytes{job="node-exporter",namespace="monitoring",pod="node-peer",instance="node-peer:9100"}',
+            "values": "800 800",
+        },
+        {
+            "series": 'node_memory_MemTotal_bytes{job="node-exporter",namespace="monitoring",pod="node-partial",instance="node-partial:9100"}',
+            "values": "1000 stale",
+        },
+        {
+            "series": 'node_memory_MemTotal_bytes{job="node-exporter",namespace="monitoring",pod="node-peer",instance="node-peer:9100"}',
+            "values": "1000 1000",
+        },
+        {
+            "series": 'kube_node_status_condition{node="node-peer",condition="Ready",status="true"}',
+            "values": "1 1",
+        },
+        {
+            "series": 'longhorn_volume_capacity_bytes{volume="volume-peer"}',
+            "values": "100 100",
+        },
+        {
+            "series": 'longhorn_volume_last_backup_at{volume="volume-peer"}',
+            "values": "1 1",
+        },
+        {
+            "series": 'up{job="monitoring/cnpg-instances",namespace="database",pod="cnpg-peer",instance="cnpg-peer:9187"}',
+            "values": "1 1",
+        },
+        {
+            "series": 'cnpg_collector_collection_duration_seconds{job="monitoring/cnpg-instances",namespace="database",pod="cnpg-peer",instance="cnpg-peer:9187"}',
+            "values": "0.1 0.1",
+        },
+        {
+            "series": 'envoy_server_live{namespace="network",pod="envoy-peer"}',
+            "values": "1 1",
+        },
+        {
+            "series": 'certmanager_certificate_expiration_timestamp_seconds{namespace="network",name="cert-peer"}',
+            "values": "2592000 2592000",
+        },
+    ]
+    memtotal_tests = []
+    def at(minute, samples):
+        return {
+            "eval_time": f"{minute}m",
+            "exp_samples": [
+                {"labels": labels, "value": value} for labels, value in samples
+            ],
+        }
+
+    cpu = query(panels, "Node CPU busy")
+    memory = query(panels, "Node memory available")
+    cpu_a = '{instance="node-a:9100"}'
+    cpu_b = '{instance="node-b:9100"}'
+    mem_a = '{instance="node-a:9100",job="node-exporter",namespace="monitoring",pod="node-a"}'
+    mem_b = '{instance="node-b:9100",job="node-exporter",namespace="monitoring",pod="node-b"}'
+    mem_partial = '{instance="node-partial:9100",job="node-exporter",namespace="monitoring",pod="node-partial"}'
+    mem_peer = '{instance="node-peer:9100",job="node-exporter",namespace="monitoring",pod="node-peer"}'
+    steady = "0 54 108 162 216 270"
+    busy = "0 6 12 18 24 30"
+    # promtool preserves the binary rate result; 54 idle-seconds per minute is 10% busy.
+    idle_busy = 9.999999999999998
+    partial_window_busy = 27.999999999999993
+
+    def pair(up_a, cpu_a_values, memtotal_a):
+        return [
+            {"series": 'up{job="node-exporter",namespace="monitoring",pod="node-a",instance="node-a:9100"}', "values": up_a},
+            {"series": 'up{job="node-exporter",namespace="monitoring",pod="node-b",instance="node-b:9100"}', "values": "1 1 1 1 1 1"},
+            {"series": 'node_cpu_seconds_total{job="node-exporter",namespace="monitoring",pod="node-a",instance="node-a:9100",mode="idle",cpu="0"}', "values": cpu_a_values},
+            {"series": 'node_cpu_seconds_total{job="node-exporter",namespace="monitoring",pod="node-b",instance="node-b:9100",mode="idle",cpu="0"}', "values": steady},
+            {"series": 'node_memory_MemAvailable_bytes{job="node-exporter",namespace="monitoring",pod="node-a",instance="node-a:9100"}', "values": "800 800 800 800 800 800"},
+            {"series": 'node_memory_MemTotal_bytes{job="node-exporter",namespace="monitoring",pod="node-a",instance="node-a:9100"}', "values": memtotal_a},
+            {"series": 'node_memory_MemAvailable_bytes{job="node-exporter",namespace="monitoring",pod="node-b",instance="node-b:9100"}', "values": "500 500 500 500 500 500"},
+            {"series": 'node_memory_MemTotal_bytes{job="node-exporter",namespace="monitoring",pod="node-b",instance="node-b:9100"}', "values": "1000 1000 1000 1000 1000 1000"},
+        ]
+
+    node_cases = [
+        {
+            "name": "node cpu and memory normal with a healthy peer",
+            "interval": "1m",
+            "input_series": pair("1 1 1 1 1 1", steady, "1000 1000 1000 1000 1000 1000"),
+            "promql_expr_test": [
+                {"expr": cpu, **at(5, [(cpu_a, idle_busy), (cpu_b, idle_busy)])},
+                {"expr": memory, **at(5, [(mem_a, 80), (mem_b, 50)])},
+            ],
+        },
+        {
+            "name": "high cpu on one node does not change its peer",
+            "interval": "1m",
+            "input_series": pair("1 1 1 1 1 1", busy, "1000 1000 1000 1000 1000 1000"),
+            "promql_expr_test": [
+                {"expr": cpu, **at(5, [(cpu_a, 90), (cpu_b, idle_busy)])},
+            ],
+        },
+        {
+            "name": "a down target is unknown while its cpu samples and peer remain",
+            "interval": "1m",
+            "input_series": pair("1 1 1 1 1 0", steady, "1000 1000 1000 1000 1000 1000"),
+            "promql_expr_test": [
+                {"expr": cpu, **at(5, [(cpu_b, idle_busy)])},
+                {"expr": memory, **at(5, [(mem_b, 50)])},
+            ],
+        },
+        {
+            "name": "stale idle cpu is unknown even when the rate window and peer remain",
+            "interval": "1m",
+            "input_series": pair("1 1 1 1 1 1", "0 54 108 162 216 stale", "1000 1000 1000 1000 1000 1000"),
+            "promql_expr_test": [
+                {"expr": cpu, **at(5, [(cpu_b, idle_busy)])},
+                {"expr": memory, **at(5, [(mem_a, 80), (mem_b, 50)])},
+            ],
+        },
+        {
+            "name": "current cpu sample restores the node view after a stale minute",
+            "interval": "1m",
+            "input_series": pair("1 1 1 1 1 1", "0 54 108 162 stale 270", "1000 1000 1000 1000 1000 1000"),
+            "promql_expr_test": [
+                {"expr": cpu, **at(4, [(cpu_b, partial_window_busy)])},
+                {"expr": cpu, **at(5, [(cpu_a, idle_busy), (cpu_b, idle_busy)])},
+            ],
+        },
+        {
+            "name": "missing MemTotal is not hidden by a healthy peer",
+            "interval": "1m",
+            "input_series": memtotal_series,
+            "promql_expr_test": expression_case(query(panels, "Metric evidence state"), "{}", [0, 2]) + [
+                {"expr": memory, **at(0, [(mem_partial, 80), (mem_peer, 80)])},
+                {"expr": memory, **at(1, [(mem_peer, 80)])},
+            ],
+        },
+    ]
+
     definition = {
         "rule_files": [],
         "evaluation_interval": "1m",
@@ -385,6 +559,7 @@ def validate_queries(panels):
                 "input_series": partial_series,
                 "promql_expr_test": partial_tests,
             },
+            *node_cases,
         ],
     }
     with tempfile.TemporaryDirectory() as directory:

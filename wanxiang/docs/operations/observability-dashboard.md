@@ -41,8 +41,8 @@ sidecar。未来若采用 GitOps provisioning，必须另行提交连接该 JSON
 | 采集 | 最终 `up{job=~"node-exporter|longhorn-backend|monitoring/cnpg-instances|monitoring/cnpg-operator|network/envoy-proxy|cert-manager|cainjector|webhook"}` | 所有值为 1 | 任一值为 0 | 全部目标消失时 Collection state=Unknown |
 | 目标发现 | `kube_pod_container_status_ready` 按 `namespace,pod` 与最终 `up` 对账；该 KSM 2.18 指标没有 `condition` 标签 | Ready Pod 都有目标 | Ready Pod 没有对应目标 | KSM 指标本身缺失时 Discovery state=Unknown |
 | 节点 | `kube_node_status_condition{condition="Ready",status="true"}`、`node_uname_info` | Ready=1 | Ready=0 | 指标缺失为 Unknown |
-| CPU | `100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{job="node-exporter",mode="idle"}[5m])))` | 有 idle 速率样本 | ≥95% 红色 | 无速率样本为 Unknown，不能显示健康 |
-| 内存 | `node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes`，仅 `job="node-exporter"` | 可用 ≥20% | <10% 红色 | 任一输入缺失为 Unknown |
+| CPU | 即时查询。`rate(node_cpu_seconds_total{mode="idle"}[5m])` 必须同时有当前 `up==1` 和当前 idle 样本 | 当前样本算出的忙比例 | ≥95% 红色 | 目标 down、idle 当前消失，或 5 分钟窗口里只剩过期样本时为 Unknown |
+| 内存 | 即时查询。`MemAvailable / MemTotal`，且当前 `up==1` | 可用 ≥20% | <10% 红色 | `up` 非 1，或 MemAvailable、MemTotal 任一当前缺失为 Unknown |
 | 磁盘 | `node_filesystem_avail_bytes / node_filesystem_size_bytes`，排除 tmpfs/overlay/squashfs 与 Pod mount | 余量 ≥25% | <15% 红色 | 任一计算输入缺失则无样本/Unknown |
 | Longhorn | `longhorn_volume_robustness{state="faulted"}`；1.12.1 中 faulted 的值为 1 | 0 | 1 | 无样本为 Unknown |
 | 逐卷备份 | `longhorn_volume_last_backup_at`、`longhorn_backup_state`，标签为 `volume,pvc,pvc_namespace` | 最近成功时间 <24h，state 非 4 | >48h 或 state=4 | 时间序列缺失为 Unknown；Job succeeded 不替代本证据 |
@@ -51,9 +51,9 @@ sidecar。未来若采用 GitOps provisioning，必须另行提交连接该 JSON
 | 证书 | `certmanager_certificate_expiration_timestamp_seconds` | 剩余≥14天 | <14天 | 无样本为 Unknown |
 
 顶部 **Metric evidence state** 同时要求 node/KSM、node-exporter idle CPU、
-MemAvailable、Longhorn、CNPG、Envoy 和
+MemAvailable、MemTotal、Longhorn、CNPG、Envoy 和
 cert-manager 的关键 metric family 存在，并逐对象对账 node-exporter identity、idle CPU、
-可用内存、Longhorn
+可用内存、MemTotal、Longhorn
 volume backup timestamp 和 CNPG collector；健康 peer 不会掩盖单个对象缺指标。它与 **Collection state**、
 **Discovery state** 分开：目标抓取失败、目标从服务发现消失、目标仍 up 但关键指标消失，
 三种情况不会互相掩盖。**Active platform alerts** 只汇总已经进入 firing 的 #259 与
@@ -73,6 +73,7 @@ BEACO-203 规则；它为 0 时仍必须检查前三个证据面板。
 node_uname_info
 node_cpu_seconds_total{job="node-exporter",mode="idle"}
 node_memory_MemAvailable_bytes{job="node-exporter"}
+node_memory_MemTotal_bytes{job="node-exporter"}
 kube_node_status_condition{condition="Ready",status="true"}
 longhorn_volume_last_backup_at
 cnpg_collector_collection_duration_seconds
