@@ -6,6 +6,23 @@ let
   tavilySecretName = "personal/tavily/api-key";
   tavilySecretAttr = [ "sops" "secrets" tavilySecretName ];
   tavilySecretPath = (lib.attrByPath tavilySecretAttr null osConfig).path;
+
+  # cursor-agent silently drops the entire ~/.cursor/mcp.json when any entry is
+  # invalid (e.g. url + type "stdio", or explicit null fields). Omit `type` for
+  # URL servers; Cursor infers transport from command vs url.
+  cursorAgentMcpEntry =
+    server:
+    if server ? command then
+      lib.filterAttrs (_: v: v != null && v != [ ] && v != { }) {
+        command = server.command;
+        args = server.args or [ ];
+        env = server.env or { };
+      }
+    else
+      lib.filterAttrs (_: v: v != null && v != [ ] && v != { }) {
+        url = server.url;
+        headers = server.headers or { };
+      };
 in
 
 {
@@ -45,14 +62,7 @@ in
   programs.claude-code.enableMcpIntegration = true;
 
   home.file.".cursor/mcp.json".source = jsonFormat.generate "cursor-mcp.json" {
-    mcpServers = lib.mapAttrs
-      (name: server:
-        let
-          addType = if server ? command then "stdio" else if name == "outline" then "http" else "sse";
-        in
-        server // { type = addType; }
-      )
-      config.programs.mcp.servers;
+    mcpServers = lib.mapAttrs (_: cursorAgentMcpEntry) config.programs.mcp.servers;
   };
 
   home.activation.outlineCodexMcp = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
