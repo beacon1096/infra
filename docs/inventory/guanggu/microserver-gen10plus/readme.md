@@ -35,8 +35,9 @@
 - MeshVPN
   - Tailscale: ExitNode | inbound | SubnetRouter
 一般能力：
-- Forgejo Runner: nix-builder
 - Renovate
+
+Forgejo Runner 已于 Phase 1b（2026-09-29）随 `nix-builder` 标签一起注销，本机不再运行 runner（CI 作业改由 `nix-collector` / `nix-check` 承担）。
 
 ## 访问凭据
 

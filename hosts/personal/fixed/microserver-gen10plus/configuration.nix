@@ -164,59 +164,6 @@ in
     };
   };
 
-  # ── Forgejo Actions runner ──────────────────────────────────
-  sops.secrets."forgejo/runner/token" = {
-    sopsFile = ../../../../secrets/shared/forgejo-runner.yaml;
-  };
-  sops.templates."forgejo-runner.env".content = ''
-    TOKEN=${config.sops.placeholder."forgejo/runner/token"}
-  '';
-
-  services.gitea-actions-runner = {
-    package = pkgs.forgejo-runner;
-    instances.gen10plus = {
-      enable = true;
-      name = "microserver-gen10plus";
-      url = "https://forgejo.beaco.works";
-      tokenFile = config.sops.templates."forgejo-runner.env".path;
-      labels = [ "nix-builder:host" ];
-      hostPackages = [ config.nix.package ] ++ (with pkgs; [
-        attic-client
-        bash
-        coreutils
-        curl
-        findutils
-        gawk
-        gitMinimal
-        gnugrep
-        gnused
-        gnutar
-        gzip
-        jq
-        nodejs
-        openssh
-        python3
-        unzip
-        wget
-        xz
-        zstd
-      ]);
-      settings = {
-        runner = {
-          capacity = 1;
-          timeout = "12h";
-          shutdown_timeout = "30m";
-          fetch_timeout = "5m";
-        };
-        cache = {
-          enabled = true;
-          port = 30000;
-        };
-      };
-    };
-  };
-  systemd.services.gitea-runner-gen10plus.serviceConfig.TimeoutStopSec = "31m";
-
   # ── Sudo ────────────────────────────────────────────────────
   security.sudo.wheelNeedsPassword = lib.mkForce false;
 
