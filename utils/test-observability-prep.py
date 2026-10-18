@@ -502,6 +502,30 @@ def validate_rules():
                             "values": "1x75",
                         },
                         {
+                            "series": 'kube_pod_owner{namespace="fixture",pod="pg-target-missing",owner_kind="Cluster",owner_name="fixture-pg",owner_is_controller="true"}',
+                            "values": "1x75",
+                        },
+                        {
+                            "series": 'up{job="monitoring/cnpg-instances",namespace="fixture",pod="pg-healthy",instance="healthy:9187"}',
+                            "values": "1x75",
+                        },
+                        {
+                            "series": 'kube_pod_container_status_ready{namespace="fixture",pod="pg-healthy",container="postgres",uid="fixture-healthy-uid"}',
+                            "values": "1x75",
+                        },
+                        {
+                            "series": 'kube_pod_owner{namespace="fixture",pod="pg-healthy",owner_kind="Cluster",owner_name="fixture-pg",owner_is_controller="true"}',
+                            "values": "1x75",
+                        },
+                        {
+                            "series": 'kube_pod_container_status_ready{namespace="ai",pod="memoh-postgres-0",container="postgres",uid="memoh-uid"}',
+                            "values": "1x75",
+                        },
+                        {
+                            "series": 'kube_pod_owner{namespace="ai",pod="memoh-postgres-0",owner_kind="StatefulSet",owner_name="memoh-postgres",owner_is_controller="true"}',
+                            "values": "1x75",
+                        },
+                        {
                             "series": 'up{job="monitoring/cnpg-instances",namespace="fixture",pod="pg-target-missing",instance="removed:9187"}',
                             "values": "1 stale _x19 1x55",
                         },
@@ -547,6 +571,9 @@ def validate_rules():
                         alert_count("WanxiangMonitoredTargetMissing", "20m", 1, 'pod="pg-target-missing"'),
                         alert_count("WanxiangMonitoredTargetMissing", "21m", 1, 'pod="pg-target-missing"'),
                         alert_count("WanxiangMonitoredTargetMissing", "22m", 0, 'pod="pg-target-missing"'),
+                        alert_count("WanxiangMonitoredTargetMissing", "20m", 0, 'pod="pg-healthy"'),
+                        alert_count("WanxiangMonitoredTargetMissing", "20m", 0, 'pod="memoh-postgres-0"'),
+                        alert_count("WanxiangMonitoredTargetMissing", "21m", 0, 'pod="memoh-postgres-0"'),
                         alert_count("WanxiangMonitoredTargetDown", "5m", 1, 'pod="node-exporter-down"'),
                         alert_count("WanxiangMonitoredTargetDown", "6m", 0, 'pod="node-exporter-down"'),
                         alert_count("WanxiangMonitoredTargetMissing", "20m", 1, 'pod="node-exporter-missing"'),

@@ -32,7 +32,10 @@ spec:
             )
             or
             (
-              kube_pod_container_status_ready{container="postgres"} == 1
+              (
+                kube_pod_container_status_ready{container="postgres"} == 1
+                and on(namespace, pod) kube_pod_owner{owner_kind="Cluster",owner_is_controller="true"}
+              )
               unless on(namespace, pod) up{job="monitoring/cnpg-instances"}
             )
             or
