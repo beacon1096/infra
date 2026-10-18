@@ -20,8 +20,9 @@
 
 ## 保留、并发与容量预算
 
-- 保留：每卷 14 个恢复点（`retain: 14`）；`full-backup-interval: 6` 表示每 7
-  次备份强制一次全量，用于在内容寻址存储出现坏块时重写，同时限制全量上传次数。
+- 保留：每卷 14 个恢复点（`retain: 14`）；`full-backup-interval: 6` 表示每 6
+  次 Job 运行强制一次全量（`executionCount % 6 == 0`），用于在内容寻址存储出现
+  坏块时重写，同时限制全量上传次数。
 - 并发：`concurrency: 1`，同一时刻只备份一个卷，避免占满异地链路。
 - 队首阻塞：一次 `daily-backup` Job 顺序处理卷；某个卷上传卡住会推迟同一次
   Job 中排在后面的所有卷。判断任务健康要看 Job 运行时长和逐卷
@@ -109,6 +110,25 @@
   `coder-pg-2/-5`。
 - 处置要点：先在金银潭侧核对 NFS 服务与磁盘健康，再处理卡住的卷；不要在链路
   仍抖动时提高 `concurrency`，那会加重异地链路和 NFS 排队。
+
+### 2026-10-18 — 同一 Job 持续 19 小时未结束（续报）
+
+- `daily-backup-29871000`（2026-10-17 18:00 UTC 启动）到 10-18 13:20 仍在运行。
+  该批次命中 `full-backup-interval`，创建的是全量备份（对比
+  `backup-a7b80166` 的 `spec.backupMode=full`）；`concurrency: 1` 下全量上传把
+  单次 Job 拉长到 19 小时以上。
+- 队首卷：`nix/attic-store`（100Gi）的 `backup-322cf123` 自 04:38 起停在
+  18–19%，`lastSyncedAt` 为空。其副本在 ms01-a；该节点备份 mount 可写（实测
+  约 5 MB/s）、异地数据集空间充足（4.0T 用 307G），但备份进度几乎不推进。
+- 逐卷核对：19 个卷最新恢复点仍为 2026-10-16，含 `forgejo-data`、`attic-store`、
+  `registry/zot`、`authentik-pg-4/-6` 与 `coder-pg-4`。`BackupTarget/default`
+  全程 `available=true`，只看目标状态会漏掉该故障。
+- 临时处置：2026-10-18 13:51 UTC 对 `development/coder-pg-4` 手动执行 Snapshot +
+  `snapshotBackup`，产生 `backup-dcbdfb06de7d433e`（Completed），恢复其 24h
+  RPO。手动备份不带 `RecurringJob` 标签，不会被 `retain` 清理。
+- 未决：CronJob 为 `ForbidConcurrent`。若 10-17 的 Job 在 10-18 18:00 UTC 前
+  仍不结束，当日批次会被跳过，其余 18 个卷的 RPO 将超过 48 小时。是否中止该
+  Job，以及全量批次的并发与排程调整，需在链路恢复后单独批准。
 
 ## 关联
 
