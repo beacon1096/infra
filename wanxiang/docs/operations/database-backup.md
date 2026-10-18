@@ -23,6 +23,9 @@
 - 保留：每卷 14 个恢复点（`retain: 14`）；`full-backup-interval: 6` 表示每 7
   次备份强制一次全量，用于在内容寻址存储出现坏块时重写，同时限制全量上传次数。
 - 并发：`concurrency: 1`，同一时刻只备份一个卷，避免占满异地链路。
+- 队首阻塞：一次 `daily-backup` Job 顺序处理卷；某个卷上传卡住会推迟同一次
+  Job 中排在后面的所有卷。判断任务健康要看 Job 运行时长和逐卷
+  `lastBackupAt`，不能只看 Job 是否最终 `Complete`。
 - 窗口：每日 02:00 CST。Longhorn 以 UTC 评估 cron，故为 `0 18 * * *`。
 - 容量：集群卷配置总量约 1.92 TiB、实际用量约 863 GiB；异地数据集配额 4 TiB。
   LZ4 压缩与内容寻址去重后，最坏情况（保留窗口内含 2 次全量）约 2 TiB，仍有
@@ -47,9 +50,15 @@
 - `PrometheusRule longhorn-backup`（`storage` 命名空间）定义两条告警：
   - `LonghornBackupStale`：某卷超过 2×RPO 没有成功备份。
   - `LonghornBackupFailed`：`Backup` 进入 Error 状态。
-- 依赖：集群尚未运行 Prometheus/VictoriaMetrics 与 Alertmanager。Longhorn
-  `ServiceMonitor` 与上述规则已声明，指标栈落地后告警立即生效；在此之前以
-  「日常检查」与 Longhorn 事件作为观测手段。仅创建 CR 不等于备份成功。
+- 依赖：集群已运行 Prometheus/Alertmanager。Longhorn `ServiceMonitor` 与上述规则
+  已声明，但告警是否可用取决于 Prometheus 能否真正抓取 `longhorn-backend`
+  指标端点。仅创建 CR 或规则不等于告警生效。
+- 已知抓取缺口（2026-10-18）：`storage` NetworkPolicy `longhorn-manager` 的
+  ingress 只允许 Longhorn 自身组件，`monitoring` 命名空间的 Prometheus 不在
+  允许列表，三个 `longhorn-manager:9500/metrics` 目标均为 `down`
+  （`context deadline exceeded`）。在放行该抓取前，`LonghornBackupStale` /
+  `LonghornBackupFailed` 不会触发，备份异常只能靠日常检查与 Longhorn Event
+  发现。修复后必须验证 `up{job="longhorn-backend"} == 1` 再依赖上述告警。
 
 ## 日常检查
 
@@ -62,6 +71,10 @@
 6. 对 OpenStatus 使用 `MAX_BACKUP_AGE_HOURS=26 bash
    utils/check-openstatus-backups.sh`；脚本非零退出即表示 Secret、升级和上线恢复门槛
    未满足。不要用 Job `succeeded` 或 BackupTarget `available` 代替逐卷结果。
+7. 检查当前 `daily-backup-<timestamp>` Job 的运行时长与 `Backup` 是否推进：
+   `kubectl -n storage get jobs | grep daily-backup`、
+   `kubectl -n storage get backups.longhorn.io -o wide`。正常运行约 40 分钟；
+   超过数小时通常表示链路降级或某个卷卡住，需先处理队首卷。
 
 ## 恢复演练 runbook
 
@@ -77,6 +90,25 @@
 
 > 注意：`allow-recurring-job-while-volume-detached=false`（当前设置）。已停止的
 > 工作负载其分离的卷不会被备份；关键数据库卷始终 attached，不受影响。
+
+## 故障记录
+
+### 2026-10-17 — 金银潭 NFS 无响应导致卷备份 I/O 错误
+
+- 2026-10-17 20:38 UTC，ms01-a 内核记录多条
+  `nfs: server 172.16.19.254 not responding, timed out`；20:39
+  `backup-56ffa8f38a634c66`（`nix-collector/forgejo-runner-nix`，300Gi）
+  在 24% 处以 `input/output error` 失败。同类超时还出现在 2026-10-15 02:21
+  和 2026-10-17 18:09（ms01-c），说明不是单节点 mount 配置问题。
+- 备份 mount 为 `soft,timeo=300,retrans=2`，服务端超过 30 秒无响应时内核以
+  EIO 结束写操作；因此备份错误是链路/服务端无响应的结果，不是 Longhorn 或
+  CSI 逻辑故障。
+- 后续影响：同一次 Job 中下一个大卷（`development/forgejo-data`，100Gi）在
+  21:49 开始后长时间停在约 56%；Job 持续 7 小时以上仍未完成（基线约 40
+  分钟），其余约 20 个卷的当日恢复点被推迟，`coder-pg-4` 因此落后于
+  `coder-pg-2/-5`。
+- 处置要点：先在金银潭侧核对 NFS 服务与磁盘健康，再处理卡住的卷；不要在链路
+  仍抖动时提高 `concurrency`，那会加重异地链路和 NFS 排队。
 
 ## 关联
 
