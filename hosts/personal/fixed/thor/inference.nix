@@ -93,6 +93,11 @@ in
     default = null;
     description = "Override --mamba-ssm-dtype for the 27B recurrent-state precision axis.";
   };
+  options.services.thorInference.proxyPort = lib.mkOption {
+    type = lib.types.port;
+    default = 8888;
+    description = "Loopback inference port exposed by the Tailscale proxy.";
+  };
 
   config = {
   systemd.services.thor-inference = {
@@ -246,7 +251,7 @@ in
     after = [ "tailscaled.service" ];
     wants = [ "tailscaled.service" ];
     serviceConfig = {
-      ExecStart = "${pkgs.systemd}/lib/systemd/systemd-socket-proxyd 127.0.0.1:8888";
+      ExecStart = "${pkgs.systemd}/lib/systemd/systemd-socket-proxyd 127.0.0.1:${toString config.services.thorInference.proxyPort}";
       DynamicUser = true;
       NoNewPrivileges = true;
       PrivateTmp = true;

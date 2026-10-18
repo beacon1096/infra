@@ -13,6 +13,7 @@ in
     ./hardware-configuration.nix
     ./inference.nix
     ./flash-next.nix
+    ./tensorfold.nix
     ../../../../modules/nixos/hyprland.nix
   ];
 
