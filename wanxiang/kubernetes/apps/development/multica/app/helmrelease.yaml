@@ -37,7 +37,7 @@ spec:
         corsAllowedOrigins: "https://multica.${SECRET_DOMAIN}"
         cookieDomain: ".${SECRET_DOMAIN}"
         allowSignup: false
-        disableWorkspaceCreation: true
+        disableWorkspaceCreation: false
         vcsIntegrationEnabled: true
         localUploadBaseUrl: "https://multica.${SECRET_DOMAIN}"
       resources:
