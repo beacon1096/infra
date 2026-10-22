@@ -82,7 +82,7 @@ let
         };
       };
     };
-    "thor/qwen3.8-flash-next" = reasoningTextModel "Thor Qwen3.8 Flash Next" 262144 32768;
+    "thor/qwen3.8-flash-next" = reasoningVisionTextModel "Thor Qwen3.8 Flash Next" 262144 32768;
     "strata/qwen3.8-flash-next" = reasoningTextModel "Strata Qwen3.8 Flash Next SC117 IQ3 Low" 131072 4096 // {
       options.reasoningEffort = "low";
       variants = {
