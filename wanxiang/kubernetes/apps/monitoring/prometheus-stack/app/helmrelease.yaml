@@ -78,7 +78,66 @@ spec:
           memory: 512Mi
 
     grafana:
-      enabled: false
+      enabled: true
+      replicas: 1
+      # Secret contract: monitoring/grafana-oidc must provide these env keys.
+      # It is intentionally not created by this repository; Grafana must not
+      # start with anonymous access or a fallback identity when it is absent.
+      envFromSecret: grafana-oidc
+      rbac:
+        # The chart's default ClusterRole grants configmaps and secrets in
+        # every namespace because both sidecars default to searchNamespace ALL.
+        # Use the namespace-local Role in grafana-rbac.yaml instead.
+        create: false
+      persistence:
+        enabled: false
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      sidecar:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 50m
+            memory: 64Mi
+        dashboards:
+          enabled: true
+          resource: configmap
+          searchNamespace: monitoring
+          label: grafana_dashboard
+          labelValue: "1"
+        datasources:
+          enabled: true
+          resource: configmap
+          searchNamespace: monitoring
+          uid: DS_PROMETHEUS
+      ingress:
+        enabled: false
+      grafana.ini:
+        server:
+          root_url: https://grafana.beaco.works/
+          domain: grafana.beaco.works
+        users:
+          allow_sign_up: false
+          auto_assign_org: true
+          auto_assign_org_role: Viewer
+        auth.anonymous:
+          enabled: false
+        auth.generic_oauth:
+          enabled: true
+          name: Authentik
+          allow_sign_up: true
+          scopes: openid profile email
+          auth_url: https://id.beaco.works/application/o/authorize/
+          token_url: https://id.beaco.works/application/o/token/
+          api_url: https://id.beaco.works/application/o/userinfo/
+          use_pkce: true
 
     # Talos does not expose these control-plane endpoints through Services, and
     # Cilium replaces kube-proxy. Avoid permanently-down synthetic targets.

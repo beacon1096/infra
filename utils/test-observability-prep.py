@@ -72,6 +72,31 @@ def named(items, kind, name):
     return matches[0]
 
 
+def cpu_millicores(value):
+    if value.endswith("m"):
+        return int(value[:-1])
+    return int(float(value) * 1000)
+
+
+def memory_mi(value):
+    if value.endswith("Mi"):
+        return int(value[:-2])
+    if value.endswith("Gi"):
+        return int(float(value[:-2]) * 1024)
+    raise AssertionError(f"unexpected memory quantity: {value}")
+
+
+def walk_strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from walk_strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from walk_strings(item)
+
+
 def render_chart(values):
     with tempfile.TemporaryDirectory() as directory:
         values_path = Path(directory) / "values.yaml"
@@ -96,8 +121,10 @@ def validate_manifests():
         "HelmRelease": 1,
         "ClusterRole": 2,
         "ClusterRoleBinding": 2,
-        "Role": 1,
-        "RoleBinding": 1,
+        "Role": 2,
+        "RoleBinding": 2,
+        "ConfigMap": 1,
+        "HTTPRoute": 1,
         "PodMonitor": 2,
         "PrometheusRule": 1,
     }
@@ -117,6 +144,31 @@ def validate_manifests():
 
     release = one(APP / "helmrelease.yaml", "HelmRelease")
     values = release["spec"]["values"]
+    grafana = values["grafana"]
+    if grafana.get("enabled") is not True or grafana.get("replicas") != 1:
+        raise AssertionError("Grafana must be enabled with exactly one replica")
+    if grafana.get("persistence", {}).get("enabled") is not False:
+        raise AssertionError("Grafana must not create a PVC")
+    if grafana.get("rbac", {}).get("create") is not False:
+        raise AssertionError("the chart's default Grafana ClusterRole must remain disabled")
+    if grafana.get("envFromSecret") != "grafana-oidc":
+        raise AssertionError("Grafana must consume the reviewed OIDC Secret contract")
+    sidecar = grafana["sidecar"]
+    if sidecar["dashboards"].get("searchNamespace") != "monitoring":
+        raise AssertionError("dashboard sidecar must be namespace-local")
+    if sidecar["datasources"].get("searchNamespace") != "monitoring":
+        raise AssertionError("datasource sidecar must be namespace-local")
+    if sidecar["dashboards"].get("resource") != "configmap":
+        raise AssertionError("dashboard sidecar must not read Secrets")
+    if sidecar["datasources"].get("resource") != "configmap":
+        raise AssertionError("datasource sidecar must not read Secrets")
+    if sidecar["datasources"].get("uid") != "DS_PROMETHEUS":
+        raise AssertionError("Grafana datasource UID must match the provisioned dashboard")
+    grafana_ini = grafana["grafana.ini"]
+    if grafana_ini["auth.anonymous"]["enabled"] is not False:
+        raise AssertionError("anonymous Grafana access must be disabled")
+    if grafana_ini["users"]["auto_assign_org_role"] != "Viewer":
+        raise AssertionError("OIDC users must default to Viewer")
     if values.get("global", {}).get("rbac", {}).get("create") is not False:
         raise AssertionError("the chart's broad global RBAC must remain disabled")
     if values["prometheusOperator"]["admissionWebhooks"]["enabled"] is not False:
@@ -181,6 +233,110 @@ def validate_manifests():
         raise AssertionError("namespace-local operator verbs must remain enumerated")
 
     chart_documents = render_chart(values)
+    grafana_deployment = named(
+        chart_documents,
+        "Deployment",
+        "kube-prometheus-stack-grafana",
+    )
+    grafana_pod = grafana_deployment["spec"]["template"]["spec"]
+    grafana_containers = {item["name"]: item for item in grafana_pod["containers"]}
+    if set(grafana_containers) != {"grafana", "grafana-sc-dashboard", "grafana-sc-datasources"}:
+        raise AssertionError(f"unexpected Grafana containers: {sorted(grafana_containers)}")
+    expected_containers = {
+        "grafana": ("100m", "128Mi", "500m", "512Mi"),
+        "grafana-sc-dashboard": ("10m", "32Mi", "50m", "64Mi"),
+        "grafana-sc-datasources": ("10m", "32Mi", "50m", "64Mi"),
+    }
+    total_request_cpu = total_request_memory = total_limit_cpu = total_limit_memory = 0
+    for name, (request_cpu, request_memory, limit_cpu, limit_memory) in expected_containers.items():
+        container = grafana_containers[name]
+        resources = container["resources"]
+        if (
+            resources["requests"]["cpu"] != request_cpu
+            or resources["requests"]["memory"] != request_memory
+            or resources["limits"]["cpu"] != limit_cpu
+            or resources["limits"]["memory"] != limit_memory
+        ):
+            raise AssertionError(f"{name} Grafana container budget changed: {resources}")
+        total_request_cpu += cpu_millicores(request_cpu)
+        total_request_memory += memory_mi(request_memory)
+        total_limit_cpu += cpu_millicores(limit_cpu)
+        total_limit_memory += memory_mi(limit_memory)
+    if (total_request_cpu, total_request_memory, total_limit_cpu, total_limit_memory) != (
+        120, 192, 600, 640,
+    ):
+        raise AssertionError(
+            "Grafana Pod budget must total 120m/192Mi requests and 600m/640Mi limits"
+        )
+    for sidecar in ("grafana-sc-dashboard", "grafana-sc-datasources"):
+        env = {item["name"]: item.get("value") for item in grafana_containers[sidecar]["env"]}
+        if env.get("RESOURCE") != "configmap" or env.get("NAMESPACE") != "monitoring":
+            raise AssertionError(f"{sidecar} must watch only monitoring ConfigMaps")
+    grafana_env_from = grafana_containers["grafana"].get("envFrom") or []
+    if grafana_env_from != [{"secretRef": {"name": "grafana-oidc"}}]:
+        raise AssertionError("Grafana OIDC Secret contract changed")
+    if any(
+        item.get("kind") in {"ClusterRole", "ClusterRoleBinding"}
+        and "grafana" in item.get("metadata", {}).get("name", "")
+        for item in chart_documents
+    ):
+        raise AssertionError("Grafana rendered a cluster-scoped RBAC object")
+    grafana_datasource = named(
+        chart_documents,
+        "ConfigMap",
+        "kube-prometheus-stack-grafana-datasource",
+    )
+    if "uid: DS_PROMETHEUS" not in grafana_datasource["data"]["datasource.yaml"]:
+        raise AssertionError("Grafana datasource UID does not match the provisioned dashboard")
+    grafana_config = named(chart_documents, "ConfigMap", "kube-prometheus-stack-grafana")
+    grafana_ini = grafana_config["data"]["grafana.ini"]
+    if "[auth.anonymous]\nenabled = false" not in grafana_ini:
+        raise AssertionError("Grafana anonymous access is not disabled in rendered config")
+    if "auto_assign_org_role = Viewer" not in grafana_ini:
+        raise AssertionError("Grafana OIDC default role is not Viewer")
+    if any(volume.get("persistentVolumeClaim") for volume in grafana_pod.get("volumes") or []):
+        raise AssertionError("Grafana unexpectedly requests a PVC")
+    storage_volume = next(
+        (volume for volume in grafana_pod.get("volumes") or [] if volume.get("name") == "storage"),
+        None,
+    )
+    if not storage_volume or "emptyDir" not in storage_volume:
+        raise AssertionError("Grafana storage must remain an emptyDir")
+
+    grafana_role = named(rendered_documents, "Role", "kube-prometheus-stack-grafana-sidecar")
+    if grafana_role["rules"] != [
+        {"apiGroups": [""], "resources": ["configmaps"], "verbs": ["get", "list", "watch"]}
+    ]:
+        raise AssertionError("Grafana sidecar Role must be ConfigMap-only in monitoring")
+    grafana_binding = named(
+        rendered_documents,
+        "RoleBinding",
+        "kube-prometheus-stack-grafana-sidecar",
+    )
+    if grafana_binding["subjects"] != [
+        {"kind": "ServiceAccount", "name": "kube-prometheus-stack-grafana", "namespace": "monitoring"}
+    ]:
+        raise AssertionError("Grafana sidecar RoleBinding subject changed")
+    grafana_route = named(rendered_documents, "HTTPRoute", "grafana")
+    if (
+        grafana_route["spec"]["hostnames"] != ["grafana.beaco.works"]
+        or grafana_route["spec"]["parentRefs"]
+        != [{"name": "envoy-internal", "namespace": "network", "sectionName": "https"}]
+    ):
+        raise AssertionError("Grafana HTTPRoute must stay on the internal Gateway")
+    if grafana_route["spec"]["rules"][0]["backendRefs"] != [
+        {"name": "kube-prometheus-stack-grafana", "port": 80}
+    ]:
+        raise AssertionError("Grafana HTTPRoute backend changed")
+    dashboard_config = named(rendered_documents, "ConfigMap", "wanxiang-platform-overview")
+    if dashboard_config["metadata"]["labels"].get("grafana_dashboard") != "1":
+        raise AssertionError("provisioned dashboard ConfigMap is not labeled for the sidecar")
+    provisioned = json.loads(dashboard_config["data"]["wanxiang-platform-overview.json"])
+    if "__inputs" in provisioned:
+        raise AssertionError("provisioned dashboard still contains import inputs")
+    for value in walk_strings(provisioned):
+        if "${DS_PROMETHEUS}" in value:
+            raise AssertionError("provisioned dashboard still contains the import placeholder")
     if any(
         item.get("kind") == "ClusterRole"
         and item.get("metadata", {}).get("name") == "kube-prometheus-stack-operator"

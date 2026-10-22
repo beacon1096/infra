@@ -5,5 +5,16 @@ resources:
   - ./ocirepository.yaml
   - ./helmrelease.yaml
   - ./rbac.yaml
+  - ./grafana-rbac.yaml
+  - ./grafana-httproute.yaml
   - ./podmonitors.yaml
   - ./prometheusrule.yaml
+configMapGenerator:
+  - name: wanxiang-platform-overview
+    files:
+      - wanxiang-platform-overview.json=dashboards/wanxiang-platform-overview.provisioned.json
+    options:
+      labels:
+        grafana_dashboard: "1"
+generatorOptions:
+  disableNameSuffixHash: true

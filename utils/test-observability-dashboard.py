@@ -14,6 +14,10 @@ DASHBOARD = (
     ROOT
     / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/dashboards/wanxiang-platform-overview.json"
 )
+PROVISIONED_DASHBOARD = (
+    ROOT
+    / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/app/dashboards/wanxiang-platform-overview.provisioned.json"
+)
 HELM_RELEASE = (
     ROOT
     / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/app/helmrelease.yaml"
@@ -88,6 +92,34 @@ def query(panels, title):
     return targets[0]["expr"]
 
 
+def datasource_uids(value):
+    if isinstance(value, dict):
+        datasource = value.get("datasource")
+        if isinstance(datasource, dict) and "uid" in datasource:
+            yield datasource["uid"]
+        for item in value.values():
+            yield from datasource_uids(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from datasource_uids(item)
+
+
+def render_provisioned(dashboard):
+    value = json.loads(json.dumps(dashboard))
+
+    def replace(item):
+        if isinstance(item, str):
+            return item.replace("${DS_PROMETHEUS}", "DS_PROMETHEUS")
+        if isinstance(item, list):
+            return [replace(entry) for entry in item]
+        if isinstance(item, dict):
+            return {key: replace(entry) for key, entry in item.items()}
+        return item
+
+    value.pop("__inputs", None)
+    return replace(value)
+
+
 def validate_dashboard(dashboard, panels):
     if dashboard.get("uid") != "wanxiang-platform-overview":
         raise AssertionError("dashboard uid changed")
@@ -142,8 +174,20 @@ def validate_dashboard(dashboard, panels):
                 raise AssertionError(f"{title}: query state {state} must display {text} in {color}")
 
     release = yaml.safe_load(HELM_RELEASE.read_text(encoding="utf-8"))
-    if release["spec"]["values"]["grafana"]["enabled"] is not False:
-        raise AssertionError("the dashboard preparation must not enable Grafana")
+    grafana = release["spec"]["values"]["grafana"]
+    if grafana.get("enabled") is not True:
+        raise AssertionError("the reviewed Grafana entry must be enabled")
+    if grafana.get("persistence", {}).get("enabled") is not False:
+        raise AssertionError("the Grafana entry must remain PVC-free")
+    provisioned = json.loads(PROVISIONED_DASHBOARD.read_text(encoding="utf-8"))
+    if provisioned != render_provisioned(dashboard):
+        raise AssertionError("provisioned dashboard does not match the reviewed source artifact")
+    if "__inputs" in provisioned:
+        raise AssertionError("provisioned dashboard must not retain import inputs")
+    if "${DS_PROMETHEUS}" in json.dumps(provisioned, ensure_ascii=False):
+        raise AssertionError("provisioned dashboard must not retain the import placeholder")
+    if set(datasource_uids(provisioned)) != {"DS_PROMETHEUS"}:
+        raise AssertionError("provisioned dashboard datasource UIDs are not fully bound")
     parent = yaml.safe_load(PARENT_KUSTOMIZATION.read_text(encoding="utf-8"))
     if "./prometheus-stack/ks.yaml" not in parent.get("resources", []):
         raise AssertionError("enabled monitoring parent must reference prometheus-stack")
