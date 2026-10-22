@@ -82,6 +82,7 @@ let
         };
       };
     };
+    "thor/qwen3.8-flash-next" = reasoningTextModel "Thor Qwen3.8 Flash Next" 262144 32768;
     "strata/qwen3.8-flash-next" = reasoningTextModel "Strata Qwen3.8 Flash Next SC117 IQ3 Low" 131072 4096 // {
       options.reasoningEffort = "low";
       variants = {
@@ -121,6 +122,7 @@ let
   };
   piModelCompat = {
     "thor/qwen3.8-27b" = qwen38PiCompat;
+    "thor/qwen3.8-flash-next" = qwen38PiCompat;
     "strata/qwen3.8-flash-next" = qwen38PiCompat;
   };
   piModels = lib.mapAttrs (id: model: model // (piModelCompat.${id} or { })) beacoworksModels;
