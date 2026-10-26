@@ -1,7 +1,10 @@
 { pkgs, lib, inputs, ... }:
 
 let
-  strata = inputs.beacon-nur-packages.packages.${pkgs.stdenv.hostPlatform.system}.strata;
+  unstable = inputs.nixpkgs-unstable.legacyPackages.${pkgs.stdenv.hostPlatform.system};
+  strata = inputs.beacon-nur-packages.packages.${pkgs.stdenv.hostPlatform.system}.strata.override {
+    inherit (unstable) rustc cargo;
+  };
 in
 {
   # Desktop tools shared across Wayland compositors (Hyprland, niri, etc.)
