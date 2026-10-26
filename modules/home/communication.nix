@@ -27,6 +27,7 @@ in
   home.packages = lib.optionals pkgs.stdenv.isLinux [
     qq
     wechat
+    pkgs.fluffychat
     pkgs.telegram-desktop
   ];
 }
