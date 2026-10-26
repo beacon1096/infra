@@ -73,6 +73,16 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    nchnroutes-src = {
+      url = "github:dndx/nchnroutes";
+      flake = false;
+    };
+
+    china-ip-list = {
+      url = "github:17mon/china_ip_list";
+      flake = false;
+    };
+
   };
 
   outputs = inputs@{ self, nixpkgs, nix-darwin, home-manager, sops-nix, nur, nix-openclaw, nixos-hardware, jovian-nixos, disko, nix-cachyos-kernel, llmAgents, comin, ... }:
@@ -378,6 +388,11 @@
       installer-iso = self.nixosConfigurations.installer.config.system.build.isoImage;
 
       gh-proxy = pkgs.callPackage ./packages/gh-proxy { };
+
+      nchnroutes = pkgs.callPackage ./packages/nchnroutes {
+        source = inputs.nchnroutes-src;
+        chinaIpList = inputs.china-ip-list;
+      };
 
       strata-runtime = strataPkgs.callPackage ./packages/strata/runtime.nix { };
 

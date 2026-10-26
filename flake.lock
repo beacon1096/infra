@@ -85,6 +85,22 @@
         "type": "github"
       }
     },
+    "china-ip-list": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1741090318,
+        "narHash": "sha256-HGjEJGPIj2tnyBu/8L/pEiV0C+IA3ID1s9fwQUBBypk=",
+        "owner": "17mon",
+        "repo": "china_ip_list",
+        "rev": "ad969874df17c5e15e437c682cd928309db5059c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "17mon",
+        "repo": "china_ip_list",
+        "type": "github"
+      }
+    },
     "codex-desktop-linux": {
       "inputs": {
         "flake-utils": "flake-utils",
@@ -382,6 +398,22 @@
       "original": {
         "owner": "numtide",
         "repo": "llm-agents.nix",
+        "type": "github"
+      }
+    },
+    "nchnroutes-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1639544382,
+        "narHash": "sha256-OOwI0jTpaWgzxvCc3Tr9Lkc+srA/CscBmy55zrwGeIU=",
+        "owner": "dndx",
+        "repo": "nchnroutes",
+        "rev": "15ae84b51d462ed3fcb1c427a45f46959cfaea48",
+        "type": "github"
+      },
+      "original": {
+        "owner": "dndx",
+        "repo": "nchnroutes",
         "type": "github"
       }
     },
@@ -756,6 +788,7 @@
     "root": {
       "inputs": {
         "beacon-nur-packages": "beacon-nur-packages",
+        "china-ip-list": "china-ip-list",
         "codex-desktop-linux": "codex-desktop-linux",
         "comin": "comin",
         "disko": "disko",
@@ -763,6 +796,7 @@
         "jetpack-nixos": "jetpack-nixos",
         "jovian-nixos": "jovian-nixos",
         "llmAgents": "llmAgents",
+        "nchnroutes-src": "nchnroutes-src",
         "nix-cachyos-kernel": "nix-cachyos-kernel",
         "nix-darwin": "nix-darwin",
         "nix-openclaw": "nix-openclaw",

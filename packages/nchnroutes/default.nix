@@ -1,16 +1,18 @@
 {
   fetchurl,
-  gzip,
   python3,
   stdenvNoCC,
   source,
   chinaIpList,
   endpointCidrs ? [ ],
+  endpointMap ? { },
+  serviceBindings ? { },
 }:
 
 let
-  apnicSnapshotDate = "20260906";
-  apnicSnapshotHash = "sha256-AGfq79JNZE91hF2MsS+7FWNcQE/FrrdbYtva8FIBZOc=";
+  # Metadata date inside delegated-apnic-latest; the matching dated .gz may lag by a day.
+  apnicSnapshotDate = "20261026";
+  apnicSnapshotHash = "sha256-Yu+RHQFgIefTNPjhAxnj+5rZjkNpRRoI0vICEcvMptA=";
 in
 stdenvNoCC.mkDerivation {
   pname = "nchnroutes";
@@ -18,12 +20,8 @@ stdenvNoCC.mkDerivation {
   src = source;
 
   apnicDelegated = fetchurl {
-    url = "https://ftp.apnic.net/stats/apnic/${builtins.substring 0 4 apnicSnapshotDate}/delegated-apnic-${apnicSnapshotDate}.gz";
+    url = "https://ftp.apnic.net/stats/apnic/delegated-apnic-latest";
     hash = apnicSnapshotHash;
-    downloadToTemp = true;
-    postFetch = ''
-      ${gzip}/bin/gzip -dc "$downloadedFile" > "$out"
-    '';
   };
 
   nativeBuildInputs = [ python3 ];
@@ -91,4 +89,8 @@ stdenvNoCC.mkDerivation {
         raise SystemExit("China probe 223.5.5.5 is routed")
     PY
   '';
+
+  passthru = {
+    inherit endpointMap serviceBindings;
+  };
 }

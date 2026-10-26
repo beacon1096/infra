@@ -22,6 +22,9 @@
         ", preferred, auto, 1"
       ];
 
+      # WeChat uses X11; let Qt render at the display scale instead of stretching its pixels.
+      xwayland.force_zero_scaling = true;
+
       # ── General ───────────────────────────────────────────────
       general = {
         gaps_in = 4;
@@ -331,7 +334,7 @@
       main = {
         font = "JetBrainsMono Nerd Font:size=11";
       };
-      colors = {
+      "colors-dark" = {
         # Nord theme
         background = "2e3440";
         foreground = "d8dee9";
