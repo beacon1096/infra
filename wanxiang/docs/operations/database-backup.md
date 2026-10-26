@@ -54,12 +54,13 @@
 - 依赖：集群已运行 Prometheus/Alertmanager。Longhorn `ServiceMonitor` 与上述规则
   已声明，但告警是否可用取决于 Prometheus 能否真正抓取 `longhorn-backend`
   指标端点。仅创建 CR 或规则不等于告警生效。
-- 已知抓取缺口（2026-10-18）：`storage` NetworkPolicy `longhorn-manager` 的
+- 历史抓取缺口（2026-10-18 修复前）：`storage` NetworkPolicy `longhorn-manager` 的
   ingress 只允许 Longhorn 自身组件，`monitoring` 命名空间的 Prometheus 不在
   允许列表，三个 `longhorn-manager:9500/metrics` 目标均为 `down`
   （`context deadline exceeded`）。在放行该抓取前，`LonghornBackupStale` /
   `LonghornBackupFailed` 不会触发，备份异常只能靠日常检查与 Longhorn Event
-  发现。修复后必须验证 `up{job="longhorn-backend"} == 1` 再依赖上述告警。
+  发现。同日 #280 合入并验收后，三个目标恢复抓取；此段不是当前故障声明。
+  日常仍须验证 `up{job="longhorn-backend"} == 1` 再依赖上述告警。
 
 ## 日常检查
 
@@ -113,6 +114,9 @@
 
 ### 2026-10-18 — 同一 Job 持续 19 小时未结束（续报）
 
+以下记录当时的观察、处置和风险，不代表当前 Job 或恢复点仍停滞；后续进展见
+BEACO-235 与 BEACO-233 的分时点证据。
+
 - `daily-backup-29871000`（2026-10-17 18:00 UTC 启动）到 10-18 13:20 仍在运行。
   该批次命中 `full-backup-interval`，创建的是全量备份（对比
   `backup-a7b80166` 的 `spec.backupMode=full`）；`concurrency: 1` 下全量上传把
@@ -126,9 +130,11 @@
 - 临时处置：2026-10-18 13:51 UTC 对 `development/coder-pg-4` 手动执行 Snapshot +
   `snapshotBackup`，产生 `backup-dcbdfb06de7d433e`（Completed），恢复其 24h
   RPO。手动备份不带 `RecurringJob` 标签，不会被 `retain` 清理。
-- 未决：CronJob 为 `ForbidConcurrent`。若 10-17 的 Job 在 10-18 18:00 UTC 前
-  仍不结束，当日批次会被跳过，其余 18 个卷的 RPO 将超过 48 小时。是否中止该
-  Job，以及全量批次的并发与排程调整，需在链路恢复后单独批准。
+- 当时风险：CronJob 使用 `concurrencyPolicy: Forbid`。若 10-17 的 Job 在
+  10-18 18:00 UTC 仍 active，该次同步不会并发创建新 Job，后续卷的恢复点会
+  继续延迟。这不等于该计划时刻永久不补跑；是否补建还取决于活动 Job 结束时间、
+  `startingDeadlineSeconds` 及控制器对 missed schedule 的判定。中止 Job 或调整
+  并发与排程均须单独批准，历史记录不构成当前处置授权。
 
 ## 关联
 
