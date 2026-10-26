@@ -97,7 +97,7 @@
 
       # ── Key bindings ──────────────────────────────────────────
       "$mod" = "SUPER";
-      "$fileManager" = "spacedrive";
+      "$fileManager" = "strata";
 
       bind = [
         # Window management

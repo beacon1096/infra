@@ -1,5 +1,8 @@
-{ pkgs, lib, ... }:
+{ pkgs, lib, inputs, ... }:
 
+let
+  strata = inputs.beacon-nur-packages.packages.${pkgs.stdenv.hostPlatform.system}.strata;
+in
 {
   # Desktop tools shared across Wayland compositors (Hyprland, niri, etc.)
   home.packages = lib.optionals pkgs.stdenv.isLinux (with pkgs; [
@@ -15,7 +18,7 @@
     playerctl
 
     # File manager
-    spacedrive
+    strata
     yazi
 
     # Audio control GUI
