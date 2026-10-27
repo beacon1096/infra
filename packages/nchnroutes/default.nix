@@ -11,8 +11,8 @@
 
 let
   # Metadata date inside delegated-apnic-latest; the matching dated .gz may lag by a day.
-  apnicSnapshotDate = "20261026";
-  apnicSnapshotHash = "sha256-Yu+RHQFgIefTNPjhAxnj+5rZjkNpRRoI0vICEcvMptA=";
+  apnicSnapshotDate = "20261027";
+  apnicSnapshotHash = "sha256-UUTUeyxa0lopAVkfFQZ4P17JtEvn+8ORb+f5HDNWOJo=";
 in
 stdenvNoCC.mkDerivation {
   pname = "nchnroutes";
