@@ -24,6 +24,23 @@ AUTH_APP = ROOT / "wanxiang/kubernetes/apps/identity/authentik/app"
 MONITORING_APP = ROOT / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/app"
 CONTRACT_PATH = ROOT / "utils/check_grafana_oidc_contract.py"
 
+AUTH_APP_PATH = "./wanxiang/kubernetes/apps/identity/authentik/app"
+AUTH_PREP_PATH = "./wanxiang/kubernetes/apps/identity/authentik/grafana-oidc-prep"
+AUTH_REENTRY_PATH = "./wanxiang/kubernetes/apps/identity/authentik/grafana-oidc-reentry-prep"
+AUTH_ROLLBACK_PATH = "./wanxiang/kubernetes/apps/identity/authentik/grafana-oidc-rollback"
+MONITORING_APP_PATH = "./wanxiang/kubernetes/apps/monitoring/prometheus-stack/app"
+MONITORING_PREP_PATH = "./wanxiang/kubernetes/apps/monitoring/prometheus-stack/grafana-oidc-prep"
+MONITORING_ROLLBACK_PATH = "./wanxiang/kubernetes/apps/monitoring/prometheus-stack/grafana-oidc-rollback"
+
+VALID_FLUX_PATH_PAIRS = {
+    (AUTH_APP_PATH, MONITORING_APP_PATH): "baseline",
+    (AUTH_PREP_PATH, MONITORING_PREP_PATH): "create activation",
+    (AUTH_REENTRY_PATH, MONITORING_PREP_PATH): "verified reentry",
+    (AUTH_PREP_PATH, MONITORING_ROLLBACK_PATH): "monitoring-first rollback after create",
+    (AUTH_REENTRY_PATH, MONITORING_ROLLBACK_PATH): "monitoring-first rollback after reentry",
+    (AUTH_ROLLBACK_PATH, MONITORING_ROLLBACK_PATH): "identity rollback",
+}
+
 
 CONTRACT_SPEC = importlib.util.spec_from_file_location("grafana_oidc_contract", CONTRACT_PATH)
 CONTRACT = importlib.util.module_from_spec(CONTRACT_SPEC)
@@ -51,6 +68,27 @@ def load(path: pathlib.Path, loader=yaml.SafeLoader):
 
 def fail(message: str) -> None:
     raise AssertionError(message)
+
+
+def validate_flux_path_contract(auth_path: str, monitoring_path: str, secret_manifest_count: int) -> str:
+    mode = VALID_FLUX_PATH_PAIRS.get((auth_path, monitoring_path))
+    if mode is None:
+        fail(f"unsupported Authentik/monitoring Flux path pair: {auth_path}, {monitoring_path}")
+    if secret_manifest_count not in {0, 2}:
+        fail("Grafana OIDC activation requires both namespace-local Secret manifests")
+    if mode == "baseline" and secret_manifest_count != 0:
+        fail("baseline Flux paths must not consume Grafana OIDC Secrets")
+    if mode != "baseline" and secret_manifest_count != 2:
+        fail(f"{mode} requires both namespace-local Grafana OIDC Secrets")
+    return mode
+
+
+def assert_flux_path_rejects(auth_path: str, monitoring_path: str, secret_manifest_count: int) -> None:
+    try:
+        validate_flux_path_contract(auth_path, monitoring_path, secret_manifest_count)
+    except AssertionError:
+        return
+    fail(f"invalid Flux path contract accepted: {auth_path}, {monitoring_path}, {secret_manifest_count}")
 
 
 def entry_map(blueprint):
@@ -253,12 +291,22 @@ def main() -> None:
     monitoring_ks = load(ROOT / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/ks.yaml")
     auth_path = auth_ks["spec"]["path"]
     monitoring_path = monitoring_ks["spec"]["path"]
-    if auth_path == "./wanxiang/kubernetes/apps/identity/authentik/app" and monitoring_path == "./wanxiang/kubernetes/apps/monitoring/prometheus-stack/app":
-        activated = False
-    elif auth_path == "./wanxiang/kubernetes/apps/identity/authentik/grafana-oidc-prep" and monitoring_path == "./wanxiang/kubernetes/apps/monitoring/prometheus-stack/grafana-oidc-prep":
-        activated = True
-    else:
-        fail("the Authentik and monitoring Flux paths must select the same Grafana OIDC mode")
+    secret_manifest_count = sum(
+        path.exists()
+        for path in (
+            AUTH_APP / "grafana-oidc.sops.yaml",
+            MONITORING_APP / "grafana-oidc.sops.yaml",
+        )
+    )
+    mode = validate_flux_path_contract(auth_path, monitoring_path, secret_manifest_count)
+    activated = mode != "baseline"
+
+    for valid_pair, valid_mode in VALID_FLUX_PATH_PAIRS.items():
+        validate_flux_path_contract(*valid_pair, 0 if valid_mode == "baseline" else 2)
+    assert_flux_path_rejects(AUTH_APP_PATH, MONITORING_PREP_PATH, 2)
+    assert_flux_path_rejects(AUTH_PREP_PATH, MONITORING_PREP_PATH, 1)
+    assert_flux_path_rejects(AUTH_ROLLBACK_PATH, MONITORING_ROLLBACK_PATH, 1)
+    assert_flux_path_rejects(AUTH_ROLLBACK_PATH, MONITORING_PREP_PATH, 2)
 
     if activated:
         for app_path in (AUTH_APP, MONITORING_APP):
@@ -283,16 +331,26 @@ def main() -> None:
             if any(overlay in parent_text for overlay in ("grafana-oidc-prep", "grafana-oidc-reentry-prep", "grafana-oidc-rollback")):
                 fail(f"live Flux reference found in {parent}")
 
-    for prep in (AUTH_PREP, AUTH_REENTRY_PREP, MONITORING_PREP, AUTH_ROLLBACK, MONITORING_ROLLBACK):
-        documents = render(prep)
-        has_oidc_secret = any(
-            document
-            and document.get("kind") == "Secret"
-            and document.get("metadata", {}).get("name") in {"authentik-grafana-oidc", "grafana-oidc"}
+    expected_secrets = {
+        AUTH_PREP: {"authentik-grafana-oidc"},
+        AUTH_REENTRY_PREP: {"authentik-grafana-oidc"},
+        AUTH_ROLLBACK: {"authentik-grafana-oidc"},
+        MONITORING_PREP: {"grafana-oidc"},
+        MONITORING_ROLLBACK: {"grafana-oidc"},
+    }
+    for overlay, active_secrets in expected_secrets.items():
+        documents = render(overlay)
+        actual_secrets = {
+            document["metadata"]["name"]
             for document in documents
-        )
-        if has_oidc_secret != activated:
-            fail(f"{prep} Secret rendering does not match the active Grafana OIDC mode")
+            if document and document.get("kind") == "Secret" and document.get("metadata", {}).get("name") in {
+                "authentik-grafana-oidc",
+                "grafana-oidc",
+            }
+        }
+        expected = active_secrets if activated else set()
+        if actual_secrets != expected:
+            fail(f"{overlay} Secret rendering does not match the active Grafana OIDC mode")
 
     auth_documents = render(AUTH_PREP)
     auth_release = named(auth_documents, "HelmRelease", "authentik")
@@ -324,6 +382,8 @@ def main() -> None:
         fail("Auth rollback must remove the Blueprint and worker Secret consumer")
     if has_named(rollback_auth_documents, "ConfigMap", "authentik-grafana-oidc-blueprint"):
         fail("Auth rollback must not render the Grafana Blueprint ConfigMap")
+    if not has_named(rollback_auth_documents, "Secret", "authentik-grafana-oidc"):
+        fail("Auth rollback must retain the Secret until all consumers are removed")
 
     rollback_monitoring_documents = render(MONITORING_ROLLBACK)
     rollback_monitoring_release = named(rollback_monitoring_documents, "HelmRelease", "kube-prometheus-stack")
@@ -332,6 +392,8 @@ def main() -> None:
         fail("Grafana rollback must disable the workload and Secret reference")
     if has_named(rollback_monitoring_documents, "HTTPRoute", "grafana"):
         fail("Grafana rollback must remove the public route")
+    if not has_named(rollback_monitoring_documents, "Secret", "grafana-oidc"):
+        fail("Grafana rollback must retain the Secret until the workload is removed")
     base_values = load(MONITORING_APP / "helmrelease.yaml")["spec"]["values"]
     rollback_values = rollback_monitoring_release["spec"]["values"]
     for workload in ("prometheus", "alertmanager"):

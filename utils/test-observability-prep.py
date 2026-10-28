@@ -20,6 +20,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/app"
+ROLLBACK = ROOT / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/grafana-oidc-rollback"
 STACK_KS = ROOT / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/ks.yaml"
 MONITORING_KUSTOMIZATION = ROOT / "wanxiang/kubernetes/apps/monitoring/kustomization.yaml"
 LONGHORN_RULE = ROOT / "wanxiang/kubernetes/apps/storage/longhorn/app/prometheusrule.yaml"
@@ -110,9 +111,13 @@ def render_chart(values):
     return [item for item in yaml.safe_load_all(rendered) if item]
 
 
+def render_kustomization(path):
+    rendered = run("kubectl", "kustomize", str(path)).stdout
+    return [item for item in yaml.safe_load_all(rendered) if item]
+
+
 def validate_manifests():
-    rendered = run("kubectl", "kustomize", str(APP)).stdout
-    rendered_documents = [item for item in yaml.safe_load_all(rendered) if item]
+    rendered_documents = render_kustomization(APP)
     counts = {}
     for item in rendered_documents:
         counts[item["kind"]] = counts.get(item["kind"], 0) + 1
@@ -139,6 +144,7 @@ def validate_manifests():
     if stack["spec"]["path"] not in {
         "./wanxiang/kubernetes/apps/monitoring/prometheus-stack/app",
         "./wanxiang/kubernetes/apps/monitoring/prometheus-stack/grafana-oidc-prep",
+        "./wanxiang/kubernetes/apps/monitoring/prometheus-stack/grafana-oidc-rollback",
     }:
         raise AssertionError("unexpected prepared Flux path")
 
@@ -419,6 +425,26 @@ def validate_manifests():
         raise AssertionError("the approved private AlertmanagerConfig fixture was not selected")
     if selector.items() <= {"observability.beacoworks.xyz/alertmanager": "other"}.items():
         raise AssertionError("a wrong AlertmanagerConfig label was selected")
+
+
+def validate_grafana_rollback():
+    rollback_documents = render_kustomization(ROLLBACK)
+    rollback_release = named(rollback_documents, "HelmRelease", "kube-prometheus-stack")
+    rollback_values = rollback_release["spec"]["values"]
+    rollback_grafana = rollback_values["grafana"]
+    if rollback_grafana.get("enabled") is not False or rollback_grafana.get("envFromSecret") is not None:
+        raise AssertionError("Grafana rollback must disable the workload and Secret consumer")
+    if any(
+        item.get("kind") == "HTTPRoute" and item.get("metadata", {}).get("name") == "grafana"
+        for item in rollback_documents
+    ):
+        raise AssertionError("Grafana rollback must remove the internal route")
+    named(rollback_documents, "Secret", "grafana-oidc")
+
+    base_values = one(APP / "helmrelease.yaml", "HelmRelease")["spec"]["values"]
+    for workload in ("prometheus", "alertmanager"):
+        if rollback_values[workload] != base_values[workload]:
+            raise AssertionError(f"Grafana rollback must not change {workload}")
 
 
 def expected_alert(labels, summary, description):
@@ -949,6 +975,7 @@ def main():
     check_version("promtool", EXPECTED_PROMETHEUS)
     check_version("alertmanager", EXPECTED_ALERTMANAGER)
     validate_manifests()
+    validate_grafana_rollback()
     validate_rules()
     validate_alert_delivery()
     print(
