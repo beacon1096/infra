@@ -62,6 +62,10 @@ jobs:
           nix shell nixpkgs#kubectl --command bash utils/test-openstatus-restore-cleanup.sh
       - name: Test observability preparation
         run: bash utils/run-observability-test.sh
+      - name: Test Grafana OIDC preparation
+        run: |
+          nix-shell -I nixpkgs=flake:nixpkgs -p kubectl 'python3.withPackages (ps: [ ps.pyyaml ])' --run 'python3 utils/test-grafana-oidc-prep.py'
+          bash -n utils/prepare-grafana-oidc-secrets.sh
       - name: Test Forgejo linear history hook
         run: bash utils/test-forgejo-linear-history.sh
       - name: Build OCI images
