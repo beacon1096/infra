@@ -5,7 +5,7 @@ metadata:
   name: authentik
 spec:
   interval: 1h
-  path: ./wanxiang/kubernetes/apps/identity/authentik/app
+  path: ./wanxiang/kubernetes/apps/identity/authentik/grafana-oidc-prep
   postBuild:
     substituteFrom:
       - name: cluster-secrets

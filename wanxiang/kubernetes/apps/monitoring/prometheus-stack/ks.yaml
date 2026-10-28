@@ -8,7 +8,7 @@ metadata:
   name: prometheus-stack
 spec:
   interval: 1h
-  path: ./wanxiang/kubernetes/apps/monitoring/prometheus-stack/app
+  path: ./wanxiang/kubernetes/apps/monitoring/prometheus-stack/grafana-oidc-prep
   prune: true
   sourceRef:
     kind: GitRepository

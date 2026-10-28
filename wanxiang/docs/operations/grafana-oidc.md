@@ -1,9 +1,10 @@
 # Grafana OIDC delivery
 
-This is the non-effective delivery package for the Grafana OIDC dependency of
-BEACO-216. The create, verified-reentry, and rollback directories are Kustomize
-overlays, but neither live Flux Kustomization points at them. This change does
-not create a Secret, provider, application, RBAC object, or pod.
+This document records the approved Grafana OIDC delivery for BEACO-216. The
+BEACO-248 activation selects the create overlay, references both encrypted
+namespace-local Secrets, and switches the two live Flux Kustomizations to the
+reviewed paths. The create, verified-reentry, and rollback directories remain
+separate Kustomize overlays.
 
 ## Fixed contract
 
@@ -56,22 +57,23 @@ export and approval record alongside the activation review.
 
 The repository checks are static Blueprint/YAML checks and disconnected
 Kustomize renders. They do not exercise the Authentik 2026.2.2 serializer,
-decrypt a Secret, or perform a live browser login; those remain unverified
-until an approved activation.
+decrypt a Secret, or perform a live browser login; the serializer and browser
+acceptance remain live-cluster checks.
 
-## Approved delivery
+## Activation procedure
 
 Perform these steps only after the provider/application, access-group
 membership, and Authentik database backup/restore conditions have been
-approved. This PR deliberately does not run the command.
+approved. The activation change uses the create mode covered by the approved
+BEACO-247 evidence.
 
 1. Complete the preflight contract above. Use the create overlay for a new
    object set or the reentry overlay only for the verified reentry mode.
 2. From the repository root, run
-   `utils/prepare-grafana-oidc-secrets.sh --generate`, or run it without
-   `--generate` and enter an already-approved secret at the hidden terminal
-   prompt. The script writes only encrypted manifests to the two app
-   directories and refuses to overwrite existing files.
+   `SOPS_CONFIG=wanxiang/.sops.yaml utils/prepare-grafana-oidc-secrets.sh --generate`,
+   or run it without `--generate` and enter an already-approved secret at the
+   hidden terminal prompt. The script writes only encrypted manifests to the
+   two app directories and refuses to overwrite existing files.
 3. Confirm encryption with `sops filestatus` and `git diff --check`. Do not run
    `sops -d`, print a decrypted value, or pass the value as a command argument.
 4. In the same approved activation change, add both generated files to their
@@ -128,4 +130,5 @@ already stored in Authentik. Disabling or deleting those rows is a separate,
 bounded identity operation with its own approval; it must not clear group
 members or bindings implicitly.
 
-This preparation change has no Flux suspend/resume or live-cluster action.
+This activation change performs no Flux suspend/resume. Flux reconciliation and
+the one HelmRelease reset are explicit post-merge actions.

@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - ./ocirepository.yaml
   - ./helmrelease.yaml
+  - ./grafana-oidc.sops.yaml
   - ./rbac.yaml
   - ./grafana-rbac.yaml
   - ./grafana-httproute.yaml

@@ -249,29 +249,50 @@ def main() -> None:
     if grafana_values["grafana.ini"]["users"]["auto_assign_org_role"] != "Viewer":
         fail("live Grafana default role must remain Viewer")
 
-    for parent in (
-        ROOT / "wanxiang/kubernetes/apps/identity/kustomization.yaml",
-        ROOT / "wanxiang/kubernetes/apps/identity/authentik/ks.yaml",
-        ROOT / "wanxiang/kubernetes/apps/monitoring/kustomization.yaml",
-        ROOT / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/ks.yaml",
-    ):
-        parent_text = parent.read_text(encoding="utf-8")
-        if any(overlay in parent_text for overlay in ("grafana-oidc-prep", "grafana-oidc-reentry-prep", "grafana-oidc-rollback")):
-            fail(f"live Flux reference found in {parent}")
-    if load(ROOT / "wanxiang/kubernetes/apps/identity/authentik/ks.yaml")["spec"]["path"] != "./wanxiang/kubernetes/apps/identity/authentik/app":
-        fail("the live Authentik Flux path must remain the app path")
-    if load(ROOT / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/ks.yaml")["spec"]["path"] != "./wanxiang/kubernetes/apps/monitoring/prometheus-stack/app":
-        fail("the live monitoring Flux path must remain the app path")
+    auth_ks = load(ROOT / "wanxiang/kubernetes/apps/identity/authentik/ks.yaml")
+    monitoring_ks = load(ROOT / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/ks.yaml")
+    auth_path = auth_ks["spec"]["path"]
+    monitoring_path = monitoring_ks["spec"]["path"]
+    if auth_path == "./wanxiang/kubernetes/apps/identity/authentik/app" and monitoring_path == "./wanxiang/kubernetes/apps/monitoring/prometheus-stack/app":
+        activated = False
+    elif auth_path == "./wanxiang/kubernetes/apps/identity/authentik/grafana-oidc-prep" and monitoring_path == "./wanxiang/kubernetes/apps/monitoring/prometheus-stack/grafana-oidc-prep":
+        activated = True
+    else:
+        fail("the Authentik and monitoring Flux paths must select the same Grafana OIDC mode")
+
+    if activated:
+        for app_path in (AUTH_APP, MONITORING_APP):
+            resources = load(app_path / "kustomization.yaml")["resources"]
+            if "./grafana-oidc.sops.yaml" not in resources:
+                fail(f"activated app is missing the encrypted Grafana OIDC Secret in {app_path}")
+        for secret_path in (
+            AUTH_APP / "grafana-oidc.sops.yaml",
+            MONITORING_APP / "grafana-oidc.sops.yaml",
+        ):
+            secret_text = secret_path.read_text(encoding="utf-8")
+            if "sops:" not in secret_text or "ENC[" not in secret_text:
+                fail(f"activated Grafana OIDC Secret is not SOPS encrypted: {secret_path}")
+    else:
+        for parent in (
+            ROOT / "wanxiang/kubernetes/apps/identity/kustomization.yaml",
+            ROOT / "wanxiang/kubernetes/apps/identity/authentik/ks.yaml",
+            ROOT / "wanxiang/kubernetes/apps/monitoring/kustomization.yaml",
+            ROOT / "wanxiang/kubernetes/apps/monitoring/prometheus-stack/ks.yaml",
+        ):
+            parent_text = parent.read_text(encoding="utf-8")
+            if any(overlay in parent_text for overlay in ("grafana-oidc-prep", "grafana-oidc-reentry-prep", "grafana-oidc-rollback")):
+                fail(f"live Flux reference found in {parent}")
 
     for prep in (AUTH_PREP, AUTH_REENTRY_PREP, MONITORING_PREP, AUTH_ROLLBACK, MONITORING_ROLLBACK):
         documents = render(prep)
-        if any(
+        has_oidc_secret = any(
             document
             and document.get("kind") == "Secret"
             and document.get("metadata", {}).get("name") in {"authentik-grafana-oidc", "grafana-oidc"}
             for document in documents
-        ):
-            fail(f"{prep} must not create a credential Secret before approval")
+        )
+        if has_oidc_secret != activated:
+            fail(f"{prep} Secret rendering does not match the active Grafana OIDC mode")
 
     auth_documents = render(AUTH_PREP)
     auth_release = named(auth_documents, "HelmRelease", "authentik")

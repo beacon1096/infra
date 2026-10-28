@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: authentik-grafana-oidc
+stringData:
+  AUTHENTIK_GRAFANA_OIDC_CLIENT_ID: ENC[AES256_GCM,data:yW775mdI7A==,iv:zFSDsEnWlrrxspYo89KuyskahACTe306PMb8OTPAj5o=,tag:fonJssLdfiv9IqvI6cs33Q==,type:str]
+  AUTHENTIK_GRAFANA_OIDC_CLIENT_SECRET: ENC[AES256_GCM,data:g+fZzCPpkYpbAQ2PbPYDHRJcQwCKv69u9pg31/DUAf1ZRnP3q6PvE/VvGaX9xDre+wh9SDee7SdgOH2OaGHOGA==,iv:UlSVIktSEOEGSxQL5K8U9VkIl1bKXMQ9IvRQ6mrzaT0=,tag:ZFu4MeDNNB/j3bf16vtDJA==,type:str]
+sops:
+  age:
+    - enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBEZlZuUFhQa0NZS1RsUWwy
+        SGlaMUdtdkhhV1pPOXQ1azZYeVVEQndrNVZvCmRJVmpNcVhaS1pwTGxJbDc5ZFl5
+        dmx0bVV6NlVCMzVNUG9xR0lXQWExUXcKLS0tIEY1M1VpelJQTHB1aU1VZTc5OTd3
+        cWZwcVk1N0syelMxYWRMSEIyUVNvVmcKuhsqyiQXrf75XeL8394afkYBU5ABTVXb
+        yBTJ8nID04ABEdPtA3DCAaba8RcWbBNIEdbIlNLYDk9k8TUYwjHK+w==
+        -----END AGE ENCRYPTED FILE-----
+      recipient: age19w3svwspecedu893ges7te9qc5qgj3r5tykpkqrl43f90ndlvg4qant4ej
+  encrypted_regex: ^(data|stringData)$
+  lastmodified: "2026-10-28T14:51:50Z"
+  mac: ENC[AES256_GCM,data:q4ZPwiQcSXbjn4BRK9hlATXG2IOfrT7wahBXUvF+wFzop/var+I0lhAaSycBBxJoEAapNT1pEK7cFN1ljM9MkGCGUGnyMNEp4NM988DnLMnnFezSJPljc58TCg37qm2YQ4r93jvkldqCGp6hh02M7ivaAn4ugSXVKOqCgpm7qhc=,iv:tynS9zGnOH/dWy4k5lnrJbCrMTlyVgo6zw8XVbtdegw=,tag:rwaymLc2X3x0btqPgC0g4A==,type:str]
+  mac_only_encrypted: true
+  version: 3.13.3

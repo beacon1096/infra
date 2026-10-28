@@ -124,6 +124,7 @@ def validate_manifests():
         "Role": 2,
         "RoleBinding": 2,
         "ConfigMap": 1,
+        "Secret": 1,
         "HTTPRoute": 1,
         "PodMonitor": 2,
         "PrometheusRule": 1,
@@ -135,7 +136,10 @@ def validate_manifests():
     if "./prometheus-stack/ks.yaml" not in parent["resources"]:
         raise AssertionError("enabled monitoring parent must reference prometheus-stack")
     stack = one(STACK_KS, "Kustomization")
-    if stack["spec"]["path"] != "./wanxiang/kubernetes/apps/monitoring/prometheus-stack/app":
+    if stack["spec"]["path"] not in {
+        "./wanxiang/kubernetes/apps/monitoring/prometheus-stack/app",
+        "./wanxiang/kubernetes/apps/monitoring/prometheus-stack/grafana-oidc-prep",
+    }:
         raise AssertionError("unexpected prepared Flux path")
 
     source = one(APP / "ocirepository.yaml", "OCIRepository")
