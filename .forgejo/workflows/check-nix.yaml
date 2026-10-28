@@ -64,7 +64,9 @@ jobs:
         run: bash utils/run-observability-test.sh
       - name: Test Grafana OIDC preparation
         run: |
-          nix-shell -I nixpkgs=flake:nixpkgs -p kubectl 'python3.withPackages (ps: [ ps.pyyaml ])' --run 'python3 utils/test-grafana-oidc-prep.py'
+          bash utils/run-observability-test.sh utils/test-grafana-oidc-prep.py
+          python_path="$(nix build --no-link --print-out-paths .#observability-python)"
+          PATH="$python_path/bin:$PATH" "$python_path/bin/python3" utils/test-grafana-oidc-secrets.py
           bash -n utils/prepare-grafana-oidc-secrets.sh
       - name: Test Forgejo linear history hook
         run: bash utils/test-forgejo-linear-history.sh

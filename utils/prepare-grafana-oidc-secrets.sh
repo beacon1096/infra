@@ -58,6 +58,11 @@ if [[ -z "$client_secret" ]]; then
   exit 1
 fi
 
+if ! command -v python3 >/dev/null 2>&1; then
+  printf 'error: python3 is required for safe YAML string serialization\n' >&2
+  exit 1
+fi
+
 cleanup_outputs=true
 cleanup() {
   if "$cleanup_outputs"; then
@@ -68,33 +73,55 @@ trap cleanup EXIT
 
 mkdir -p "$(dirname "$identity_path")" "$(dirname "$monitoring_path")"
 
-sops --encrypt \
-  --filename-override "$identity_relative" \
-  --input-type yaml \
-  --output-type yaml \
-  /dev/stdin >"$identity_path" <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: authentik-grafana-oidc
-stringData:
-  AUTHENTIK_GRAFANA_OIDC_CLIENT_ID: grafana
-  AUTHENTIK_GRAFANA_OIDC_CLIENT_SECRET: $client_secret
-EOF
+render_manifest() {
+  local secret_name="$1"
+  local client_id_key="$2"
+  local client_secret_key="$3"
 
-sops --encrypt \
-  --filename-override "$monitoring_relative" \
-  --input-type yaml \
-  --output-type yaml \
-  /dev/stdin >"$monitoring_path" <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: grafana-oidc
-stringData:
-  GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana
-  GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: $client_secret
-EOF
+  printf '%s' "$client_secret" | python3 -c '
+import json
+import sys
+
+secret_name, client_id_key, client_secret_key = sys.argv[1:]
+secret = sys.stdin.read()
+print("apiVersion: v1")
+print("kind: Secret")
+print("metadata:")
+print(f"  name: {secret_name}")
+print("stringData:")
+print(f"  {client_id_key}: grafana")
+print(f"  {client_secret_key}: {json.dumps(secret)}")
+' "$secret_name" "$client_id_key" "$client_secret_key"
+}
+
+encrypt_manifest() {
+  local relative_path="$1"
+  local output_path="$2"
+  local secret_name="$3"
+  local client_id_key="$4"
+  local client_secret_key="$5"
+
+  render_manifest "$secret_name" "$client_id_key" "$client_secret_key" |
+    sops --encrypt \
+      --filename-override "$relative_path" \
+      --input-type yaml \
+      --output-type yaml \
+      /dev/stdin >"$output_path"
+}
+
+encrypt_manifest \
+  "$identity_relative" \
+  "$identity_path" \
+  authentik-grafana-oidc \
+  AUTHENTIK_GRAFANA_OIDC_CLIENT_ID \
+  AUTHENTIK_GRAFANA_OIDC_CLIENT_SECRET
+
+encrypt_manifest \
+  "$monitoring_relative" \
+  "$monitoring_path" \
+  grafana-oidc \
+  GF_AUTH_GENERIC_OAUTH_CLIENT_ID \
+  GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET
 
 cleanup_outputs=false
 printf 'Encrypted manifests written:\n- %s\n- %s\n' "$identity_relative" "$monitoring_relative"

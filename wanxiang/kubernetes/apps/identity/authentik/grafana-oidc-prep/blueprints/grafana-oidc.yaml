@@ -5,14 +5,15 @@ metadata:
   labels:
     blueprints.goauthentik.io/description: |
       Creates the dedicated Grafana confidential OIDC provider and application.
-      Access is limited to the explicitly named, initially empty group.
+      Every target must be absent; use the reentry overlay only after the
+      Grafana OIDC preflight contract has verified an existing exact object.
 context:
   client_id: !Env [AUTHENTIK_GRAFANA_OIDC_CLIENT_ID, null]
   client_secret: !Env [AUTHENTIK_GRAFANA_OIDC_CLIENT_SECRET, null]
 entries:
   - id: grafana-viewers
     model: authentik_core.group
-    state: present
+    state: must_created
     identifiers:
       name: Grafana Viewers
     attrs:
@@ -20,7 +21,7 @@ entries:
 
   - id: grafana-provider
     model: authentik_providers_oauth2.oauth2provider
-    state: present
+    state: must_created
     identifiers:
       name: Grafana @ Beacoworks
     attrs:
@@ -44,7 +45,7 @@ entries:
 
   - id: grafana-application
     model: authentik_core.application
-    state: present
+    state: must_created
     identifiers:
       slug: grafana
     attrs:
@@ -55,7 +56,7 @@ entries:
 
   - id: grafana-access-binding
     model: authentik_policies.policybinding
-    state: present
+    state: must_created
     identifiers:
       target: !KeyOf grafana-application
       group: !KeyOf grafana-viewers

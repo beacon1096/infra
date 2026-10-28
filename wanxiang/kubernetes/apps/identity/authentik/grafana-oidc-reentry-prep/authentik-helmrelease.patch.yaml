@@ -1,0 +1,14 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: authentik
+spec:
+  values:
+    blueprints:
+      configMaps:
+        - authentik-grafana-oidc-blueprint
+    worker:
+      envFrom:
+        - secretRef:
+            name: authentik-grafana-oidc
