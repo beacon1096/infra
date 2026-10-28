@@ -31,7 +31,7 @@ class SecretPreparationTests(unittest.TestCase):
         self.input_prefix = self.repo / "sops.input"
         self._write_fake(
             "sops",
-            """#!/usr/bin/env bash
+            """#!/bin/bash
 set -euo pipefail
 count=0
 if [[ -e "$FAKE_SOPS_COUNT" ]]; then
@@ -49,7 +49,7 @@ printf 'encrypted\n'
         )
         self._write_fake(
             "openssl",
-            """#!/usr/bin/env bash
+            """#!/bin/bash
 set -euo pipefail
 printf '%s\n' "${FAKE_OPENSSL_OUTPUT-abc #tail true 123: [x] \\\"quoted\\\"}"
 """,
