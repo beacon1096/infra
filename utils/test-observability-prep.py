@@ -254,8 +254,8 @@ def validate_manifests():
         raise AssertionError(f"unexpected Grafana containers: {sorted(grafana_containers)}")
     expected_containers = {
         "grafana": ("100m", "128Mi", "500m", "512Mi"),
-        "grafana-sc-dashboard": ("10m", "32Mi", "50m", "64Mi"),
-        "grafana-sc-datasources": ("10m", "32Mi", "50m", "64Mi"),
+        "grafana-sc-dashboard": ("10m", "32Mi", "50m", "256Mi"),
+        "grafana-sc-datasources": ("10m", "32Mi", "50m", "256Mi"),
     }
     total_request_cpu = total_request_memory = total_limit_cpu = total_limit_memory = 0
     for name, (request_cpu, request_memory, limit_cpu, limit_memory) in expected_containers.items():
@@ -273,10 +273,10 @@ def validate_manifests():
         total_limit_cpu += cpu_millicores(limit_cpu)
         total_limit_memory += memory_mi(limit_memory)
     if (total_request_cpu, total_request_memory, total_limit_cpu, total_limit_memory) != (
-        120, 192, 600, 640,
+        120, 192, 600, 1024,
     ):
         raise AssertionError(
-            "Grafana Pod budget must total 120m/192Mi requests and 600m/640Mi limits"
+            "Grafana Pod budget must total 120m/192Mi requests and 600m/1024Mi limits"
         )
     for sidecar in ("grafana-sc-dashboard", "grafana-sc-datasources"):
         env = {item["name"]: item.get("value") for item in grafana_containers[sidecar]["env"]}
