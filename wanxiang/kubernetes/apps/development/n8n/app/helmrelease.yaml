@@ -85,6 +85,17 @@ spec:
                   secretKeyRef:
                     name: n8n-secret
                     key: multica-closer-token
+              # Optional until the author creates the bearer token (see
+              # wanxiang/kubernetes/apps/monitoring/alertmanager-config in
+              # infra-private). The workflow refuses delivery while unset, so
+              # merging ahead of the Secret is safe.
+              ALERTMANAGER_WEBHOOK_TOKEN:
+                valueFrom:
+                  secretKeyRef:
+                    name: n8n-secret
+                    key: alertmanager-webhook-token
+                    optional: true
+              ALERTMANAGER_MATRIX_ROOM_ID: "!GfJXfhwgQXrmCRRjlf:beaco.works"
               FORGEJO_GATE_TOKEN:
                 valueFrom:
                   secretKeyRef:
@@ -137,8 +148,10 @@ spec:
                 rm /tmp/multica-closer.json
                 n8n import:workflow --input=/workflows/infra-ci.json
                 n8n import:workflow --input=/workflows/renovate-merge-queue.json
+                n8n import:workflow --input=/workflows/alertmanager-matrix.json
                 n8n publish:workflow --id=GzhPPYlazQObUguC
                 n8n publish:workflow --id=renovateMergeQueue01
+                n8n publish:workflow --id=alertmanagerMatrix01
     defaultPodOptions:
       securityContext:
         runAsNonRoot: true
@@ -163,6 +176,9 @@ spec:
                 readOnly: true
               - path: /workflows/renovate-merge-queue.json
                 subPath: renovate-merge-queue.json
+                readOnly: true
+              - path: /workflows/alertmanager-matrix.json
+                subPath: alertmanager-matrix.json
                 readOnly: true
       data:
         # Pre-created PVC (data-pvc.yaml) so the swarm-01 state

@@ -1,0 +1,227 @@
+[
+  {
+    "id": "alertmanagerMatrix01",
+    "name": "Alertmanager Matrix",
+    "description": "Receive authenticated Alertmanager webhooks and post formatted firing/resolved notifications to Matrix, independent of the Forgejo CI pipeline.",
+    "active": true,
+    "nodes": [
+      {
+        "id": "9f0c1a3e-6d41-4b8a-9c5a-51a2b7f3c111",
+        "name": "Alertmanager Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          0,
+          192
+        ],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "03dbae25-586b-4e53-b38b-5a23293d5228",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "webhookId": "03dbae25-586b-4e53-b38b-5a23293d5228"
+      },
+      {
+        "id": "5c2d7b9e-1f34-4e7f-a0b6-72c9e4d5a222",
+        "name": "Authenticate Alertmanager Webhook",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          208,
+          192
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const crypto = require('crypto');\nconst headers = Object.fromEntries(Object.entries($json.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]));\nconst actual = Buffer.from(String(headers.authorization ?? ''), 'utf8');\nconst expectedSecret = String($env.ALERTMANAGER_WEBHOOK_TOKEN ?? '');\nif (expectedSecret.length === 0) throw new Error('ALERTMANAGER_WEBHOOK_TOKEN is not configured; refusing delivery');\nconst expected = Buffer.from('Bearer ' + expectedSecret, 'utf8');\nconst authenticated = actual.length === expected.length && crypto.timingSafeEqual(actual, expected);\nreturn { json: { ...$json, AUTHENTICATED: authenticated } };"
+        }
+      },
+      {
+        "id": "b7a9e4c2-8d65-4a0f-9e21-36d8f1c7b333",
+        "name": "Token Valid",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          416,
+          192
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.AUTHENTICATED }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "1d4f8c6b-3a90-4e2c-8f5d-94e0b6d2c444",
+        "name": "Reject Unauthenticated",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          640,
+          336
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": {
+            "error": "unauthorized"
+          },
+          "options": {
+            "responseCode": 401
+          }
+        }
+      },
+      {
+        "id": "7e6b2c94-0d8f-4b1a-a7c3-85f1d9e4c555",
+        "name": "Build Matrix Message",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          640,
+          112
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "language": "javaScript",
+          "jsCode": "const payload = $json.body ?? {};\nconst status = payload.status === 'resolved' ? 'resolved' : 'firing';\nconst alerts = Array.isArray(payload.alerts) ? payload.alerts : [];\nconst room = String($env.ALERTMANAGER_MATRIX_ROOM_ID ?? '').trim() || '!GfJXfhwgQXrmCRRjlf:beaco.works';\nconst escapeHtml = (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst labelKeys = ['alertname', 'severity', 'namespace', 'node', 'pod'];\nconst annotationKeys = ['summary', 'description'];\nconst render = (alert) => {\n  const labels = labelKeys\n    .map((key) => [key, alert.labels?.[key]])\n    .filter(([, value]) => typeof value === 'string' && value.trim() !== '');\n  const notes = annotationKeys\n    .map((key) => alert.annotations?.[key])\n    .filter((value) => typeof value === 'string' && value.trim() !== '');\n  return { head: alert.labels?.alertname ?? 'alert', meta: labels.map(([key, value]) => `${key}=${value}`), notes };\n};\nconst rows = alerts.slice(0, 20).map(render);\nconst emoji = status === 'resolved' ? '✅' : '🔥';\nconst htmlRows = rows.map((row) => {\n  const meta = row.meta.length ? ` <i>(${row.meta.map(escapeHtml).join(', ')})</i>` : '';\n  const notes = row.notes.length ? ` — ${row.notes.map(escapeHtml).join(' | ')}` : '';\n  return `<li><b>${escapeHtml(row.head)}</b>${meta}${notes}</li>`;\n}).join('');\nconst suffix = alerts.length > rows.length ? ` <i>(…and ${alerts.length - rows.length} more)</i>` : '';\nconst messageHtml = `<b>${emoji} Alertmanager ${status}</b>${suffix}<ul>${htmlRows}</ul>`;\nconst messageText = rows.length\n  ? rows.map((row) => `- ${row.head}${row.meta.length ? ` (${row.meta.join(', ')})` : ''}${row.notes.length ? ` — ${row.notes.join(' | ')}` : ''}`).join('\\n')\n  : `- (no alert details)`;\nreturn { json: { ROOM: room, STATUS: status, ALERT_COUNT: alerts.length, MESSAGE_HTML: messageHtml, MESSAGE_TEXT: messageText } };"
+        }
+      },
+      {
+        "id": "c3a5f1d8-6e27-4b9c-b1e4-46a8d0f2c666",
+        "name": "Send Alertmanager Matrix Notification",
+        "type": "n8n-nodes-base.matrix",
+        "typeVersion": 1,
+        "position": [
+          864,
+          112
+        ],
+        "parameters": {
+          "resource": "message",
+          "operation": "create",
+          "roomId": "={{ $json.ROOM }}",
+          "text": "={{ $json.MESSAGE_HTML }}",
+          "messageType": "m.notice",
+          "messageFormat": "org.matrix.custom.html",
+          "fallbackText": "={{ $json.MESSAGE_TEXT }}"
+        },
+        "credentials": {
+          "matrixApi": {
+            "id": "AZWDGpuXbudg1KfU",
+            "name": "Forgejo CI Matrix Account"
+          }
+        }
+      },
+      {
+        "id": "8b9c0e7f-2a45-4d6c-9f08-57d3e6a1c777",
+        "name": "Respond to Alertmanager",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          1088,
+          112
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": {
+            "result": "delivered"
+          },
+          "options": {
+            "responseCode": 200
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Alertmanager Webhook": {
+        "main": [
+          [
+            {
+              "node": "Authenticate Alertmanager Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Authenticate Alertmanager Webhook": {
+        "main": [
+          [
+            {
+              "node": "Token Valid",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Token Valid": {
+        "main": [
+          [
+            {
+              "node": "Build Matrix Message",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Reject Unauthenticated",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Matrix Message": {
+        "main": [
+          [
+            {
+              "node": "Send Alertmanager Matrix Notification",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Alertmanager Matrix Notification": {
+        "main": [
+          [
+            {
+              "node": "Respond to Alertmanager",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate",
+      "availableInMCP": true,
+      "timeSavedMode": "fixed",
+      "saveExecutionProgress": true,
+      "callerPolicy": "workflowsFromSameOwner"
+    },
+    "meta": {
+      "aiBuilderAssisted": false
+    },
+    "tags": []
+  }
+]

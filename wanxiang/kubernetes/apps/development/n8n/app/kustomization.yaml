@@ -13,5 +13,6 @@ configMapGenerator:
     files:
       - infra-ci.json=infra-ci.workflow.json
       - renovate-merge-queue.json=renovate-merge-queue.workflow.json
+      - alertmanager-matrix.json=alertmanager-matrix.workflow.json
 generatorOptions:
   disableNameSuffixHash: true
