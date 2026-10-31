@@ -186,6 +186,38 @@ spec:
             namespace: network
             sectionName: https
         rules:
+          # Dedicated Alertmanager webhook paths must not accept caller-supplied
+          # credentials or identity claims when reached via the legacy external
+          # host: strip both before the request can be persisted into an n8n
+          # execution. Authenticated delivery only reaches n8n through the
+          # internal alertmanager-hook host (JWT + claim injection). Rule order:
+          # first-match wins, so these prefix rules precede the catch-all.
+          - matches:
+              - path:
+                  type: PathPrefix
+                  value: /webhook/03dbae25-586b-4e53-b38b-5a23293d5228
+            filters:
+              - type: RequestHeaderModifier
+                requestHeaderModifier:
+                  remove:
+                    - authorization
+                    - x-alertmanager-user
+            backendRefs:
+              - identifier: app
+                port: 5678
+          - matches:
+              - path:
+                  type: PathPrefix
+                  value: /webhook-test/03dbae25-586b-4e53-b38b-5a23293d5228
+            filters:
+              - type: RequestHeaderModifier
+                requestHeaderModifier:
+                  remove:
+                    - authorization
+                    - x-alertmanager-user
+            backendRefs:
+              - identifier: app
+                port: 5678
           - backendRefs:
               - identifier: app
                 port: 5678

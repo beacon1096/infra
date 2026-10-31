@@ -1,0 +1,33 @@
+---
+# BEACO-251: the automaton route forwards "/" to the same n8n backend, so a
+# request that merely forges x-alertmanager-user could satisfy the workflow's
+# claim check without ever passing through the JWT-authenticated entry. Deny
+# any automaton request carrying the claim header at the gateway, before it
+# reaches n8n. Legitimate automation webhook traffic never sends this header;
+# the dedicated alertmanager-hook route is the only supported entry.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: n8n-webhook-claim-guard
+  labels:
+    app.kubernetes.io/name: n8n
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: n8n
+  authorization:
+    # Allow is required explicitly: EG defaults to Deny when unset.
+    defaultAction: Allow
+    rules:
+      - name: deny-forged-alertmanager-claim
+        action: Deny
+        # Exact-value match (Envoy has no wildcard): 'wanxiang-alertmanager' is
+        # the only value the workflow Code accepts, so denying precisely it on
+        # this entry removes the only authentic request a forger could build.
+        # Any other header value fails the Code claim check anyway.
+        principal:
+          headers:
+            - name: x-alertmanager-user
+              values:
+                - wanxiang-alertmanager

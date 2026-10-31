@@ -1,11 +1,17 @@
 ---
 # Protected webhook entry for BEACO-251 (Alertmanager -> n8n -> Matrix).
 #
-# Rationale: n8n stores execution data the moment a request is accepted, so a
-# Code node cannot be trusted to strip credentials first. Envoy Gateway
-# authenticates basic auth in front of n8n, removes the Authorization header,
-# and forwards only the username claim, so the credential never reaches any
-# persisted execution data. See ADR/issue BEACO-251.
+# Rationale: n8n creates the execution record before any Code node runs, so
+# the webhook must be authenticated — and the credential header removed — by
+# the proxy. Envoy Gateway's JWT filter verifies the EC-signed token (ES256,
+# public JWK inline below; private key + token live only in the private SOPS
+# Secret) and maps the `sub` claim onto x-alertmanager-user. This Envoy
+# Gateway version does NOT remove the Authorization header by itself, so the
+# route adds an explicit RequestHeaderModifier remove — verified live against
+# this cluster's Envoy Gateway 1.7.2/Envoy 1.37.2 in that order (JWT
+# validates first, header is stripped before the backend, isolated receiver
+# captured auth=[] user=[wanxiang-alertmanager]). No credential material can
+# therefore enter any execution data.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -26,6 +32,11 @@ spec:
         - path:
             type: PathPrefix
             value: /webhook/03dbae25-586b-4e53-b38b-5a23293d5228
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - authorization
       backendRefs:
         - name: n8n
           port: 5678
@@ -39,13 +50,17 @@ spec:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       name: alertmanager-hook
-  basicAuth:
-    users:
-      group: ""
-      kind: Secret
-      name: alertmanager-hook-users
-      namespace: development
-    # On success Envoy removes Authorization and adds this header with the
-    # username. The workflow requires the claim and forbids Authorization, so
-    # an execution can never carry credential material, gateway or direct.
-    forwardUsernameHeader: x-alertmanager-user
+  jwt:
+    providers:
+      - name: alertmanager-hook
+        issuer: alertmanager-hook
+        audiences:
+          - n8n
+        localJWKS:
+          # Public verification key only. The matching private key and the
+          # token are held exclusively in the private SOPS Secret.
+          inline: '{"keys":[{"kty":"EC","crv":"P-256","x":"w7v7G0uiY6r-msp2sVMk-0SkafL2B-lsQZPhTl9jNYE","y":"Q0M-AY_jdRQoUtfUkBb-BoR0ts5pKGCMupLkxtr5Qwk","alg":"ES256","kid":"beaco251","use":"sig"}]}'
+        claimToHeaders:
+          - claim: sub
+            header: x-alertmanager-user
+        recomputeRoute: false

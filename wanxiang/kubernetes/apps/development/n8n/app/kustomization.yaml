@@ -8,7 +8,7 @@ resources:
   - ./ocirepository.yaml
   - ./helmrelease.yaml
   - ./secret.sops.yaml
-  - ./alertmanager-hook-users.sops.yaml
+  - ./n8n-webhook-claim-guard.yaml
   - ./alertmanager-hook.yaml
   - ./n8n-ingress-via-gateway.yaml
 configMapGenerator:
