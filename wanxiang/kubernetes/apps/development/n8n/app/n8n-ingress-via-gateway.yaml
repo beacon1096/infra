@@ -1,0 +1,39 @@
+---
+# BEACO-251: prove the gateway is the only unauthenticated path into the
+# Alertmanager webhook port. Direct n8n service access could otherwise forge
+# the x-alertmanager-user claim, defeating the gateway-side credential strip.
+# Exceptions: Envoy proxy pods (the intended path) and n8n itself, whose
+# renovate-merge-queue workflow self-calls the CI webhook on n8n.development.svc.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: n8n-ingress-via-gateway
+  labels:
+    app.kubernetes.io/name: n8n
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: n8n
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: network
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: envoy
+      ports:
+        - protocol: TCP
+          port: 5678
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: development
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: n8n
+      ports:
+        - protocol: TCP
+          port: 5678

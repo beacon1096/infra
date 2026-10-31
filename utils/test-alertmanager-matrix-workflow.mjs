@@ -72,39 +72,41 @@ const execute = (name, context) =>
     ...context,
   });
 
-const TOKEN = "synthetic-token-for-tests-only";
-const headers = (authorization) => ({ authorization });
+const headers = (extra) => ({ ...extra });
 
-// 1. Authentication
+// 1. Authentication (gateway-side basic auth; the node only trusts the
+// post-strip username claim forwarded by Envoy Gateway).
+const CLAIM = "wanxiang-alertmanager";
 const ok = execute("Authenticate Alertmanager Webhook", {
-  $json: { headers: headers(`Bearer ${TOKEN}`), body: { status: "firing", alerts: [] } },
-  $env: { ALERTMANAGER_WEBHOOK_TOKEN: TOKEN },
+  $json: { headers: headers({ "x-alertmanager-user": CLAIM }), body: { status: "firing", alerts: [] } },
+  $env: {},
 });
 assert.equal(ok.json.AUTHENTICATED, true);
 assert.equal(ok.json.body.status, "firing");
 assert.equal("headers" in ok.json, false, "authenticated output must not carry raw headers");
-assert.equal(JSON.stringify(ok.json).includes(TOKEN), false, "token must not survive into forwarded data");
+assert.equal(JSON.stringify(ok.json).includes(CLAIM), false, "the gateway claim must not leak into forwarded data");
 
-for (const [label, authorization] of [
-  ["wrong token", `Bearer ${TOKEN.slice(0, 20)}${TOKEN.length - 20}`],
-  ["missing scheme", TOKEN],
-  ["empty header", ""],
+for (const [label, nodeHeaders] of [
+  ["no gateway claim (direct n8n access must fail closed)", {}],
+  ["wrong user", { "x-alertmanager-user": "attacker" }],
+  ["empty claim", { "x-alertmanager-user": "" }],
+  ["case spoofing", { "x-alertmanager-user": "WANXIANG-ALERTMANAGER" }],
+  ["credential not stripped by gateway (bypass attempt)", { "x-alertmanager-user": CLAIM, authorization: "Basic c3VwPXBhc3M=" }],
+  ["claim plus forged bearer", { "x-alertmanager-user": CLAIM, authorization: "Bearer leaked" }],
 ]) {
   const denied = execute("Authenticate Alertmanager Webhook", {
-    $json: { headers: headers(authorization), body: { status: "firing", alerts: [] } },
-    $env: { ALERTMANAGER_WEBHOOK_TOKEN: TOKEN },
+    $json: { headers: headers(nodeHeaders), body: { status: "firing", alerts: [] } },
+    $env: {},
   });
   assert.equal(denied.json.AUTHENTICATED, false, `must reject: ${label}`);
+  assert.equal(JSON.stringify(denied.json).includes("leaked"), false);
 }
-assert.throws(
-  () =>
-    execute("Authenticate Alertmanager Webhook", {
-      $json: { headers: headers(`Bearer ${TOKEN}`), body: {} },
-      $env: {},
-    }),
-  undefined,
-  "missing token configuration must fail closed (throw)",
-);
+
+const claimHeaders = execute("Authenticate Alertmanager Webhook", {
+  $json: { headers: { "X-AlertManager-User": CLAIM }, body: {} },
+  $env: {},
+});
+assert.equal(claimHeaders.json.AUTHENTICATED, true, "header names are case-insensitive per RFC 7230");
 
 // 2. Message building
 const env = (overrides = {}) => ({
@@ -198,6 +200,62 @@ assert.equal(summaryLine.trim().length <= 160, true, `summary must be length-lim
 assert.equal(summaryLine.includes("\u0000"), false);
 assert.equal(JSON.stringify(noisy.json).includes("x".repeat(301)), false, "no annotation may exceed its cap");
 
+// Sensitive-value filtering: secret-shaped substrings that happen to sit in
+// otherwise-allowed fields (summary/description/labels) must not reach Matrix.
+const SECRETS = [
+  "Bearer abcdefgh.1234567890.abcdefghij",
+  "password=hunter2secretpassword",
+  "token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJvZmZsaW5lLWZpeHR1cmUifQ.abcdefghijabcdefghijabcdefghij",
+  "secret = MjA0NTgwKzIwMjExMDE0dGVzdA==",
+  "rotate key=deadbeefdeadbeefdeadbeefdeadbeefcafe now",
+];
+for (const [index, secret] of SECRETS.entries()) {
+  const leaked = execute("Build Matrix Message", {
+    $json: {
+      body: {
+        status: "firing",
+        alerts: [
+          {
+            status: "firing",
+            labels: { alertname: `LeakFixture${index}`, severity: "warning" },
+            annotations: { summary: `rotated ${secret} please check`, description: `context ${secret} end` },
+            startsAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+      },
+    },
+    $env: env(),
+  });
+  for (const rendered of [leaked.json.MESSAGE_HTML, leaked.json.MESSAGE_TEXT]) {
+    assert.equal(rendered.includes(secret), false, `secret fixture ${index} leaked: ${rendered.slice(0, 200)}`);
+  }
+  assert.match(leaked.json.MESSAGE_HTML, /\[redacted\]/u, `fixture ${index} must show a redaction marker`);
+  assert.equal(rendered_json(leaked).includes("hunter2"), false);
+}
+function rendered_json(document) {
+  return JSON.stringify(document);
+}
+
+// Negative control: legitimate operator text without secret shapes is not redacted.
+const benign = execute("Build Matrix Message", {
+  $json: {
+    body: {
+      status: "firing",
+      alerts: [
+        {
+          status: "firing",
+          labels: { alertname: "DiskFull", severity: "warning", namespace: "storage" },
+          annotations: { summary: "disk usage 99% on /data (longhorn volume)", description: "node ms01-c /var/lib/longhorn full" },
+          startsAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    },
+  },
+  $env: env(),
+});
+assert.equal(benign.json.MESSAGE_TEXT.includes("redacted"), false, "operator text must not be falsely redacted");
+assert.match(benign.json.MESSAGE_TEXT, /disk usage 99% on \/data/u);
+
 const empty = execute("Build Matrix Message", { $json: { body: {} }, $env: env() });
 assert.equal(empty.json.ALERT_COUNT, 0);
 assert.match(empty.json.MESSAGE_TEXT, /no alert details/u);
@@ -208,4 +266,4 @@ const junk = execute("Build Matrix Message", {
 assert.equal(junk.json.ALERT_COUNT, 2);
 assert.match(junk.json.MESSAGE_TEXT, /- 🔥 alert/u);
 
-console.log("Alertmanager Matrix workflow: 18+ assertions passed (persistence, auth, rendering, links, limits)");
+console.log(`Alertmanager Matrix workflow: ${59 + SECRETS.length + 7 + 6} assertions passed (persistence, gateway-claim auth, redaction, rendering, links, limits)`);

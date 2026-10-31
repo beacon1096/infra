@@ -228,6 +228,14 @@ spec:
       alertmanagerSpec:
         replicas: 1
         retention: 120h
+        # The approved notification destination is only reachable through the
+        # internal Envoy gateway, which authenticates and strips the credential
+        # before n8n ever stores an execution. Alertmanager cannot resolve the
+        # hostname via cluster DNS, so pin it to the envoy-internal address.
+        hostAliases:
+          - ip: 172.16.87.21
+            hostnames:
+              - alertmanager-hook.beaco.works
         # AlertmanagerConfigs are already restricted to the monitoring
         # namespace and the explicit label below. Disable the default injected
         # namespace alert matcher so the approved route can receive storage,

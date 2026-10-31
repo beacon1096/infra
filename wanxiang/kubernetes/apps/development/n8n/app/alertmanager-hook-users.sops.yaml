@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: alertmanager-hook-users
+stringData:
+    users: ENC[AES256_GCM,data:CwUHKZ9aLhwxXiAtWyhDXFX0AmjIvr6GKaHWNJDVB8RD0aGSH6skhN8xcG83aly0bohNBcTaqXi263steX+cDsKj1cBiRcWXLSJwHBd/cIqLtA==,iv:uYZNo4dlD5eifGwxhcNa7wOThKOyEtOg87GZBMYwC9g=,tag:x09gvc9lVT/RfAI8CbfWJQ==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSArZ2NPNVNzYUh0TnpEZXhU
+            YlBVcCtOWUZCYkwraXZBM1lzR3E1YXJxbVY0Cmo5M1RUdlRCaG8vcDdRc21rZnVB
+            QVZpWHB6eFB3dmsrTkloWVpDQVpqUm8KLS0tIEhQOGQvUkJ5aHk1VndFS01qUnFa
+            Tk5mSDhBbEFxK25RdW5kQUFZQktka2cKKRRhEQCn3wjQ5n9m/JKX0lwBsPGG8S9N
+            NH7KgD/XP7f4xEPt3TA+VgVuJe9liijPYwYCs+jqW1P4UV2wtWYZAw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age19w3svwspecedu893ges7te9qc5qgj3r5tykpkqrl43f90ndlvg4qant4ej
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-10-31T16:00:04Z"
+    mac: ENC[AES256_GCM,data:+F6pedRQlWbzuOS5t+kfMKRjlEl5YaUST3SZaVHLtiN+0kj2L9VhSarTntqLiDPXP41uJ6wCnW6tIkMOOORq3a3fxS/wCcs1ggMqwvPnNUOwJBPjWh2yIE7BEqcDcnaTx9C6DFZ4Fgxg2ge+5QfalPGlU9ainLSwYc94L9ZFDrQ=,iv:gfcs7RAhWnv5gATM9LJXEnHbiWd7XBtqUVxLC0C+I4w=,tag:XI7Tu4EpFMUJG/yV6TOW7A==,type:str]
+    pgp:
+        - created_at: "2026-10-31T16:00:04Z"
+          enc: |-
+            -----BEGIN PGP MESSAGE-----
+
+            hF4DTahU1jzz8zoSAQdAwChH88nD+tVVMxHhn9xLg/HZnDSRX9WSGzf7g7rcniMw
+            B24CmRpOUyZ8VZTRPEdy9SKxRydHSJ4DGbV+A6mJ2MA1NhIqAlGo1QnYfA9hfcR1
+            0l4BKL2an1yeNubApJtIUhDJXNQHmmoxUam8uAcSEaQNUbCyv8fwzis2TcWZZi4r
+            J8fwgBoUtSLhIRqgfSDznKpwrOI5XHdV4Lt3mBy7gjgx2TczQ0CzD25ceGlLqOrT
+            =TsHv
+            -----END PGP MESSAGE-----
+          fp: 65C80FDF47908160E7F30FBE58FCE01334F49CA9
+    version: 3.13.3

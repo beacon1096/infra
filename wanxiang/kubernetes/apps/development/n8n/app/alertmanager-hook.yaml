@@ -1,0 +1,51 @@
+---
+# Protected webhook entry for BEACO-251 (Alertmanager -> n8n -> Matrix).
+#
+# Rationale: n8n stores execution data the moment a request is accepted, so a
+# Code node cannot be trusted to strip credentials first. Envoy Gateway
+# authenticates basic auth in front of n8n, removes the Authorization header,
+# and forwards only the username claim, so the credential never reaches any
+# persisted execution data. See ADR/issue BEACO-251.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: alertmanager-hook
+  labels:
+    app.kubernetes.io/name: n8n
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: envoy-internal
+      namespace: network
+      sectionName: https
+  hostnames:
+    - alertmanager-hook.beaco.works
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /webhook/03dbae25-586b-4e53-b38b-5a23293d5228
+      backendRefs:
+        - name: n8n
+          port: 5678
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: alertmanager-hook
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: alertmanager-hook
+  basicAuth:
+    users:
+      group: ""
+      kind: Secret
+      name: alertmanager-hook-users
+      namespace: development
+    # On success Envoy removes Authorization and adds this header with the
+    # username. The workflow requires the claim and forbids Authorization, so
+    # an execution can never carry credential material, gateway or direct.
+    forwardUsernameHeader: x-alertmanager-user
