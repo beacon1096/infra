@@ -8,6 +8,7 @@ resources:
   - ./ocirepository.yaml
   - ./helmrelease.yaml
   - ./secret.sops.yaml
+  - ./alertmanager-secret.sops.yaml
 configMapGenerator:
   - name: n8n-workflows
     files:
