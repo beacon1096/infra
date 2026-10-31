@@ -128,6 +128,37 @@
         }
       },
       {
+        "id": "c94f2d71-6b18-417d-9c0f-3f6d0a8e54c1",
+        "name": "Matrix Accepted?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1044,
+          112
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ typeof $json.errcode !== 'string' && typeof $json.event_id === 'string' }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
         "id": "8b9c0e7f-2a45-4d6c-9f08-57d3e6a1c777",
         "name": "Respond to Alertmanager",
         "type": "n8n-nodes-base.respondToWebhook",
@@ -143,6 +174,26 @@
           },
           "options": {
             "responseCode": 200
+          }
+        }
+      },
+      {
+        "id": "d58a3e9f-0c17-4b52-8d6a-19f2b7c46e8a",
+        "name": "Report Delivery Failure",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.2,
+        "position": [
+          1224,
+          292
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": {
+            "error": "matrix-delivery-failed",
+            "errcode": "={{ $json.errcode }}"
+          },
+          "options": {
+            "responseCode": "502"
           }
         }
       }
@@ -203,7 +254,25 @@
         "main": [
           [
             {
+              "node": "Matrix Accepted?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Matrix Accepted?": {
+        "main": [
+          [
+            {
               "node": "Respond to Alertmanager",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Report Delivery Failure",
               "type": "main",
               "index": 0
             }

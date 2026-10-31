@@ -10,8 +10,12 @@
 # route adds an explicit RequestHeaderModifier remove — verified live against
 # this cluster's Envoy Gateway 1.7.2/Envoy 1.37.2 in that order (JWT
 # validates first, header is stripped before the backend, isolated receiver
-# captured auth=[] user=[wanxiang-alertmanager]). No credential material can
-# therefore enter any execution data.
+# captured auth=[] user=[wanxiang-alertmanager]). Token extraction is pinned
+# to the Authorization header (extractFrom below): without it, EG 1.7.2 also
+# honours the `?access_token=` query parameter and Envoy forwards that query
+# verbatim, letting a valid JWT ride into the execution's initial request
+# data. With the restriction, a query-only request presents no credential in
+# any header, is not authenticated, and is rejected at the gateway.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -60,6 +64,10 @@ spec:
           # Public verification key only. The matching private key and the
           # token are held exclusively in the private SOPS Secret.
           inline: '{"keys":[{"kty":"EC","crv":"P-256","x":"w7v7G0uiY6r-msp2sVMk-0SkafL2B-lsQZPhTl9jNYE","y":"Q0M-AY_jdRQoUtfUkBb-BoR0ts5pKGCMupLkxtr5Qwk","alg":"ES256","kid":"beaco251","use":"sig"}]}'
+        extractFrom:
+          headers:
+            - name: Authorization
+              valuePrefix: "Bearer "
         claimToHeaders:
           - claim: sub
             header: x-alertmanager-user

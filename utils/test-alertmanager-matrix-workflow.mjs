@@ -275,15 +275,26 @@ assert.equal(junk.json.ALERT_COUNT, 2);
 assert.match(junk.json.MESSAGE_TEXT, /- 🔥 alert/u);
 
 // Wiring evidence for downstream-failure semantics: the Matrix sender is only
-// reachable from the build node (single incoming connection) and the success
-// responder only runs after the sender; the rejection responder sends 401.
+// reachable from the build node (single incoming connection) and feeds an
+// acceptance check, because on n8n 2.18.4 the Matrix node does NOT throw on
+// 4xx/5xx homeserver answers — it resolves with the errcode body, so the
+// workflow must classify it explicitly. The success responder only runs after
+// the sender AND an accepted answer; a dedicated 502 responder makes an
+// unaccepted answer surface to Alertmanager as a retryable failure. The
+// rejection responder sends 401.
 const respondNode = nodes.get("Respond to Alertmanager");
 assert.equal(String(respondNode.parameters.options?.responseCode ?? 200), "200");
+const failNode = nodes.get("Report Delivery Failure");
+assert.equal(String(failNode.parameters.options?.responseCode), "502");
 const rejectNode = nodes.get("Reject Unauthenticated");
 assert.equal(String(rejectNode.parameters.options?.responseCode ?? 401), "401");
 const matrixNode = nodes.get(matrixSender);
 assert.equal(matrixNode.type, "n8n-nodes-base.matrix");
 assert.equal(matrixNode.parameters.messageFormat, "org.matrix.custom.html");
+const acceptedNode = nodes.get("Matrix Accepted?");
+assert.equal(acceptedNode.type, "n8n-nodes-base.if");
+assert.match(acceptedNode.parameters.conditions.conditions[0].leftValue, /errcode/);
+assert.match(acceptedNode.parameters.conditions.conditions[0].leftValue, /event_id/);
 
 // Gateway wiring: JWT auth with claim injection and header removal on the
 // internal host, claim guard on n8n's external route, and credential strip on
@@ -291,6 +302,11 @@ assert.equal(matrixNode.parameters.messageFormat, "org.matrix.custom.html");
 const appDir = "../wanxiang/kubernetes/apps/development/n8n/app/";
 const hookDoc = fs.readFileSync(new URL(appDir + "alertmanager-hook.yaml", import.meta.url), "utf8");
 assert.match(hookDoc, /^  jwt:/m, "internal host must require a JWT");
+// Without extractFrom.headers EG 1.7.2 also accepts ?access_token=<jwt> and
+// Envoy forwards that query; extraction must be pinned to the header.
+assert.match(hookDoc, /extractFrom:/, "JWT extraction must be restricted");
+assert.match(hookDoc, /name: Authorization/, "JWT extraction pinned to Authorization");
+assert.match(hookDoc, /valuePrefix: "Bearer "/, "JWT extraction pinned to Bearer prefix");
 assert.match(hookDoc, /x-alertmanager-user/, "internal host must forward the sub claim");
 assert.match(hookDoc, /- authorization/, "internal host must strip the JWT bearer header after auth");
 const guardDoc = fs.readFileSync(new URL(appDir + "n8n-webhook-claim-guard.yaml", import.meta.url), "utf8");

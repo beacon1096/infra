@@ -191,7 +191,8 @@ spec:
           # host: strip both before the request can be persisted into an n8n
           # execution. Authenticated delivery only reaches n8n through the
           # internal alertmanager-hook host (JWT + claim injection). Rule order:
-          # first-match wins, so these prefix rules precede the catch-all.
+          # Gateway API match preference resolves overlap by longest path prefix (not
+          # rule order), so these webhook prefixes win regardless of position.
           - matches:
               - path:
                   type: PathPrefix
