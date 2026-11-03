@@ -14,9 +14,28 @@ let
     npmDepsHash = "sha256-UXnB6q5tubKpTs+A5+u/NLSzc8ZK6rAsQs+kEphEKd8=";
   };
 
-  desktop = upstream.desktop.override {
+  desktop = (upstream.desktop.override {
     inherit paseo;
-  };
+  }).overrideAttrs (old: {
+    postPatch = (old.postPatch or "") + pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+      # The desktop resolves the server package dynamically, outside nft's graph.
+      substituteInPlace scripts/trace-daemon.mjs \
+        --replace-fail '"packages/desktop/dist/main.js",' \
+          '"packages/server/dist/server/server/exports.js", "packages/desktop/dist/main.js",' \
+        --replace-fail 'node_modules/node-pty/prebuilds/' \
+          'packages/server/node_modules/node-pty/prebuilds/'
+    '';
+    postInstall = (old.postInstall or "") + pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+      node -e '
+        const desktopRequire = require("node:module").createRequire(process.argv[1]);
+        for (const entry of ["@getpaseo/server", "@getpaseo/cli/bin/paseo", "@getpaseo/cli/dist/run.js"]) {
+          desktopRequire.resolve(entry);
+        }
+        const serverRequire = require("node:module").createRequire(desktopRequire.resolve("@getpaseo/server"));
+        serverRequire("node-pty");
+      ' "$out/share/paseo-desktop/packages/desktop/dist/main.js"
+    '';
+  });
 
   # The npm tarball carries a prebuilt node-pty for linux-x64. Container images
   # that run the daemon need it dropped next to the bundled module, because the
