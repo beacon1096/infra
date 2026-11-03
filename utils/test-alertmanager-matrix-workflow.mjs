@@ -274,14 +274,13 @@ const junk = execute("Build Matrix Message", {
 assert.equal(junk.json.ALERT_COUNT, 2);
 assert.match(junk.json.MESSAGE_TEXT, /- 🔥 alert/u);
 
-// Wiring evidence for downstream-failure semantics: the Matrix sender is only
-// reachable from the build node (single incoming connection) and feeds an
-// acceptance check, because on n8n 2.18.4 the Matrix node does NOT throw on
-// 4xx/5xx homeserver answers — it resolves with the errcode body, so the
-// workflow must classify it explicitly. The success responder only runs after
-// the sender AND an accepted answer; a dedicated 502 responder makes an
-// unaccepted answer surface to Alertmanager as a retryable failure. The
-// rejection responder sends 401.
+// Wiring evidence for downstream-failure semantics, verified against real
+// n8n 2.18.4: the Matrix node THROWS a NodeApiError on 4xx/5xx homeserver
+// answers. An uncaught node error leaves the responseNode webhook answering
+// HTTP 200 with an EMPTY body, which Alertmanager reads as a successful
+// delivery. The sender is therefore wired with continueErrorOutput and every
+// non-accepted outcome is funnelled into an explicit 502 responder. Success is
+// only reported when the sender actually returned an event_id.
 const respondNode = nodes.get("Respond to Alertmanager");
 assert.equal(String(respondNode.parameters.options?.responseCode ?? 200), "200");
 const failNode = nodes.get("Report Delivery Failure");
@@ -293,8 +292,17 @@ assert.equal(matrixNode.type, "n8n-nodes-base.matrix");
 assert.equal(matrixNode.parameters.messageFormat, "org.matrix.custom.html");
 const acceptedNode = nodes.get("Matrix Accepted?");
 assert.equal(acceptedNode.type, "n8n-nodes-base.if");
-assert.match(acceptedNode.parameters.conditions.conditions[0].leftValue, /errcode/);
 assert.match(acceptedNode.parameters.conditions.conditions[0].leftValue, /event_id/);
+assert.match(acceptedNode.parameters.conditions.conditions[0].leftValue, /typeof/);
+// A thrown send error must not abort the run with an empty 200: the node
+// continues and its error output is wired to the 502 responder.
+assert.equal(matrixNode.onError, "continueErrorOutput");
+const senderConnections = workflow.connections[matrixSender].main;
+assert.equal(senderConnections[0][0].node, "Matrix Accepted?", "success output feeds the acceptance check");
+assert.equal(senderConnections[1][0].node, "Report Delivery Failure", "error output feeds the 502 responder");
+assert.deepEqual(workflow.connections["Matrix Accepted?"].main[0].map((c) => c.node), ["Respond to Alertmanager"]);
+assert.deepEqual(workflow.connections["Matrix Accepted?"].main[1].map((c) => c.node), ["Report Delivery Failure"]);
+assert.match(String(failNode.parameters.responseBody?.detail ?? ""), /error/, "failure body must carry the send error detail");
 
 // Gateway wiring: JWT auth with claim injection and header removal on the
 // internal host, claim guard on n8n's external route, and credential strip on

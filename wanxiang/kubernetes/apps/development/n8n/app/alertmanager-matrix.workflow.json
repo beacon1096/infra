@@ -125,7 +125,8 @@
             "id": "AZWDGpuXbudg1KfU",
             "name": "Forgejo CI Matrix Account"
           }
-        }
+        },
+        "onError": "continueErrorOutput"
       },
       {
         "id": "c94f2d71-6b18-417d-9c0f-3f6d0a8e54c1",
@@ -145,7 +146,8 @@
             },
             "conditions": [
               {
-                "leftValue": "={{ typeof $json.errcode !== 'string' && typeof $json.event_id === 'string' }}",
+                "id": "beaco251-event-id",
+                "leftValue": "={{ typeof $json.event_id === 'string' && $json.event_id.length > 0 }}",
                 "rightValue": true,
                 "operator": {
                   "type": "boolean",
@@ -190,10 +192,10 @@
           "respondWith": "json",
           "responseBody": {
             "error": "matrix-delivery-failed",
-            "errcode": "={{ $json.errcode }}"
+            "detail": "={{ String($json.error?.message ?? $json.error?.description ?? $json.errcode ?? 'send-failed') }}"
           },
           "options": {
-            "responseCode": "502"
+            "responseCode": 502
           }
         }
       }
@@ -255,6 +257,13 @@
           [
             {
               "node": "Matrix Accepted?",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Report Delivery Failure",
               "type": "main",
               "index": 0
             }
