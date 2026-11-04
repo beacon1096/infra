@@ -17,6 +17,23 @@ spec:
     crds: Skip
     remediation:
       retries: 1
+  postRenderers:
+    - kustomize:
+        patches:
+          # kube-prometheus-stack 83.7.0 does not render
+          # alertmanagerSpec.hostAliases into the Alertmanager CR, so inject the
+          # alias that makes the approved notification host resolve to the
+          # internal Envoy gateway (same address used by the CI runners).
+          - target:
+              kind: Alertmanager
+              name: kube-prometheus-stack-alertmanager
+            patch: |
+              - op: add
+                path: /spec/hostAliases
+                value:
+                  - ip: "172.16.87.21"
+                    hostnames:
+                      - alertmanager-hook.beaco.works
   values:
     # CRDs are already installed by wanxiang/bootstrap/helmfile.d/00-crds.yaml
     # from this same chart version. Keeping Helm away from their lifecycle is
@@ -228,14 +245,13 @@ spec:
       alertmanagerSpec:
         replicas: 1
         retention: 120h
-        # The approved notification destination is only reachable through the
-        # internal Envoy gateway, which authenticates and strips the credential
-        # before n8n ever stores an execution. Alertmanager cannot resolve the
-        # hostname via cluster DNS, so pin it to the envoy-internal address.
-        hostAliases:
-          - ip: 172.16.87.21
-            hostnames:
-              - alertmanager-hook.beaco.works
+        # NOTE: the approved notification destination must resolve to the
+        # internal Envoy gateway (which authenticates and strips the credential
+        # before n8n ever stores an execution). `alertmanagerSpec.hostAliases`
+        # is NOT rendered by the kube-prometheus-stack chart (v83.7.0 only
+        # renders it for Prometheus), so the alias is injected with a
+        # postRenderer below; without it Alertmanager fails DNS for
+        # alertmanager-hook.beaco.works and can never deliver.
         # AlertmanagerConfigs are already restricted to the monitoring
         # namespace and the explicit label below. Disable the default injected
         # namespace alert matcher so the approved route can receive storage,
