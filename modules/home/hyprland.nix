@@ -225,6 +225,7 @@
         ];
         modules-center = [ "clock" ];
         modules-right = [
+          "custom/yubikey"
           "pulseaudio"
           "network"
           "battery"
@@ -253,6 +254,11 @@
           format-muted = "VOL muted";
           tooltip-format = "{desc} ({volume}%)";
           on-click = "${pkgs.pavucontrol}/bin/pavucontrol";
+        };
+        "custom/yubikey" = {
+          exec = "${pkgs.python3}/bin/python3 -u ${./yubikey-waybar.py} ${pkgs.pipewire}/bin/pw-play";
+          return-type = "json";
+          restart-interval = 2;
         };
         tray = {
           spacing = 8;
@@ -283,6 +289,9 @@
       }
       #battery.warning { color: #ebcb8b; }
       #battery.critical { color: #bf616a; }
+      #custom-yubikey { padding: 0 10px; }
+      #custom-yubikey.idle { color: #616e88; }
+      #custom-yubikey.waiting { color: #2e3440; background-color: #ebcb8b; }
     '';
   };
 
