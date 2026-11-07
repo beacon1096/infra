@@ -1,6 +1,7 @@
-{ lib, stdenv, buildGoModule, fetchFromGitHub, fetchurl, applyPatches, dockerTools
-, nodejs_22, pnpm_10, pkg-config, python3, cairo, pango, libjpeg, giflib, librsvg
-, busybox, cacert, curl, wget, bash, gitMinimal, openssl, openssh, tzdata, unzip }:
+{ lib, stdenv, buildGoModule, fetchFromGitHub, fetchPnpmDeps, fetchurl, applyPatches
+, dockerTools, nodejs_22, pnpm_10, pnpmConfigHook, pkg-config, python3, cairo, pango
+, libjpeg, giflib, librsvg, busybox, cacert, curl, wget, bash, gitMinimal, openssl
+, openssh, tzdata, unzip }:
 
 let
   version = "2.36.5";
@@ -14,20 +15,20 @@ let
     };
     patches = [ ../../docs/ci-cd/patches/coder-resource-allowlist-sql.patch ];
   };
-  pnpm = pnpm_10.override { nodejs = nodejs_22; };
+  pnpm = pnpm_10.override { nodejs-slim = nodejs_22; };
   site = stdenv.mkDerivation (finalAttrs: {
     pname = "coder-site";
     inherit version;
     src = source;
     sourceRoot = "${source.name}/site";
-    pnpmDeps = pnpm.fetchDeps {
+    pnpmDeps = fetchPnpmDeps {
       pname = finalAttrs.pname;
-      inherit version;
+      inherit version pnpm;
       src = "${source}/site";
-      fetcherVersion = 2;
-      hash = "sha256-UuEZHHFInNZPxgi3y0UMm6VjhWeSkMaDZt+iGC9m1jo=";
+      fetcherVersion = 3;
+      hash = "sha256-8Yc9JiDvZ5/0Bf2d54NmEFTqqVT0eVJCr6A55F0HTaw=";
     };
-    nativeBuildInputs = [ nodejs_22 pnpm.configHook pkg-config python3 ];
+    nativeBuildInputs = [ nodejs_22 pnpm pnpmConfigHook pkg-config python3 ];
     buildInputs = [ cairo pango libjpeg giflib librsvg ];
     buildPhase = ''
       runHook preBuild
