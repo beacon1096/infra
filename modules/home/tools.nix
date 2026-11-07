@@ -9,6 +9,9 @@
   programs.bat.enable = true;
   programs.eza.enable = true;
 
+  # Account configuration lives in infra-private.
+  programs.aerc.enable = true;
+
   programs.tmux = {
     enable = true;
     terminal = "tmux-256color";

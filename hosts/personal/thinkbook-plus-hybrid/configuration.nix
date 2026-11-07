@@ -40,7 +40,7 @@
   services.power-profiles-daemon.enable = true;
 
   environment.systemPackages = [
-    (inputs.beacon-nur-packages.packages.${pkgs.system}.bakaxl-bunny.override {
+    (inputs.beacon-nur-packages.packages.${pkgs.stdenv.hostPlatform.system}.bakaxl-bunny.override {
       wrapGAppsHook = pkgs.wrapGAppsHook3;
     })
     pkgs.wvkbd
