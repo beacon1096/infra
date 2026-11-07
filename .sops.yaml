@@ -35,7 +35,6 @@ keys:
   - &nixbuilder_01_age age1m4xcp2h5a5uwpr3368z09knqpf6jn5uq6798tnj4g40g9xj564pseuxct3
   - &nixbuilder_02_age age1fk62h42a933kdl994lmthsyq05fygmqf42fm30d7ed8w57lw03lqf587ah
   - &nixbuilder_03_age age1lwa37uzjagu4xm0fuvsm4fmyrgxrj484vr6ptuq4dqx743hq3gyqe3faeh
-  # - &surface_book_3_age age1TODO_REPLACE_AFTER_NIXOS_INSTALL_SURFACE_BOOK_3
   # clerks
   - &clerk_technician age16v9vne0t403sxc6c8jm5j4q55qvhsrmnytrghx6lr7aglaf5tesqre80ng
   - &clerk_secretary age1sqr8n02u9f4g4fhp8gcnhvf3emz3t98zhg33efguqn92nr3k9pgs9jfgnv
@@ -194,7 +193,6 @@ creation_rules:
           - *m920x_age
           - *hpe_microserver_age
           - *ms_r1_age
-        #  - *surface_book_3_age
           - *clerk_technician
           - *clerk_secretary
           - *multica_nixos_agent_age
@@ -212,7 +210,6 @@ creation_rules:
           - *surface_pro_8_age
           - *m920x_age
           - *hpe_microserver_age
-        #  - *surface_book_3_age
 
   # Per-clerk secrets — each clerk can only decrypt its own
   # - path_regex: secrets/clerks/default/.*

@@ -7,6 +7,7 @@
 {
   # Hyprland compositor
   programs.hyprland.enable = true;
+  programs.yubikey-touch-detector.enable = true;
 
   # Login manager — greetd with tuigreet
   services.greetd = {

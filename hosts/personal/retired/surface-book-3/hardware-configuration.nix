@@ -1,4 +1,4 @@
-# Surface Book 3 — hardware configuration
+# Surface Book 3 — retired hardware configuration
 #
 # PLACEHOLDER: Replace with output of `nixos-generate-config --show-hardware-config`
 # after booting a NixOS installer on the actual device.

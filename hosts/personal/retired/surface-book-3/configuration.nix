@@ -1,4 +1,4 @@
-# Surface Book 3 — secondary / spare machine
+# Surface Book 3 — retired device
 #
 # Intel 10th Gen + NVIDIA GTX 1650/1660 Ti (dGPU in detachable base)
 # nixos-hardware provides: linux-surface kernel, touch, cameras
@@ -7,8 +7,8 @@
 {
   imports = [
     ./hardware-configuration.nix
-    ../common/nixos-configuration.nix
-    ../../../modules/nixos/hyprland.nix
+    ../../common/nixos-configuration.nix
+    ../../../../modules/nixos/hyprland.nix
   ];
 
   networking.hostName = "surface-book-3";
