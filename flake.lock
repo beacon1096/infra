@@ -807,7 +807,8 @@
         "nur": "nur",
         "paseo": "paseo",
         "pi-nixpkgs": "pi-nixpkgs",
-        "sops-nix": "sops-nix"
+        "sops-nix": "sops-nix",
+        "strata-file-manager": "strata-file-manager"
       }
     },
     "sops-nix": {
@@ -827,6 +828,27 @@
       "original": {
         "owner": "Mic92",
         "repo": "sops-nix",
+        "type": "github"
+      }
+    },
+    "strata-file-manager": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs-unstable"
+        ]
+      },
+      "locked": {
+        "lastModified": 1794096061,
+        "narHash": "sha256-Wd9/ANXICK6hxbfsJJ0yb6I8gE9Nk/GRNRDvzpMtHLU=",
+        "owner": "lgse",
+        "repo": "strata",
+        "rev": "9fb7a36ad4352337f3ada0d43710dc6d4ae838b9",
+        "type": "github"
+      },
+      "original": {
+        "owner": "lgse",
+        "ref": "v1.2.0",
+        "repo": "strata",
         "type": "github"
       }
     },

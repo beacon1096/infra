@@ -80,22 +80,13 @@ in
     useGlobalPkgs = true;
     useUserPackages = true;
     users.beacon = {
-      imports = [ ../../../../modules/home/hyprland.nix ];
-      home.stateVersion = "26.05";
-      home.packages = with pkgs; [
-        brightnessctl
-        grimblast
-        networkmanagerapplet
-        pavucontrol
-        playerctl
-        slurp
-        swappy
-        thunar
-        wl-clipboard
+      imports = [
+        ../../../../modules/home/hyprland.nix
+        ../../../../modules/home/desktop-tools.nix
       ];
+      home.stateVersion = "26.05";
       wayland.windowManager.hyprland.settings = {
         monitor = lib.mkForce [ ", preferred, auto, 1" ];
-        "$fileManager" = lib.mkForce "thunar";
       };
     };
   };

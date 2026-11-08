@@ -37,6 +37,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    strata-file-manager = {
+      url = "github:lgse/strata/v1.2.0";
+      inputs.nixpkgs.follows = "nixpkgs-unstable";
+    };
+
     nix-openclaw = {
       url = "github:openclaw/nix-openclaw";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -151,6 +156,7 @@
           home-manager.nixosModules.home-manager
           ./hosts/personal/fixed/thor/configuration.nix
         ];
+        home-manager.extraSpecialArgs = { inherit inputs; };
       };
     };
 
