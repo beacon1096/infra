@@ -9,6 +9,9 @@
 
   networking.hostName = "thinkbook-plus-hybrid";
 
+  nixpkgs.overlays = [ inputs.nix-cachyos-kernel.overlays.pinned ];
+  boot.kernelPackages = pkgs.cachyosKernels.linuxPackages-cachyos-latest-lto;
+
   # The Hybrid Tab can leave the i915 eDP link stuck in PSR2 after returning from Android.
   boot.kernelParams = [ "i915.enable_psr=0" ];
   beacoworks.remoteBuilder.sshKey = lib.mkDefault "/etc/ssh/ssh_host_ed25519_key";
