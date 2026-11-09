@@ -543,7 +543,11 @@ def validate_rules():
                         },
                         {
                             "series": 'certmanager_certificate_expiration_timestamp_seconds{name="fixture-cert",namespace="fixture"}',
-                            "values": "86400x60 2000000x2",
+                            # 86340s remaining is already inside the strict <24h window at t=0,
+                            # so the rule needs the full 1h `for:` before firing at 1h. The
+                            # renewal sample lands at t=60m; promtool applies samples at a
+                            # timestamp to the following evaluation, so the alert is gone at 61m.
+                            "values": "86340x60 2000000x2",
                         },
                     ],
                     "alert_rule_test": [
@@ -640,8 +644,8 @@ def validate_rules():
                                     "namespace": "fixture",
                                     "severity": "warning",
                                 },
-                                "A managed certificate expires within fourteen days",
-                                "cert-manager reports less than fourteen days of certificate lifetime remaining.",
+                                "A managed certificate is due for renewal or expires within 24 hours",
+                                "cert-manager reports less than 24 hours of lifetime remaining, or a renewal that is more than six hours overdue. Short-lived profiles (for example 160h) no longer alert immediately after a successful renewal; an expired certificate keeps alerting until it is renewed.",
                             )],
                         },
                         {"eval_time": "61m", "alertname": "WanxiangCertificateExpiringSoon", "exp_alerts": []},

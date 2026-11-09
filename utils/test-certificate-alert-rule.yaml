@@ -18,15 +18,20 @@ tests:
         alertname: WanxiangCertificateExpiringSoon
         exp_alerts: []
 
-  # Renewal overdue by more than the 6h grace -> alert.
+  # Renewal overdue past the 6h grace: pending at 7h, firing after the 1h
+  # duration at 8h, then a successful renewal (renewalTime moves to the future)
+  # clears it.
   - interval: 1m
     input_series:
       - series: 'certmanager_certificate_expiration_timestamp_seconds{name="overdue"}'
-        values: '576000x600'
+        values: '576000x720'
       - series: 'certmanager_certificate_renewal_timestamp_seconds{name="overdue"}'
-        values: '3600x600'
+        values: '3600x600 999999x120'
     alert_rule_test:
-      - eval_time: 9h
+      - eval_time: 7h
+        alertname: WanxiangCertificateExpiringSoon
+        exp_alerts: []
+      - eval_time: 8h1m
         alertname: WanxiangCertificateExpiringSoon
         exp_alerts:
           - exp_labels:
@@ -40,6 +45,9 @@ tests:
                 that is more than six hours overdue. Short-lived profiles (for example 160h)
                 no longer alert immediately after a successful renewal; an expired
                 certificate keeps alerting until it is renewed.
+      - eval_time: 11h
+        alertname: WanxiangCertificateExpiringSoon
+        exp_alerts: []
 
   # Less than 24h remaining -> alert.
   - interval: 1m
@@ -121,8 +129,10 @@ tests:
   # Missing expiration series entirely -> no alert (missing scrape does not alert).
   - interval: 1m
     input_series:
+      # Positive but overdue renewal: without the expiration-series guard this
+      # would fire, so the guard is what keeps a missing scrape silent.
       - series: 'certmanager_certificate_renewal_timestamp_seconds{name="nodata"}'
-        values: '0x300'
+        values: '3600x300'
     alert_rule_test:
       - eval_time: 2h
         alertname: WanxiangCertificateExpiringSoon
