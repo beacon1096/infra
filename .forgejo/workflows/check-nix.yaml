@@ -31,6 +31,8 @@ jobs:
           nix shell nixpkgs#nodejs_24 --command node utils/test-observed-rollout.mjs
           nix shell nixpkgs#nodejs_24 --command node utils/test-alertmanager-matrix-workflow.mjs
           nix eval --impure --file utils/test-comin-rollout-hold.nix --json
+      - name: Test certificate alert rule
+        run: bash utils/test-certificate-alert-rule.sh
       - name: Check OpenStatus receiver and probe wiring
         run: |
           nix shell nixpkgs#kubectl --command bash utils/check-openstatus-wiring.sh

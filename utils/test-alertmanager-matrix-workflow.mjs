@@ -160,6 +160,78 @@ assert.match(mixed.json.MESSAGE_HTML, /grafana\.beaco\.works\/alert\/list/u);
 assert.equal(JSON.stringify(mixed.json).includes("token=abc"), false, "link query must be stripped");
 assert.equal(JSON.stringify(mixed.json).includes("#frag"), false, "link fragment must be stripped");
 
+// Certificate alerts: the object namespace and certificate name must render so
+// the alert is actionable, and the scrape namespace must be labelled apart from
+// the object namespace instead of being confused with it.
+const cert = execute("Build Matrix Message", {
+  $json: {
+    body: {
+      status: "firing",
+      alerts: [
+        {
+          status: "firing",
+          labels: {
+            alertname: "WanxiangCertificateExpiringSoon",
+            severity: "warning",
+            namespace: "cert-manager",
+            exported_namespace: "network",
+            name: "beaco-works-production",
+          },
+          startsAt: "2026-11-07T09:02:07Z",
+        },
+      ],
+    },
+  },
+  $env: env(),
+});
+assert.match(cert.json.MESSAGE_TEXT, /name=beaco-works-production/u);
+assert.match(cert.json.MESSAGE_TEXT, /object_namespace=network/u);
+assert.match(cert.json.MESSAGE_TEXT, /scrape_namespace=cert-manager/u);
+assert.equal(cert.json.MESSAGE_TEXT.includes("\n  namespace=cert-manager"), false, "scrape namespace must not be rendered as a plain namespace when exported_namespace is present");
+
+const certBad = execute("Build Matrix Message", {
+  $json: {
+    body: {
+      status: "firing",
+      alerts: [
+        {
+          status: "firing",
+          labels: {
+            alertname: "WanxiangCertificateExpiringSoon",
+            severity: "warning",
+            namespace: "cert-manager",
+            exported_namespace: "Network",
+            name: "Bad_Name_With_Uppercase",
+          },
+          startsAt: "2026-11-07T09:02:07Z",
+        },
+      ],
+    },
+  },
+  $env: env(),
+});
+assert.equal(JSON.stringify(certBad.json).includes("Bad_Name_With_Uppercase"), false, "invalid name must be dropped");
+assert.equal(JSON.stringify(certBad.json).includes("object_namespace"), false, "invalid exported_namespace must fall back");
+assert.match(certBad.json.MESSAGE_TEXT, /namespace=cert-manager/u, "fallback keeps the plain namespace label");
+assert.equal(JSON.stringify(certBad.json).includes("Network"), false, "invalid exported_namespace must not leak");
+
+const certSecret = execute("Build Matrix Message", {
+  $json: {
+    body: {
+      status: "firing",
+      alerts: [
+        {
+          status: "firing",
+          labels: { alertname: "WanxiangCertificateExpiringSoon", severity: "warning", name: "token=abc.def", exported_namespace: "network" },
+          startsAt: "2026-11-07T09:02:07Z",
+        },
+      ],
+    },
+  },
+  $env: env(),
+});
+assert.equal(JSON.stringify(certSecret.json).includes("token=abc.def"), false, "secret-shaped name must be dropped");
+
 // Credential-shaped text embedded in allowed structural fields and in the
 // omitted annotations: none of it may appear anywhere in the output.
 const SECRETS = [

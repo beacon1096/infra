@@ -1,0 +1,129 @@
+---
+# Unit tests for WanxiangCertificateExpiringSoon (promtool test rules).
+# Times are relative to the test start; time() equals eval_time.
+rule_files:
+  - certificate-rules.yaml
+evaluation_interval: 1m
+tests:
+  # Freshly renewed 160h certificate: not within 24h and renewal is in the
+  # future -> no alert (this is the permanent-alert regression).
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{name="fresh160h"}'
+        values: '576000x300'
+      - series: 'certmanager_certificate_renewal_timestamp_seconds{name="fresh160h"}'
+        values: '384000x300'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: WanxiangCertificateExpiringSoon
+        exp_alerts: []
+
+  # Renewal overdue by more than the 6h grace -> alert.
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{name="overdue"}'
+        values: '576000x600'
+      - series: 'certmanager_certificate_renewal_timestamp_seconds{name="overdue"}'
+        values: '3600x600'
+    alert_rule_test:
+      - eval_time: 9h
+        alertname: WanxiangCertificateExpiringSoon
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: certificate
+              name: overdue
+            exp_annotations:
+              summary: A managed certificate is due for renewal or expires within 24 hours
+              description: >-
+                cert-manager reports less than 24 hours of lifetime remaining, or a renewal
+                that is more than six hours overdue. Short-lived profiles (for example 160h)
+                no longer alert immediately after a successful renewal; an expired
+                certificate keeps alerting until it is renewed.
+
+  # Less than 24h remaining -> alert.
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{name="near"}'
+        values: '90000x300'
+      - series: 'certmanager_certificate_renewal_timestamp_seconds{name="near"}'
+        values: '400000x300'
+    alert_rule_test:
+      - eval_time: 3h
+        alertname: WanxiangCertificateExpiringSoon
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: certificate
+              name: near
+            exp_annotations:
+              summary: A managed certificate is due for renewal or expires within 24 hours
+              description: >-
+                cert-manager reports less than 24 hours of lifetime remaining, or a renewal
+                that is more than six hours overdue. Short-lived profiles (for example 160h)
+                no longer alert immediately after a successful renewal; an expired
+                certificate keeps alerting until it is renewed.
+
+  # Already expired -> still alerting (negative remaining lifetime).
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{name="expired"}'
+        values: '3600x300'
+    alert_rule_test:
+      - eval_time: 3h
+        alertname: WanxiangCertificateExpiringSoon
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: certificate
+              name: expired
+            exp_annotations:
+              summary: A managed certificate is due for renewal or expires within 24 hours
+              description: >-
+                cert-manager reports less than 24 hours of lifetime remaining, or a renewal
+                that is more than six hours overdue. Short-lived profiles (for example 160h)
+                no longer alert immediately after a successful renewal; an expired
+                certificate keeps alerting until it is renewed.
+
+  # Freshly renewed long-lived (90d) certificate -> no alert.
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{name="long"}'
+        values: '7776000x300'
+      - series: 'certmanager_certificate_renewal_timestamp_seconds{name="long"}'
+        values: '6249600x300'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: WanxiangCertificateExpiringSoon
+        exp_alerts: []
+
+  # Missing renewal metric but near expiry -> still alert via the 24h guard.
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{name="norenewal"}'
+        values: '90000x300'
+    alert_rule_test:
+      - eval_time: 3h
+        alertname: WanxiangCertificateExpiringSoon
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: certificate
+              name: norenewal
+            exp_annotations:
+              summary: A managed certificate is due for renewal or expires within 24 hours
+              description: >-
+                cert-manager reports less than 24 hours of lifetime remaining, or a renewal
+                that is more than six hours overdue. Short-lived profiles (for example 160h)
+                no longer alert immediately after a successful renewal; an expired
+                certificate keeps alerting until it is renewed.
+
+  # Missing expiration series entirely -> no alert (missing scrape does not alert).
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_renewal_timestamp_seconds{name="nodata"}'
+        values: '0x300'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: WanxiangCertificateExpiringSoon
+        exp_alerts: []

@@ -238,14 +238,30 @@ spec:
           annotations:
             summary: An Envoy gateway proxy is not live
             description: Envoy has reported a non-live server state for five minutes.
+        # Lifetime-aware: a fixed fourteen-day window is longer than the 160h
+        # short-lived certificate profile, so a freshly renewed certificate would
+        # otherwise stay in permanent alert. Warn only when renewal is actually
+        # overdue (renewalTime passed by six hours) or when less than 24h of
+        # lifetime remains (which also covers an already-expired certificate).
+        # The expiration-series guard keeps a missing scrape from alerting.
         - alert: WanxiangCertificateExpiringSoon
           expr: >-
             certmanager_certificate_expiration_timestamp_seconds > 0
-            and (certmanager_certificate_expiration_timestamp_seconds - time()) < 1209600
+            and (
+              (certmanager_certificate_expiration_timestamp_seconds - time()) < 86400
+              or (
+                certmanager_certificate_renewal_timestamp_seconds > 0
+                and time() > (certmanager_certificate_renewal_timestamp_seconds + 21600)
+              )
+            )
           for: 1h
           labels:
             severity: warning
             component: certificate
           annotations:
-            summary: A managed certificate expires within fourteen days
-            description: cert-manager reports less than fourteen days of certificate lifetime remaining.
+            summary: A managed certificate is due for renewal or expires within 24 hours
+            description: >-
+              cert-manager reports less than 24 hours of lifetime remaining, or a renewal
+              that is more than six hours overdue. Short-lived profiles (for example 160h)
+              no longer alert immediately after a successful renewal; an expired
+              certificate keeps alerting until it is renewed.
