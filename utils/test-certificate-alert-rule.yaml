@@ -31,6 +31,9 @@ tests:
       - eval_time: 7h
         alertname: WanxiangCertificateExpiringSoon
         exp_alerts: []
+      - eval_time: 8h
+        alertname: WanxiangCertificateExpiringSoon
+        exp_alerts: []
       - eval_time: 8h1m
         alertname: WanxiangCertificateExpiringSoon
         exp_alerts:
@@ -129,11 +132,12 @@ tests:
   # Missing expiration series entirely -> no alert (missing scrape does not alert).
   - interval: 1m
     input_series:
-      # Positive but overdue renewal: without the expiration-series guard this
-      # would fire, so the guard is what keeps a missing scrape silent.
+      # Positive, long-overdue renewal (3600x600 covers t=0..600m, so it is still
+      # present and still overdue at the 9h evaluation). The renewal branch alone
+      # would be true there; only the expiration-series guard keeps it silent.
       - series: 'certmanager_certificate_renewal_timestamp_seconds{name="nodata"}'
-        values: '3600x300'
+        values: '3600x600'
     alert_rule_test:
-      - eval_time: 2h
+      - eval_time: 9h
         alertname: WanxiangCertificateExpiringSoon
         exp_alerts: []

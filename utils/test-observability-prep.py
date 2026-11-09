@@ -544,9 +544,9 @@ def validate_rules():
                         {
                             "series": 'certmanager_certificate_expiration_timestamp_seconds{name="fixture-cert",namespace="fixture"}',
                             # 86340s remaining is already inside the strict <24h window at t=0,
-                            # so the rule needs the full 1h `for:` before firing at 1h. The
-                            # renewal sample lands at t=60m; promtool applies samples at a
-                            # timestamp to the following evaluation, so the alert is gone at 61m.
+                            # so the rule needs the full 1h `for:` before firing at 1h. In
+                            # expanding notation `86340x60` covers t=0..60m (61 samples) and the
+                            # renewal value starts at t=61m, so the 61m assertion is resolved.
                             "values": "86340x60 2000000x2",
                         },
                     ],
