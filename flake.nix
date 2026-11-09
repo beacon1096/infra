@@ -413,7 +413,9 @@
         };
       };
 
-      coder-server-oci = pkgs.callPackage ./packages/coder-server { };
+      coder-server-oci = pkgs.callPackage ./packages/coder-server {
+        pnpm_10 = inputs.nixpkgs-opencode.legacyPackages.x86_64-linux.pnpm_10;
+      };
 
       openstatus-private-probe-oci = pkgs.callPackage ./packages/openstatus-private-probe { };
 
