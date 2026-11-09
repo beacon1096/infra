@@ -30,6 +30,8 @@
 
 固定节点有意以虚拟机级故障转移能力换取可预测的构建容量。如果某个 Harvester 节点故障或进入维护，其构建机将保持不可用；其余 builder 继续接收作业。根盘使用 `nixbuilder-local` 单副本 StorageClass，不能实时迁移。
 
+`mc5-01` 存在未归因的非正常重启历史（见 `docs/inventory/taichu/mc5-01.md`）。每次宿主机重启都会让 `nixbuilder-03` 按 `RerunOnFailure` 自动重建，表现为该 runner 的 uptime 归零。巡检发现 `nixbuilder-03` 刚开机时，应先核对 `mc5-01` 的 `journalctl --list-boots`，不要把宿主机重启误记为 runner 自身的异常。
+
 ## 执行顺序与故障处理
 
 1. 排空定时器写入 `/var/lib/nixbuilder-maintenance`，跨重启保留排空状态，防止系统激活或重启让 runner 提前恢复。首次部署时，激活脚本会将旧的 `/run/nixbuilder-maintenance` 标记迁到新路径。
