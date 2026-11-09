@@ -11,23 +11,23 @@
 # the public and private flakes' coding-agent images (and any future host
 # module) consume one definition.
 let
-  version = "1.13.10";
+  version = "1.13.12";
   targets = {
     x86_64-linux = {
       platform = "linux-amd64";
-      hash = "sha256-KOnM2a69aQ+gPYzyWCIh2H6jiyoXBPQR11oDWJxY8qo=";
+      hash = "sha256-TOQhh2TCTWpr1WEJcZm2DthhnbBzeS/OW3z85/qNEvw=";
     };
     aarch64-linux = {
       platform = "linux-arm64";
-      hash = "sha256-OGnJ+0EfNoCXbMCGs0LlF7z0vHIPflNxYR8+SdlfGZQ=";
+      hash = "sha256-NcMEw3jXDyQexdY2Et794lMF+BCOVQJWqmPzfaUQtr4=";
     };
     x86_64-darwin = {
       platform = "darwin-amd64";
-      hash = "sha256-TCoO8TLsOoiRokI0kkgcU9jVXA5cAUZ3njwz5sOI4fM=";
+      hash = "sha256-VCR6f5Pino74HDFxFkXVczGeSVhlNK72lc9Pz80YI1M=";
     };
     aarch64-darwin = {
       platform = "darwin-arm64";
-      hash = "sha256-YFAXilpmhpZft+o/Wd/hcocqiIszVaT2KBTzqHJKecc=";
+      hash = "sha256-kOOShmFoCBiXMl/x7s7sEKhUdqm8nrQ5n+dBqNf3iT0=";
     };
   };
   target =
