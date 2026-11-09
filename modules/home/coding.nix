@@ -12,6 +12,11 @@ let
     config = pkgs.config;
   };
 
+  opencodePkgs = import inputs.nixpkgs-opencode {
+    system = pkgs.stdenv.hostPlatform.system;
+    config = pkgs.config;
+  };
+
   paseoDesktop = (import ../../lib/paseo { inherit inputs pkgs; }).desktop;
 
   antigravityCli = pkgs.writeShellScriptBin "antigravity-cli" ''
@@ -27,13 +32,15 @@ in
 
   programs.ssh.settings."coder-vscode.*".UserKnownHostsFile = "/dev/null";
 
+  programs.opencode.package = lib.mkForce opencodePkgs.opencode;
+
   home.packages =
     with pkgs;
     [
       unstablePkgs.coder
 
       # OpenCode desktop launcher (CLI itself comes via programs.opencode)
-      opencode-desktop
+      opencodePkgs.opencode-desktop
       # llm-agents.oh-my-opencode
 
       # Antigravity

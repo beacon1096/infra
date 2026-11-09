@@ -4,6 +4,8 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    # Stable's OpenCode Desktop still depends on EOL Electron 41.
+    nixpkgs-opencode.url = "github:NixOS/nixpkgs/f4a03c008967841f2a0b3cb7c436fc6fc31671f6";
     pi-nixpkgs.url = "github:NixOS/nixpkgs/74435dcdae840e9770652a7bf7754c2ef7b257e1";
 
     nixpkgs-thor.url = "github:NixOS/nixpkgs/d58a46e3bc02d91ebe04667f8397752a749c0024";

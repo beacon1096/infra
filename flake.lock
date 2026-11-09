@@ -542,6 +542,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-opencode": {
+      "locked": {
+        "lastModified": 1794042290,
+        "narHash": "sha256-ziZn2PvCJE5JEEpqTdxXwJpPB+L3YqoCpTAMCzyaP3U=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "f4a03c008967841f2a0b3cb7c436fc6fc31671f6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "f4a03c008967841f2a0b3cb7c436fc6fc31671f6",
+        "type": "github"
+      }
+    },
     "nixpkgs-thor": {
       "locked": {
         "lastModified": 1789009968,
@@ -768,6 +784,7 @@
         "nix-openclaw": "nix-openclaw",
         "nixos-hardware": "nixos-hardware",
         "nixpkgs": "nixpkgs_7",
+        "nixpkgs-opencode": "nixpkgs-opencode",
         "nixpkgs-thor": "nixpkgs-thor",
         "nixpkgs-unstable": "nixpkgs-unstable",
         "nur": "nur",
