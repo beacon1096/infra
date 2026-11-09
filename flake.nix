@@ -143,6 +143,7 @@
       serverBase = ./hosts/server/common/configuration.nix;
       comin = ./modules/nixos/comin.nix;
       desktopTheme = ./modules/nixos/desktop-theme.nix;
+      sunshine-nvidia = ./modules/nixos/sunshine-nvidia.nix;
       m920x = ./hosts/personal/fixed/m920x/configuration.nix;
       microserver-gen10plus = ./hosts/personal/fixed/microserver-gen10plus/configuration.nix;
       "ms-r1" = ./hosts/personal/fixed/ms-r1/configuration.nix;

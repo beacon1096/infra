@@ -226,6 +226,7 @@
         modules-center = [ "clock" ];
         modules-right = [
           "custom/yubikey"
+          "custom/hostname"
           "pulseaudio"
           "network"
           "battery"
@@ -260,6 +261,11 @@
           return-type = "json";
           restart-interval = 2;
         };
+        "custom/hostname" = {
+          exec = "${pkgs.coreutils}/bin/uname -n";
+          interval = "once";
+          tooltip = false;
+        };
         tray = {
           spacing = 8;
         };
@@ -284,9 +290,10 @@
         color: #88c0d0;
         border-bottom: 2px solid #88c0d0;
       }
-      #clock, #battery, #network, #pulseaudio, #tray {
+      #clock, #battery, #network, #pulseaudio, #custom-hostname, #tray {
         padding: 0 10px;
       }
+      #custom-hostname { color: #88c0d0; }
       #battery.warning { color: #ebcb8b; }
       #battery.critical { color: #bf616a; }
       #custom-yubikey { padding: 0 10px; }

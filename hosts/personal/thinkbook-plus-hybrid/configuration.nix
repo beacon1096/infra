@@ -40,6 +40,7 @@
   services.power-profiles-daemon.enable = true;
 
   environment.systemPackages = [
+    pkgs.moonlight-qt
     (inputs.beacon-nur-packages.packages.${pkgs.stdenv.hostPlatform.system}.bakaxl-bunny.override {
       wrapGAppsHook = pkgs.wrapGAppsHook3;
     })
