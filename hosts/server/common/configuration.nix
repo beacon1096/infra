@@ -14,6 +14,16 @@
     ../../../modules/common/packages.nix
   ];
 
+  beacoworks.packages.minimal = lib.mkDefault true;
+  fonts.fontconfig.enable = lib.mkDefault false;
+  documentation = {
+    enable = lib.mkDefault false;
+    doc.enable = lib.mkDefault false;
+    info.enable = lib.mkDefault false;
+    man.enable = lib.mkDefault false;
+    nixos.enable = lib.mkDefault false;
+  };
+
   # ── Boot ────────────────────────────────────────────────────
   # BIOS machines use GRUB; disko auto-registers the device from the EF02
   # partition — do NOT set boot.loader.grub.device here or it duplicates.
