@@ -43,6 +43,9 @@ jobs:
           ref: ${{ inputs.ref || github.ref_name }}
           fetch-depth: 0
 
+      - name: Configure checkout CI builders
+        run: bash utils/setup-ci-nix-builders.sh
+
       - name: Record checkout revision
         run: |
           set -euo pipefail
@@ -199,6 +202,9 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref_name }}
           fetch-depth: 0
+
+      - name: Configure checkout CI builders
+        run: bash utils/setup-ci-nix-builders.sh
 
       - name: Record checkout revision
         run: |
@@ -439,6 +445,9 @@ jobs:
           ref: ${{ inputs.ref || github.ref_name }}
           fetch-depth: 0
 
+      - name: Configure checkout CI builders
+        run: bash utils/setup-ci-nix-builders.sh
+
       - name: Record checkout revision
         run: |
           set -euo pipefail
@@ -596,6 +605,9 @@ jobs:
           ref: ${{ inputs.ref || github.ref_name }}
           fetch-depth: 0
 
+      - name: Configure checkout CI builders
+        run: bash utils/setup-ci-nix-builders.sh
+
       - name: Record checkout revision
         run: |
           set -euo pipefail
@@ -714,6 +726,9 @@ jobs:
           ref: ${{ inputs.ref || github.ref_name }}
           fetch-depth: 0
 
+      - name: Configure checkout CI builders
+        run: bash utils/setup-ci-nix-builders.sh
+
       - name: Configure Attic
         run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_READ_TOKEN"
 
@@ -744,6 +759,9 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref_name }}
           fetch-depth: 0
+
+      - name: Configure checkout CI builders
+        run: bash utils/setup-ci-nix-builders.sh
 
       - name: Configure Attic
         run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_READ_TOKEN"
@@ -776,6 +794,9 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref_name }}
           fetch-depth: 0
+
+      - name: Configure checkout CI builders
+        run: bash utils/setup-ci-nix-builders.sh
 
       - name: Configure Attic
         run: attic login --set-default "$ATTIC_CACHE" "$ATTIC_ENDPOINT" "$ATTIC_READ_TOKEN"

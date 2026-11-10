@@ -15,6 +15,9 @@ jobs:
       NIX_CURL_FLAGS: --ipv4
     steps:
       - uses: actions/checkout@v4
+      - name: Configure checkout CI builders
+        run: bash utils/setup-ci-nix-builders.sh
+
       - name: Evaluate flake outputs
         run: nix flake show --all-systems --no-write-lock-file
       - name: Check talosctl version matches fleet Talos
