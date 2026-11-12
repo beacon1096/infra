@@ -10,6 +10,7 @@ metadata:
   annotations:
     tailscale.com/expose: "true"
     tailscale.com/hostname: "attic"
+    tailscale.com/tags: "tag:talos-ii-operator"
     # `proxied` is the shared ProxyClass for service proxies.
     tailscale.com/proxy-class: "proxied"
 spec:
