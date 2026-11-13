@@ -1,12 +1,12 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: memoh-migrate-0-20-0
+  name: memoh-migrate-1-0-2
   namespace: ai
   labels:
     app.kubernetes.io/part-of: memoh
 spec:
-  backoffLimit: 4
+  backoffLimit: 0
   activeDeadlineSeconds: 600
   template:
     metadata:
@@ -17,7 +17,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: mirror.gcr.io/memohai/server:0.20.0
+          image: docker.io/memohai/server:1.0.2@sha256:84af19aac19ac5eb7d715d88567c44f5911e638d06678966a39f5e68c92c0ccc
           command: [/app/memoh-server, migrate, up]
           volumeMounts:
             - name: config

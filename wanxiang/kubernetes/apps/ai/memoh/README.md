@@ -8,7 +8,9 @@
 - `memoh-litellm-service-key`：`api-key`；
 - `memoh-connect-it-config`：`database-url`、`secret-key`、`cookie-secret`、`admin-password`、`api-token` 和 `public-base-url`。
 
-当前 Memoh 镜像版本为 `0.20.0`。Connect-It 与 Memoh 共用 `memoh` 数据库，并在独立的 `connect_it` schema 中自行迁移。
+当前 Memoh 镜像版本为 `1.0.2`，server 与 web 均固定镜像 digest。Connect-It 与 Memoh 共用 `memoh` 数据库，并在独立的 `connect_it` schema 中自行迁移。
+
+升级时先停 Memoh 与 Connect-It 的写入，为 PostgreSQL、pgvector、workspace data 和 containerd 建立一致回退点，再运行 `app/migrate` 中的 `memoh-migrate-1-0-2`。迁移成功后依次部署 `app/server` 和 `app/web`，由实例侧编排依赖顺序。1.0.2 会删除旧 Email 集成表；回退需要恢复备份，不能只换回旧镜像或执行 down 迁移。
 
 ## Desktop / WebRTC 媒体路径
 
