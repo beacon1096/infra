@@ -22,6 +22,14 @@ Mesh 中间层至少要区分：
 
 这还不是完整迁移控制面：没有完整的站点归属模型、根据健康状态切换活动提供者的机制，也没有相应的 OSPF 发布与故障撤销。`routeCidrs` 能描述本地 sing-box 的选择，不等于整个站点已经通过 OSPF 使用新提供者。
 
+`nixosModules.mesh-services` / `darwinModules.mesh-services` 提供独立的 TCP 服务目标表达
+`beacoworks.mesh.services.<name>`：精确客户端域名与端口、部署层选择的 provider、远端
+`target.address` / `target.port`，以及可选的回环 `listen.address` / `listen.port`。
+模块生成 `beacoworks.mesh.serviceRouting` 的 DNS、inbound 和路由片段，由站点 sing-box
+接入；provider 仍由站点注册为 `socksProviders`。域名路径使用 fake-IP，远端名称交给
+SOCKS provider 解析，TLS SNI 保持客户端原值。回环入口可供 Caddy 等消费者使用，
+无需让消费者理解 Mesh 客户端或 MagicDNS。此接口仅做静态 TCP 选路，不包含健康切换。
+
 早期用户态 Tailscale 现场试验只验证了部分路径，其他路径受到重叠前缀和 sing-box `route_address` 语义的影响：非空列表会替代默认接管范围，不是追加。分支随后修正了配置并构建通过，但没有再次完成现场切换；生产仍使用内核 Tailscale。具体主机和路由记录留在私有库存。**构建成功或分支合入不等于现场已迁移。**
 
 原内核模式 Tailscale 还出现过“经其他子网路由器可达的私网端点被选为直连”的隧道套隧道问题。短期防递归方案依赖内核模式的 `fwmark`/`ip rule`；切到用户态后它不再适用，须改由提供者进程绕行与明确的出站路径避免递归。不要把所有非直连 RFC1918 地址一律拦掉：拓扑中也存在合法的、经路由可达的底层网络。

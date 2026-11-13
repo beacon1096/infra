@@ -141,6 +141,7 @@
     overlays.tailscale = tailscaleOverlay;
 
     nixosModules = {
+      mesh-services = ./modules/common/mesh-services.nix;
       installer = ./modules/nixos/installer.nix;
       serverBase = ./hosts/server/common/configuration.nix;
       comin = ./modules/nixos/comin.nix;
@@ -171,6 +172,7 @@
     };
 
     darwinModules.omlx = ./modules/darwin/omlx;
+    darwinModules.mesh-services = ./modules/common/mesh-services.nix;
     darwinModules.tailscale-userspace = ./modules/darwin/tailscale-userspace.nix;
     darwinModules."beacon-mac-mini-m4" = ./hosts/personal/beacon-mac-mini-m4/configuration.nix;
 
