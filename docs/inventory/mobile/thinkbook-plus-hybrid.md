@@ -28,7 +28,7 @@ systemd-boot 与 Windows Boot Manager 共存于同一 ESP；未手动修改时�
 Cannot commit when a page-flip is awaiting
 ```
 
-DRM 接口仍显示 `connected` 和 `enabled`，因此不能当作普通热插拔处理。平板切回 PC 时，ELAN 触摸屏（`04f3:42ea`）会经 USB 重新连接。主机专属 udev 规则据此启动 `hybrid-display-resume.service`，对 `eDP-1` 切换 DPMS 以恢复画面。开机时触摸屏可能先于 Hyprland 枚举，服务应把 `/run/user/1000/hypr` 不存在视为正常情况。
+DRM 接口可能仍显示 `connected`，`enabled` 则可能保持开启或变为关闭，因此仅凭连接状态无法判断画面是否恢复。平板切回 PC 时，ELAN 触摸屏（`04f3:42ea`）会经 USB 重新连接。主机专属 udev 规则据此启动 `hybrid-display-resume.service`，对 `eDP-1` 切换 DPMS 以恢复画面。开机时触摸屏可能先于 Hyprland 枚举，服务应把 `/run/user/1000/hypr` 不存在视为正常情况。
 
 从其他终端或 SSH 手动恢复：
 
@@ -39,6 +39,8 @@ hyprctl dispatch dpms off eDP-1
 sleep 1
 hyprctl dispatch dpms on eDP-1
 ```
+
+若 DPMS 命令返回 `ok` 后仍黑屏，或切换虚拟终端后只短暂亮屏，使用[模拟内屏断开、重连的恢复步骤](thinkbook-plus-hybrid-display-recovery.md)。2026-11-14 已在 Linux 6.18.38、Hyprland 0.55.4、Aquamarine 0.11.0 上验证，可保留当前桌面和应用。`ok` 与 Hyprland 的 `dpmsStatus=true` 均不能代替内核输出、背光状态和实际画面检查；现有自动恢复服务尚未包含此后备步骤。
 
 内屏为 2880×1800 Samsung eDP 面板，缩放比例 `1.5`，逻辑工作区 1920×1200。F5/F6 亮度调节有效，但视觉变化可能不明显。
 
