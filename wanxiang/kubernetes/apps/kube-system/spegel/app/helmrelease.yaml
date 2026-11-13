@@ -12,6 +12,21 @@ spec:
     spegel:
       containerdSock: /run/containerd/containerd.sock
       containerdRegistryConfigPath: /etc/cri/conf.d/hosts
+      # Explicit namespaces let Spegel append Talos's backed-up mirrors.
+      prependExisting: true
+      mirroredRegistries:
+        - https://docker.io
+        - https://ghcr.io
+        - https://quay.io
+        - https://mirror.gcr.io
+        - https://gcr.io
+        - https://registry.k8s.io
+        - https://docker.elastic.co
+        - https://code.forgejo.org
+        - https://docker.n8n.io
+        - http://172.16.87.51:5000
+        - https://forgejo.beaco.works
+        - https://factory.talos.dev
       # Exclude mutable :latest tags from Spegel's P2P tag resolution.
       # Otherwise Spegel serves a peer's cached tag->digest mapping, so a
       # freshly pushed :latest resolves to a STALE digest cluster-wide even
