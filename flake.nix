@@ -151,6 +151,7 @@
       serverBase = ./hosts/server/common/configuration.nix;
       comin = ./modules/nixos/comin.nix;
       bootvine = ./modules/nixos/bootvine.nix;
+      nwg-hello = ./modules/nixos/nwg-hello.nix;
       desktopTheme = ./modules/nixos/desktop-theme.nix;
       sunshine-nvidia = ./modules/nixos/sunshine-nvidia.nix;
       m920x = ./hosts/personal/fixed/m920x/configuration.nix;

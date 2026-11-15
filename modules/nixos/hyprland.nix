@@ -13,7 +13,9 @@
   services.greetd = {
     enable = true;
     settings.default_session = {
-      command = lib.mkIf (!config.programs.regreet.enable) "${pkgs.tuigreet}/bin/tuigreet --time --remember --cmd Hyprland";
+      command = lib.mkIf
+        (!config.programs.regreet.enable && !(config.beacoworks.nwg-hello.enable or false))
+        "${pkgs.tuigreet}/bin/tuigreet --time --remember --cmd Hyprland";
       user = "greeter";
     };
   };

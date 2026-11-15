@@ -1,0 +1,70 @@
+* {
+  font-family: "DejaVu Sans Mono";
+  font-size: 14px;
+  color: #e0f3f8;
+  border-radius: 0;
+  text-shadow: none;
+}
+
+#form-wrapper {
+  background-color: rgba(5, 23, 39, 0.9);
+  border-right: 1px solid rgba(72, 190, 214, 0.45);
+}
+
+entry, button, combobox button {
+  background: #0b293d;
+  border: 1px solid #24526a;
+  box-shadow: none;
+  padding: 10px 12px;
+}
+
+entry:focus, button:focus, button:hover {
+  background: #10394e;
+  border-color: #62d3e7;
+}
+
+#welcome-label {
+  color: #83dceb;
+  font-size: 30px;
+}
+
+#clock-label {
+  color: #e8f9fc;
+  font-size: 52px;
+}
+
+#date-label {
+  color: #9cbfce;
+  font-size: 15px;
+}
+
+#form-label {
+  color: #a9cbd8;
+}
+
+#login-button {
+  color: #071d2c;
+  background: #75cada;
+  border-color: #75cada;
+  font-weight: bold;
+}
+
+#login-button:hover {
+  background: #9ce2eb;
+}
+
+#login-button label {
+  color: #071d2c;
+}
+
+#power-button {
+  font-size: 12px;
+  background: transparent;
+  border-color: transparent;
+  padding: 6px 2px;
+}
+
+#power-button:hover {
+  background: #10394e;
+  border-color: #24526a;
+}
