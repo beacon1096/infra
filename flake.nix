@@ -75,6 +75,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    bootvine = {
+      url = "git+https://codeberg.org/wvhulle/bootvine?ref=refs/tags/v0.1.4";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     paseo = {
       url = "github:getpaseo/paseo/v0.9.2";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -145,6 +150,7 @@
       installer = ./modules/nixos/installer.nix;
       serverBase = ./hosts/server/common/configuration.nix;
       comin = ./modules/nixos/comin.nix;
+      bootvine = ./modules/nixos/bootvine.nix;
       desktopTheme = ./modules/nixos/desktop-theme.nix;
       sunshine-nvidia = ./modules/nixos/sunshine-nvidia.nix;
       m920x = ./hosts/personal/fixed/m920x/configuration.nix;

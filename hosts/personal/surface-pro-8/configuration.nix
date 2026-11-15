@@ -10,6 +10,7 @@
     ./hardware-configuration.nix
     ./disko.nix
     ../common/nixos-configuration.nix
+    ../../../modules/nixos/bootvine.nix
     ../../../modules/nixos/hyprland.nix
     ../../../modules/nixos/tpm-sops.nix # age-plugin-tpm backed sops-nix
   ];
