@@ -14,6 +14,10 @@ replacement = """        def resize_panel(window, allocation):
         resize_panel(self.window, monitor.get_geometry())"""
 assert ui.count(original) == 1
 ui = ui.replace(original, replacement)
+original = '        lbl_welcome.set_property("name", "welcome-label")'
+replacement = original + '\n        lbl_welcome.set_visible(settings.get("show-welcome", True))'
+assert ui.count(original) == 1
+ui = ui.replace(original, replacement)
 original = "        for session in sessions:"
 replacement = """        for session in sorted(
             sessions,

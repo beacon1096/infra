@@ -25,6 +25,7 @@ let
     template-name = "${cfg.package}/share/nwg-hello/sidebar.glade";
     panel-fraction = cfg.panelFraction;
     default-session = cfg.defaultSession;
+    show-welcome = cfg.showWelcome;
     time-format = "%H:%M";
     date-format = "%A, %d %B";
     keyboard-mode = "exclusive";
@@ -100,6 +101,12 @@ in
       type = lib.types.str;
       default = "Hyprland";
       description = "Session name selected when the greeter has no saved choice.";
+    };
+
+    showWelcome = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Show the welcome label above the clock.";
     };
 
     extraCss = lib.mkOption {
