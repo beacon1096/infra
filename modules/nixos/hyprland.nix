@@ -2,18 +2,18 @@
 #
 # This module is opt-in: import it on hosts that need a desktop environment.
 # User-level Hyprland configuration lives in modules/home/hyprland.nix.
-{ pkgs, lib, ... }:
+{ config, pkgs, lib, ... }:
 
 {
   # Hyprland compositor
   programs.hyprland.enable = true;
   programs.yubikey-touch-detector.enable = true;
 
-  # Login manager — greetd with tuigreet
+  # Login manager — greetd with tuigreet unless a graphical greeter is enabled.
   services.greetd = {
     enable = true;
     settings.default_session = {
-      command = "${pkgs.tuigreet}/bin/tuigreet --time --remember --cmd Hyprland";
+      command = lib.mkIf (!config.programs.regreet.enable) "${pkgs.tuigreet}/bin/tuigreet --time --remember --cmd Hyprland";
       user = "greeter";
     };
   };
