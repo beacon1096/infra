@@ -78,8 +78,6 @@ let
       '';
   agentSkills = {
     kdocs = kdocsSkill;
-    outsource = ./skills/outsource;
-    web_search = ./skills/web_search;
   };
 in
 {
