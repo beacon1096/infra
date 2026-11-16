@@ -20,10 +20,10 @@ variable "image" {
   # CI to the Forgejo registry (nodes can't pull the plain-HTTP zot LB). It bakes
   # code-server (nix-native, patchelf'd) plus nix-ld for foreign binaries.
   #
-  # Pinned to the digest published by infra-private (BEACO-219). Spegel serves
+  # Pinned to a digest published by infra-private. Spegel serves
   # cached tag->digest mappings peer-to-peer, so a moving `:latest` can resolve
   # stale cluster-wide; the digest lands deterministically.
-  default = "forgejo.beaco.works/infrastructure/nix-fleet/coding-agent@sha256:f4029062353e487512d42a515332c2bfd90a0376e4987958dfc90c99e5d85d97"
+  default = "forgejo.beaco.works/infrastructure/nix-fleet/coding-agent@sha256:012166432e661673292a3f81423f0fc053c305905f43f1ef500d7ea5648f083d"
 }
 
 variable "home_disk_size" {
@@ -44,16 +44,6 @@ variable "git_ssh_secret_name" {
 variable "infra_workspace_id" {
   type    = string
   default = ""
-}
-
-variable "tailscale_auth_key_expires_at" {
-  type    = string
-  default = "2026-11-03T00:00:00Z"
-
-  validation {
-    condition     = can(timecmp(var.tailscale_auth_key_expires_at, "2026-01-01T00:00:00Z"))
-    error_message = "tailscale_auth_key_expires_at must be an RFC 3339 timestamp."
-  }
 }
 
 variable "cpu_request" {
@@ -198,16 +188,6 @@ resource "kubernetes_persistent_volume_claim" "home" {
   }
 
   wait_until_bound = false
-
-  lifecycle {
-    precondition {
-      condition = (
-        local.agent_secret == "" ||
-        timecmp(timestamp(), var.tailscale_auth_key_expires_at) < 0
-      )
-      error_message = "The Tailscale auth key has expired; rotate the Kubernetes Secret and update tailscale_auth_key_expires_at."
-    }
-  }
 }
 
 resource "kubernetes_pod" "workspace" {
