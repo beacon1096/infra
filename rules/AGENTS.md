@@ -26,6 +26,19 @@ that runtime. Use evaluation and focused non-Nix tests locally, and rely on the
 Forgejo required status for the exact commit. Run full builds only on a
 sandboxed CI runner or dedicated remote builder without deployment credentials.
 
+## Multi-host changes
+
+Unless the user explicitly limits a change to one machine, identify every
+applicable host before editing and enable shared behavior through common
+modules or profiles. A test machine is a validation sample, not the rollout
+scope. Preserve hardware and platform exceptions and state their reasons.
+
+Before opening or merging a PR, verify each applicable host's effective
+configuration, runtime assets, and activation requirements. Include the host
+coverage and verification results in the PR; distinguish evaluation from
+deployment and report offline or untested hosts explicitly. Adding a module
+without enabling it on all applicable hosts does not complete the change.
+
 ## Style
 
 - Be terse. No throat-clearing, no "Great question!", no end-of-turn summaries

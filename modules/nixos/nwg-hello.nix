@@ -58,7 +58,7 @@ let
     export XDG_CACHE_HOME=/var/cache/nwg-hello
     export XDG_CONFIG_HOME="$XDG_RUNTIME_DIR/nwg-hello"
     mkdir -p "$XDG_CONFIG_HOME"
-    exec ${pkgs.dbus}/bin/dbus-run-session ${pkgs.sway}/bin/sway --config ${swayConfig}
+    exec ${pkgs.dbus}/bin/dbus-run-session ${pkgs.sway}/bin/sway ${lib.escapeShellArgs cfg.swayExtraArgs} --config ${swayConfig}
   '';
 in
 {
@@ -95,6 +95,13 @@ in
       default = "";
       example = "2880x1920";
       description = "Sway output mode; an empty value keeps the preferred mode.";
+    };
+
+    swayExtraArgs = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = lib.optional (lib.elem "nvidia" config.services.xserver.videoDrivers) "--unsupported-gpu";
+      defaultText = lib.literalExpression ''lib.optional (lib.elem "nvidia" config.services.xserver.videoDrivers) "--unsupported-gpu"'';
+      description = "Additional Sway arguments; acknowledge NVIDIA drivers to suppress the greeter warning.";
     };
 
     defaultSession = lib.mkOption {

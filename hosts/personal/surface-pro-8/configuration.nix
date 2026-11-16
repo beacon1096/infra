@@ -17,6 +17,8 @@
 
   networking.hostName = "surface-pro-8";
 
+  beacoworks.bootvine.enable = true;
+
   # ── Kernel ──────────────────────────────────────────────────
   # linux-surface kernel (enabled via nixos-hardware in flake.nix)
   # Provides:

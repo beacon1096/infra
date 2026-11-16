@@ -1,13 +1,17 @@
-{ inputs, lib, ... }:
+{ config, inputs, lib, ... }:
 
 {
   imports = [ inputs.bootvine.nixosModules.default ];
 
-  boot.initrd.systemd.enable = true;
-  boot.consoleLogLevel = lib.mkDefault 3;
+  options.beacoworks.bootvine.enable = lib.mkEnableOption "the Bootvine boot screen";
 
-  services.bootvine = {
-    enable = true;
-    settings.timing.keep-final-frame-for = lib.mkDefault "500ms";
+  config = lib.mkIf config.beacoworks.bootvine.enable {
+    boot.initrd.systemd.enable = true;
+    boot.consoleLogLevel = lib.mkDefault 3;
+
+    services.bootvine = {
+      enable = true;
+      settings.timing.keep-final-frame-for = lib.mkDefault "500ms";
+    };
   };
 }
