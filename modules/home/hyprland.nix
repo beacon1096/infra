@@ -2,8 +2,13 @@
 #
 # Keybindings, animations, waybar, app launcher, notifications, etc.
 # This module is opt-in: import it in nixos-home.nix for desktop hosts.
-{ pkgs, ... }:
+{ pkgs, inputs, ... }:
 
+let
+  unstablePkgs = import inputs.nixpkgs-unstable {
+    system = pkgs.stdenv.hostPlatform.system;
+  };
+in
 {
   imports = [ ./desktop-theme.nix ];
 
@@ -387,8 +392,9 @@
   i18n.inputMethod = {
     enable = true;
     type = "fcitx5";
+    fcitx5.fcitx5-with-addons = unstablePkgs.qt6Packages.fcitx5-with-addons;
     fcitx5.waylandFrontend = true;
-    fcitx5.addons = with pkgs; [
+    fcitx5.addons = with unstablePkgs; [
       qt6Packages.fcitx5-chinese-addons
       fcitx5-gtk
     ];
