@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jina-reader
+  labels:
+    app.kubernetes.io/name: jina-reader
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: jina-reader
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: jina-reader
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      dnsPolicy: ClusterFirst
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        # Both pinned platform identity layers map jina to 1001:997; startup remains unverified.
+        runAsUser: 1001
+        runAsGroup: 997
+        fsGroup: 997
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: reader
+          image: ghcr.io/jina-ai/reader:oss@sha256:8cc9a5cf6dc9c240235fccc0026661de74b6e13c21b36e6a86b3281b9ef10f28
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: PORT
+              value: "8080"
+            - name: NODE_ENV
+              value: production
+            - name: NODE_DISABLE_COMPILE_CACHE
+              value: "1"
+            - name: HOME
+              value: /home/jina
+            - name: TMPDIR
+              value: /tmp
+            - name: PUPPETEER_TMP_DIR
+              value: /tmp
+            - name: XDG_CONFIG_HOME
+              value: /home/jina/.config
+            - name: XDG_CACHE_HOME
+              value: /home/jina/.cache
+          ports:
+            - name: http
+              containerPort: 8081
+              protocol: TCP
+          startupProbe:
+            exec:
+              command: &ping-command
+                - node
+                - -e
+                - >-
+                  const h=require('node:http');
+                  const q=h.get('http://127.0.0.1:8081/ping',r=>{r.resume();process.exit(r.statusCode===200?0:1)});
+                  q.setTimeout(2000,()=>{q.destroy();process.exit(1)});
+                  q.on('error',()=>process.exit(1));
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: *ping-command
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+              ephemeral-storage: 512Mi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+              ephemeral-storage: 2Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: home
+              mountPath: /home/jina
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: home
+          emptyDir:
+            sizeLimit: 256Mi
