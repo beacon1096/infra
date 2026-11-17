@@ -136,6 +136,8 @@ in
           virtualisation = {
             cores = lib.mkForce 6;
             memorySize = lib.mkForce 12288;
+            diskSize = lib.mkForce (64 * 1024);
+            fileSystems."/".autoResize = lib.mkForce true;
           };
           nix.settings.max-jobs = 4;
         };
