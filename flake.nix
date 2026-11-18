@@ -82,7 +82,7 @@
     };
 
     paseo = {
-      url = "github:getpaseo/paseo/v0.9.2";
+      url = "github:getpaseo/paseo/v0.15.4";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
