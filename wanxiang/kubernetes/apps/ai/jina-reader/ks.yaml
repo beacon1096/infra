@@ -8,7 +8,7 @@ spec:
   retryInterval: 1m
   path: ./wanxiang/kubernetes/apps/ai/jina-reader/app
   prune: true
-  suspend: true
+  suspend: false
   sourceRef:
     kind: GitRepository
     name: flux-system
