@@ -239,6 +239,11 @@ assert.equal(nixScope.PATH_SCOPE_ELIGIBLE, true);
 assert.equal(nixScope.PATH_SCOPE_NEEDS_TREE, true);
 assert.equal(classifyPathScope(pathPr("beacon1096")).PATH_SCOPE_NEEDS_TREE, false);
 assert.equal(classifyPathScope(pathPr("multica-gitops")).PATH_SCOPE_ELIGIBLE, true);
+for (const repo of ["infrastructure/infra", "infrastructure/infra-private"]) {
+  const yesodScope = classifyPathScope(pathPr("agent-yesod", repo, repo), { ...pathApproved, REPO: repo });
+  assert.equal(yesodScope.PATH_SCOPE_ELIGIBLE, true);
+  assert.equal(yesodScope.PATH_SCOPE_NEEDS_TREE, false);
+}
 assert.equal(classifyPathScope(pathPr("unknown-author")).PATH_SCOPE_ELIGIBLE, false);
 assert.equal(classifyPathScope(pathPr("multica-nix-packager", "beacon1096/infra")).PATH_SCOPE_ELIGIBLE, false);
 assert.equal(classifyPathScope(pathPr("multica-nix-packager", "multica-nix-packager/infra-private",
@@ -314,13 +319,13 @@ const shortShaApproval = execute("Normalize Forgejo Event", {
 assert.equal(shortShaApproval.SUPPORTED, false);
 assert.equal(shortShaApproval.IS_HUMAN_APPROVAL_SIGNAL, false);
 
-const verifyHumanApproval = (reviews, headSha = event.PR_HEAD_SHA) =>
+const verifyHumanApproval = (reviews, headSha = event.PR_HEAD_SHA, repo = "infrastructure/infra") =>
   execute("Verify Human Approval", {
     $json: { statusCode: 200, body: reviews },
     $: (name) => ({
       item: {
         json: name === "Decide Event Transition"
-          ? { ...humanReviewEvent, PR_HEAD_SHA: event.PR_HEAD_SHA }
+          ? { ...humanReviewEvent, PR_HEAD_SHA: event.PR_HEAD_SHA, REPO: repo }
           : name === "Get Human PR Reviews"
             ? { statusCode: 200, body: reviews }
           : {
@@ -328,9 +333,9 @@ const verifyHumanApproval = (reviews, headSha = event.PR_HEAD_SHA) =>
               body: {
                 state: "open",
                 number: 8,
-                html_url: "https://forgejo.beaco.works/infrastructure/infra/pulls/8",
+                html_url: `https://forgejo.beaco.works/${repo}/pulls/8`,
                 user: { login: "contributor" },
-                base: { ref: "main", repo: { full_name: "infrastructure/infra" } },
+                base: { ref: "main", repo: { full_name: repo } },
                 head: { sha: headSha },
               },
             },
@@ -359,6 +364,7 @@ const verifySelfApproval = (
   repo = "infrastructure/infra",
   timeline = [],
   nextPage = [],
+  author = "beacon1096",
 ) =>
   execute("Verify Human Approval", {
     $json: { statusCode: 200, body: comment },
@@ -378,7 +384,7 @@ const verifySelfApproval = (
                 state: "open",
                 number: Number(source.PR_NUMBER),
                 html_url: `https://forgejo.beaco.works/${repo}/pulls/${source.PR_NUMBER}`,
-                user: { login: "beacon1096" },
+                user: { login: author },
                 base: { ref: base, repo: { full_name: repo } },
                 head: { sha: headSha },
               },
@@ -392,6 +398,34 @@ assert.equal(verifySelfApproval({
   body: `/approve ${event.PR_HEAD_SHA}`,
   user: { login: "beacon1096" },
 }).HUMAN_APPROVAL_VALID, true);
+const yesodReview = {
+  id: 12,
+  state: "APPROVED",
+  commit_id: event.PR_HEAD_SHA,
+  user: { login: "agent-yesod" },
+};
+const yesodComment = {
+  id: 20,
+  body: `/approve ${event.PR_HEAD_SHA}`,
+  user: { login: "agent-yesod" },
+};
+for (const repo of ["infrastructure/infra", "infrastructure/infra-private"]) {
+  assert.equal(verifyHumanApproval([yesodReview], event.PR_HEAD_SHA, repo).HUMAN_APPROVAL_VALID, true);
+  const source = { ...selfApprovalEvent, REPO: repo };
+  assert.equal(verifySelfApproval(
+    yesodComment, event.PR_HEAD_SHA, source, "main", repo, [], [], "agent-yesod",
+  ).HUMAN_APPROVAL_VALID, true);
+  assert.equal(verifySelfApproval(
+    yesodComment, "a".repeat(40), source, "main", repo,
+  ).HUMAN_APPROVAL_VALID, false);
+}
+for (const invalidReview of [
+  { ...yesodReview, commit_id: "a".repeat(40) },
+  { ...yesodReview, dismissed: true },
+  { ...yesodReview, stale: true },
+]) {
+  assert.equal(verifyHumanApproval([invalidReview]).HUMAN_APPROVAL_VALID, false);
+}
 const prodComment = {
   id: 25,
   body: `/approve-prod ${event.PR_HEAD_SHA}`,
@@ -404,6 +438,10 @@ const verifiedProd = verifySelfApproval(
 assert.equal(verifiedProd.HUMAN_APPROVAL_VALID, true);
 assert.equal(verifiedProd.STATUS_CONTEXT, "policy/prod-merge-gate");
 assert.equal(verifiedProd.APPROVAL_CREATED_AT, prodComment.created_at);
+assert.equal(verifySelfApproval(
+  { ...prodComment, user: { login: "agent-yesod" } },
+  event.PR_HEAD_SHA, prodApprovalEvent, "prod", "infrastructure/infra-private",
+).HUMAN_APPROVAL_VALID, false);
 assert.equal(verifySelfApproval(
   prodComment, event.PR_HEAD_SHA, prodApprovalEvent, "prod", "infrastructure/infra-private",
   [
