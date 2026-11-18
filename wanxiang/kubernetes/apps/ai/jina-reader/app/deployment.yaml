@@ -21,16 +21,21 @@ spec:
       hostNetwork: false
       hostPID: false
       hostIPC: false
+      hostUsers: false
+      # Only schedule where the matching, versioned Talos profile is installed.
+      nodeSelector:
+        beaco.works/jina-reader-sandbox: userns-v1
       dnsPolicy: ClusterFirst
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
-        # Both pinned platform identity layers map jina to 1001:997; startup remains unverified.
+        # Both pinned platform identity layers map jina to 1001:997.
         runAsUser: 1001
         runAsGroup: 997
         fsGroup: 997
         seccompProfile:
-          type: RuntimeDefault
+          type: Localhost
+          localhostProfile: profiles/jina-reader-userns-v1.json
       containers:
         - name: reader
           image: ghcr.io/jina-ai/reader:oss@sha256:8cc9a5cf6dc9c240235fccc0026661de74b6e13c21b36e6a86b3281b9ef10f28
