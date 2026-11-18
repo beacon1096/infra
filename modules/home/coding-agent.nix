@@ -8,6 +8,10 @@
 }:
 
 let
+  codexPkgs = import inputs.nixpkgs-codex {
+    system = pkgs.stdenv.hostPlatform.system;
+    config = pkgs.config;
+  };
   unstablePkgs = import inputs.nixpkgs-unstable {
     system = pkgs.stdenv.hostPlatform.system;
     config = pkgs.config;
@@ -107,7 +111,7 @@ in
 
   programs.codex = {
     enable = true;
-    package = unstablePkgs.codex;
+    package = codexPkgs.codex;
     context = agentContextText;
     #enableMcpIntegration = true;
     skills = agentSkills;
@@ -115,7 +119,7 @@ in
 
   programs.codexDesktopLinux = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
     enable = false;
-    cliPackage = unstablePkgs.codex;
+    cliPackage = codexPkgs.codex;
   };
 
   programs.opencode = {
