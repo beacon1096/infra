@@ -69,6 +69,23 @@ let
     // lib.optionalAttrs (model ? compat) { inherit (model) compat; }
     // lib.optionalAttrs (model ? thinkingLevelMap) { inherit (model) thinkingLevelMap; })
     cfg.models;
+  mcpServers = lib.attrByPath [ "programs" "mcp" "servers" ] { } config;
+  piMcpEntry = server:
+    let
+      expand = lib.mapAttrs (_: lib.replaceStrings [ "\${env:" ] [ "\${" ]);
+      optionalFields = attrs: lib.filterAttrs (_: value: value != null && value != [ ] && value != { }) attrs;
+    in
+    if (server.command or null) != null then
+      optionalFields {
+        inherit (server) command;
+        args = server.args or [ ];
+        env = expand (server.env or { });
+      }
+    else
+      optionalFields {
+        inherit (server) url;
+        headers = expand (server.headers or { });
+      };
 in
 {
   options.beacon.pi = {
@@ -103,6 +120,10 @@ in
   config = lib.mkIf cfg.enable {
     home.packages = [ piPkgs.pi-coding-agent ]
       ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.libsecret ];
+
+    home.file.".pi/agent/mcp.json" = lib.mkIf (mcpServers != { }) {
+      text = builtins.toJSON { mcpServers = lib.mapAttrs (_: piMcpEntry) mcpServers; };
+    };
 
     home.file.".pi/agent/AGENTS.md".text = builtins.readFile cfg.rulesFile + ''
 

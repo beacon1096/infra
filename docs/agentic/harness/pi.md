@@ -15,3 +15,9 @@
 通用实现位于公开仓的 [Pi Home Manager 模块](../../../modules/home/pi.nix)：包括异步 exec、中断标记、web-access 打包和运行时设置。模型 API 地址、密钥及 Tavily 密钥从运行环境或私有仓的 SOPS 解密文件读取，不写入公开仓或 Nix store。搜索端点和模型清单可公开审查，但私有主机拓扑、浏览器 Cookie 权限和工作区部署仍由私有配置决定。
 
 目前 private flake 锁定的是此前的公开仓修订；公开模块在审查、提交并更新该输入前，不替换私有仓正在使用的 Pi 实现。
+
+## MCP 与 Code Mode
+
+Pi 的内置 MCP 读取 Home Manager 由[共享 MCP 清单](../../../modules/home/mcp.nix)生成的 `~/.pi/agent/mcp.json`。共享条目通过 Nix 修改，不在 `/mcp` 中改写此文件；凭据仍在运行时从环境读取。Paseo 自带的工具由 daemon 按会话注入，不写入此清单。
+
+默认保留 [Pi 的 Code Mode](https://docs.pi.dev/latest/mcp#control-tool-exposure)。如要关掉它但保留 MCP，在用户或项目设置的 `extensions` 中加入 `-builtin:codemode`，并用 `defaultTools` 的 `+tool_search` 保留按需发现；也可将少量常用工具设为 `direct`，无需生成 JavaScript。关闭后用实际工具调用验证，不只看 `/mcp` 是否列出服务器。
