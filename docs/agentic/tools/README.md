@@ -5,7 +5,7 @@
 - [grep.app](grep-app.md)：代码搜索，MCP
 - [Tavily](tavily.md)：搜索，按凭据启用
 - [Outline](outline.md)：知识库，MCP 接入中
-- [Playwright](playwright.md)：浏览器自动化，已废弃
+- [Playwright](playwright.md)：旧版浏览器自动化，已从共享配置移除
 
 ## TODO
 

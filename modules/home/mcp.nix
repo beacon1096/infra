@@ -85,14 +85,6 @@ in
       url = outlineMcpUrl;
       headers.Authorization = "Bearer \${env:OUTLINE_MCP_BEARER}";
     };
-
-    playwright = {
-      command = lib.getExe pkgs.playwright-mcp;
-      args = [
-        "--browser"
-        "firefox"
-      ];
-    };
   }
   // lib.optionalAttrs (lib.hasAttrByPath tavilySecretAttr osConfig) {
     tavily = {
